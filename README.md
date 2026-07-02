@@ -1,43 +1,5 @@
 # Agentic Distributed Testing with Bedrock AgentCore
 
-> This is sample code, for non-production usage. You should work with your
-> security and legal teams to meet your organizational security, regulatory,
-> and compliance requirements before deployment. In particular: the bundled
-> CardDemo sample app and its `USER0001` / `PASSWORD` demo credentials
-> (`sample-app/README.md`) exist purely to give the test runner something to
-> exercise — do not reuse them, or this repo's Terraform/Docker deployment
-> patterns as-is, for anything handling real user data.
-
-## The Problem: High Maintenance Cost of UI Test Automation at Scale
-
-Any company maintaining large, critical digital platforms faces a persistent challenge: UI test scripts are brittle and expensive to maintain. Even minor frontend changes — a button relocation, a field rename, a workflow redesign — can break dozens of existing test cases, requiring constant human intervention to update scripts.
-
-Typical symptoms:
-
-- Hundreds to thousands of test cases executed on regular cycles (monthly, per-release)
-- Dedicated QA engineering teams (5+ headcount) focused solely on writing and maintaining test scripts rather than improving coverage or quality
-- Disproportionate effort spent on script maintenance vs. net-new test development
-- Slow feedback loops — broken tests block releases or get silently skipped
-
-**Root cause:** Traditional test automation (Selenium, Playwright, scripted flows) relies on hard-coded selectors and deterministic step sequences. Any UI drift requires manual script rework — a linear cost that scales with both application complexity and release velocity.
-
-### Proposed Approach: Agentic Test-Driven Development
-
-Replace brittle selector-based scripts with an AI-agent-driven testing workflow that combines:
-
-- **Spec generation** — automatically derive test intent from requirements/user stories
-- **Adaptive test execution** — an agent navigates the UI like a human (browser-use), self-correcting when elements shift
-- **Iterative remediation** — when tests fail, the agent diagnoses root cause and proposes fixes (to the test or flags app defects)
-- **Continuous maintenance reduction** — as the UI evolves, the agent adapts without manual script rewrites
-
-### What This Repo Demonstrates
-
-This repo is a reference implementation of **Agentic Distributed Testing** — built to show two of the four pillars concretely, **adaptive test execution** and **spec generation**, on top of AWS AgentCore:
-
-Agentic Distributed Testing means fanning natural-language test cases out across many AI agents running in parallel, each driving its own isolated cloud browser session, rather than executing one scripted flow at a time. This repo's AI-powered browser testing tool uses **OpenCode on Amazon Bedrock** — with your choice of underlying model (Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, and other open-source models all work well) — to autonomously execute those natural-language test cases against any web application — no DOM selectors, no brittle scripts. Instead of a fixed sequence of clicks bound to specific element IDs, an agent reads the live page and reasons about how to satisfy each test step, so a relocated button or renamed field doesn't break the test the way it would break a Selenium/Playwright script. The core focus of this project is demonstrating **AWS AgentCore Runtime + AgentCore Browser** orchestration: the distributed layer that fans test modules out across parallel, isolated agent sessions, each driving a managed cloud browser, coordinated by a lightweight Node.js backend. The frontend, backend, and sample app are intentionally simple Docker deployments that exist to support that demo.
-
-Alongside distributed execution, the runner can also **generate** a test suite from a plain-language app description (the "spec generation" pillar above) using a Bedrock-powered planner + per-module worker agent loop, and it captures **S3 evidence snapshots** (screenshots) for every test case so failures can be reviewed after the fact — a first step toward the "iterative remediation" pillar, though this repo surfaces evidence for a human to triage rather than closing the loop with automatic root-cause diagnosis and fix proposals.
-
 ## Screenshots
 
 **Runner — Agentic Distributed Testing in action: 8 parallel browser sessions, each driven by its own agent**
@@ -47,6 +9,19 @@ Alongside distributed execution, the runner can also **generate** a test suite f
 **Analysis — AI verdict, evidence snapshots, and agent reasoning log for a single test case**
 
 ![Analysis page showing AI verdict, evidence snapshots, and agent log](assets/screencap_2.png)
+
+## The Problem
+
+UI test scripts are brittle: Selenium/Playwright scripts rely on hard-coded selectors, so a relocated button or renamed field breaks dozens of tests at once, and teams end up spending more effort maintaining scripts than writing new coverage.
+
+## Agentic Testing
+
+Replace selector-based scripts with AI agents that read the live page and reason about each step of a plain-English test case — a relocated button or renamed field doesn't break the test the way it breaks a scripted one. This repo demonstrates two pieces of that approach:
+
+- **Adaptive execution** — natural-language test cases fanned out across many parallel AI agents (OpenCode on Amazon Bedrock — Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, and other models all work), each driving its own isolated **AgentCore Browser** session. No DOM selectors, no scripted steps. The core focus of this project is the **AWS AgentCore Runtime + AgentCore Browser** orchestration layer; the frontend, backend, and sample app are intentionally simple Docker deployments built to support that demo.
+- **Spec generation** — generate a full test suite from a plain-language app description via a Bedrock planner + per-module worker agent loop.
+
+Every test case run also captures S3 evidence screenshots for human review on the Analysis page — a first step toward automated failure remediation, not yet a closed loop.
 
 ## Repository Structure
 
@@ -213,8 +188,10 @@ The CDK stack builds the Node.js container, pushes it to ECR, and provisions the
 
 The two stacks are independent — deploy either or both. Neither is required for local development (see Mode 1 above). `agent-runtime-agentcore/` deploys separately via its own CDK flow (see above) since AgentCore Runtime isn't an EKS workload; see `terraform/README.md` for how the two paths connect if you want `AGENT_MODE=agentcore` running in AWS. Full instructions, variables, and cost/architecture notes are in `terraform/README.md`. `deploy-prod.sh` (repo root) automates the full two-phase apply + image build/push + rollout flow for both stacks — the Mode 2 counterpart to `deploy-local.sh`.
 
+## Security & Compliance
+
+This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment. In particular: the bundled CardDemo sample app and its `USER0001` / `PASSWORD` demo credentials (`sample-app/README.md`) exist purely to give the test runner something to exercise — do not reuse them, or this repo's Terraform/Docker deployment patterns as-is, for anything handling real user data.
+
 ## License
 
 Licensed under [MIT-0](LICENSE) (MIT No Attribution) — see the `LICENSE` file at the repo root. Every package (`backend/`, `frontend/`, `agent-runtime-local/`, `agent-runtime-agentcore/`, `sample-app/frontend/`) declares the same license in its `package.json`.
-
-This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment.
