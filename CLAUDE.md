@@ -28,5 +28,5 @@ Both the Bedrock model and the two AWS regions (Bedrock inference region, AgentC
 ## Safety
 
 - Never commit secrets, tokens, or credentials (AWS account IDs, ARNs with real account numbers, API keys, live infrastructure identifiers)
-- If you add a commit, include `Co-Authored-By: Paperclip <noreply@paperclip.ing>` in the commit message
+- If you add a commit, include `Co-Authored-By: Claude <noreply@anthropic.com>` in the commit message
 - This repo is sample code, MIT-0 licensed (see `LICENSE`), for non-production usage — every new package/subproject should declare `"license": "MIT-0"` (or the Maven `<licenses>` equivalent) and, if it touches anything that reads as sensitive (auth flows, seeded "PII"-shaped data like `sample-app`'s CardDemo records, demo credentials), carry the same "sample code, non-production, work with security/legal before deployment" disclaimer already in the root and `sample-app/` READMEs — don't let a new subproject go without it
