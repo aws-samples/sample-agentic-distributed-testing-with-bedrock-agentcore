@@ -1,0 +1,117 @@
+.cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.activeModule {
+  border-color: var(--yellow);
+}
+
+.header {
+  background: var(--surface2);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.header:hover { background: #2a2f38; }
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conn {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.connDisconnected { background: var(--border); }
+.connConnected { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.connRunning { background: var(--yellow); animation: pulse 1s infinite; }
+.connConnecting {
+  background: transparent;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.screenshot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #111;
+  position: relative;
+  min-height: 80px;
+}
+.screenshot img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.placeholder {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  padding: 10px;
+}
+
+.connectingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(88, 166, 255, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.connectingLabel {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.action {
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 3px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.actionActive { color: var(--yellow); }

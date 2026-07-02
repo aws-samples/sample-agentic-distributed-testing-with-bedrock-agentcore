@@ -1,0 +1,67 @@
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.link {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 5px 12px;
+  border-radius: 5px;
+  transition: all 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.link:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.active {
+  color: var(--accent) !important;
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.stepNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+}
+.active .stepNum {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.spacer {
+  flex: 1;
+}

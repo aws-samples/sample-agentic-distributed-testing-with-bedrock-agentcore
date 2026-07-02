@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and adjust. See ../README.md for the full deploy flow.
+
+aws_region   = "us-east-1"
+project_name = "carddemo"
+environment  = "demo"
+
+# Leave vpc_id unset to have this stack create its own demo VPC.
+# vpc_id     = "vpc-xxxxxxxx"
+# subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
+
+# ─── Images (leave at "latest" until you've built + pushed) ───────────────
+backend_image_tag  = "latest"
+frontend_image_tag = "latest"
+
+# ─── Persistence ────────────────────────────────────────────────────────────
+# CardDemo's backend stores its data in a local SQLite file. Fargate storage
+# is ephemeral, so by default this demo resets to seed data whenever the
+# task restarts. Set to true to mount an EFS volume for a durable database.
+enable_efs = false

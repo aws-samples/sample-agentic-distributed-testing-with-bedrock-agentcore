@@ -1,0 +1,243 @@
+.page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Error banner */
+.errorBar {
+  background: rgba(248, 81, 73, 0.12);
+  border-bottom: 1px solid rgba(248, 81, 73, 0.3);
+  padding: 7px 16px;
+  font-size: 12px;
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.errorDismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--red);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+.errorDismiss:hover { opacity: 1; }
+
+/* Right area holds the run detail or empty states */
+.rightArea {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--bg);
+  position: relative;
+}
+
+.loadingState {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg);
+  z-index: 1;
+}
+
+.noRunSelected {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+/* Run detail: two-column */
+.runDetail {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Left column: module+TC list */
+.tcListCol {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.tcListHeader {
+  padding: 8px 10px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.runDetailTitle {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+}
+
+.runDetailUrl {
+  color: var(--text-muted);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.stoppedBadge {
+  font-size: 10px;
+  background: rgba(210, 153, 34, 0.15);
+  color: var(--yellow);
+  border: 1px solid rgba(210, 153, 34, 0.3);
+  padding: 1px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.tcListBody {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.noModules {
+  padding: 20px 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Module list inside run detail */
+.moduleList {
+  padding: 6px;
+}
+
+.modGroup {
+  margin-bottom: 2px;
+}
+
+.modHeader {
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+.modHeader:hover { background: var(--surface2); }
+
+.modChevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.modName {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modCount {
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.modBadge {
+  font-size: 10px !important;
+  padding: 1px 5px !important;
+  flex-shrink: 0;
+}
+
+/* TC rows */
+.tcRow {
+  padding: 6px 8px 6px 20px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-bottom: 1px;
+  transition: background 0.1s;
+}
+.tcRow:hover { background: var(--surface2); }
+
+.tcRowActive {
+  background: rgba(88, 166, 255, 0.08) !important;
+  outline: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+.tcBadge {
+  font-size: 11px !important;
+  padding: 1px 5px !important;
+  flex-shrink: 0;
+}
+
+.tcId {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.tcTitle {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* Right column: evidence panel */
+.evidenceCol {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}

@@ -1,0 +1,28 @@
+# Node
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# Env / secrets
+*.env
+.env*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Java / Maven build output
+target/
+
+# SQLite runtime databases
+*.db
+
+# AgentCore build cache
+agent-runtime-agentcore/agentcore/.cache/
+
+# Backend persisted state (contains credentials)
+backend/src/state/config.json
+backend/src/state/testResults.json
+
+# Local editor/agent tool config (personal, not part of the sample)
+.claude/

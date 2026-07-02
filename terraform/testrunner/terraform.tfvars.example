@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars and adjust. See ../README.md for the full deploy flow.
+
+aws_region   = "us-east-1"
+project_name = "agentic-testrunner"
+environment  = "demo"
+
+# Leave vpc_id unset to have this stack create its own demo VPC.
+# vpc_id     = "vpc-xxxxxxxx"
+# subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
+
+# ─── App under test ────────────────────────────────────────────────────────
+# Point this at your deployed sample-app frontend CloudFront URL, or leave the
+# default if you haven't deployed sample-app yet (you can change this later
+# from the Settings UI at runtime, too — see backend/src/routes/config.js).
+target_url = "http://localhost:8020"
+
+# ─── Agent mode ─────────────────────────────────────────────────────────────
+# 'local'     = OpenCode + chrome-devtools-mcp run in the agent-runtime-local
+#               container deployed by this stack (default, no extra setup).
+# 'agentcore' = tests are routed to an AWS AgentCore Runtime deployed
+#               separately via agent-runtime-agentcore/agentcore/ (agentcore
+#               deploy). Set agentcore_runtime_arn below if you choose this.
+agent_mode = "local"
+
+# ─── Bedrock ────────────────────────────────────────────────────────────────
+bedrock_model  = "global.anthropic.claude-sonnet-4-6"
+bedrock_region = "us-east-1"
+browser_region = "us-east-1"
+
+# agentcore_runtime_arn = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/YourRuntime-abcdef"
+
+# ─── Images (leave at "latest" until you've built + pushed) ───────────────
+backend_image_tag             = "latest"
+frontend_image_tag             = "latest"
+agent_runtime_local_image_tag = "latest"

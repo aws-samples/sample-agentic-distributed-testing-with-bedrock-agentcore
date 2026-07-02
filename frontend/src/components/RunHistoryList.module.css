@@ -1,0 +1,138 @@
+.panel {
+  width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.header {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.refreshBtn {
+  font-size: 13px;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px 0;
+  text-align: center;
+}
+
+.item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item:hover {
+  border-color: #404040;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.itemActive {
+  border-color: var(--accent) !important;
+  background: rgba(88, 166, 255, 0.07) !important;
+}
+
+.itemTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.runNum {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.runTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Courier New', monospace;
+}
+
+.targetUrl {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badges {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.badge :global(.material-symbols-rounded) {
+  font-size: 13px;
+}
+
+.badge[data-type="pass"] {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--green);
+}
+
+.badge[data-type="fail"] {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--red);
+}
+
+.badge[data-type="pending"] {
+  background: rgba(125, 133, 144, 0.15);
+  color: var(--text-muted);
+}

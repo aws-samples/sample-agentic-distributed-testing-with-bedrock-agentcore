@@ -1,0 +1,220 @@
+# Agentic Distributed Testing with Bedrock AgentCore
+
+> This is sample code, for non-production usage. You should work with your
+> security and legal teams to meet your organizational security, regulatory,
+> and compliance requirements before deployment. In particular: the bundled
+> CardDemo sample app and its `USER0001` / `PASSWORD` demo credentials
+> (`sample-app/README.md`) exist purely to give the test runner something to
+> exercise — do not reuse them, or this repo's Terraform/Docker deployment
+> patterns as-is, for anything handling real user data.
+
+## The Problem: High Maintenance Cost of UI Test Automation at Scale
+
+Any company maintaining large, critical digital platforms faces a persistent challenge: UI test scripts are brittle and expensive to maintain. Even minor frontend changes — a button relocation, a field rename, a workflow redesign — can break dozens of existing test cases, requiring constant human intervention to update scripts.
+
+Typical symptoms:
+
+- Hundreds to thousands of test cases executed on regular cycles (monthly, per-release)
+- Dedicated QA engineering teams (5+ headcount) focused solely on writing and maintaining test scripts rather than improving coverage or quality
+- Disproportionate effort spent on script maintenance vs. net-new test development
+- Slow feedback loops — broken tests block releases or get silently skipped
+
+**Root cause:** Traditional test automation (Selenium, Playwright, scripted flows) relies on hard-coded selectors and deterministic step sequences. Any UI drift requires manual script rework — a linear cost that scales with both application complexity and release velocity.
+
+### Proposed Approach: Agentic Test-Driven Development
+
+Replace brittle selector-based scripts with an AI-agent-driven testing workflow that combines:
+
+- **Spec generation** — automatically derive test intent from requirements/user stories
+- **Adaptive test execution** — an agent navigates the UI like a human (browser-use), self-correcting when elements shift
+- **Iterative remediation** — when tests fail, the agent diagnoses root cause and proposes fixes (to the test or flags app defects)
+- **Continuous maintenance reduction** — as the UI evolves, the agent adapts without manual script rewrites
+
+### What This Repo Demonstrates
+
+This repo is a reference implementation of **Agentic Distributed Testing** — built to show two of the four pillars concretely, **adaptive test execution** and **spec generation**, on top of AWS AgentCore:
+
+Agentic Distributed Testing means fanning natural-language test cases out across many AI agents running in parallel, each driving its own isolated cloud browser session, rather than executing one scripted flow at a time. This repo's AI-powered browser testing tool uses **OpenCode on Amazon Bedrock** — with your choice of underlying model (Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, and other open-source models all work well) — to autonomously execute those natural-language test cases against any web application — no DOM selectors, no brittle scripts. Instead of a fixed sequence of clicks bound to specific element IDs, an agent reads the live page and reasons about how to satisfy each test step, so a relocated button or renamed field doesn't break the test the way it would break a Selenium/Playwright script. The core focus of this project is demonstrating **AWS AgentCore Runtime + AgentCore Browser** orchestration: the distributed layer that fans test modules out across parallel, isolated agent sessions, each driving a managed cloud browser, coordinated by a lightweight Node.js backend. The frontend, backend, and sample app are intentionally simple Docker deployments that exist to support that demo.
+
+Alongside distributed execution, the runner can also **generate** a test suite from a plain-language app description (the "spec generation" pillar above) using a Bedrock-powered planner + per-module worker agent loop, and it captures **S3 evidence snapshots** (screenshots) for every test case so failures can be reviewed after the fact — a first step toward the "iterative remediation" pillar, though this repo surfaces evidence for a human to triage rather than closing the loop with automatic root-cause diagnosis and fix proposals.
+
+## Screenshots
+
+**Runner — Agentic Distributed Testing in action: 8 parallel browser sessions, each driven by its own agent**
+
+![Runner page showing 8 parallel browser sessions](assets/screencap_1.png)
+
+**Analysis — AI verdict, evidence snapshots, and agent reasoning log for a single test case**
+
+![Analysis page showing AI verdict, evidence snapshots, and agent log](assets/screencap_2.png)
+
+## Repository Structure
+
+```
+.
+├── backend/                    # Node.js + Express orchestrator (port 4010)
+├── frontend/                   # React + Vite UI served by nginx (port 5175)
+├── agent-runtime-local/        # Agent runtime: OpenCode + local Chromium (port 4020)
+├── agent-runtime-agentcore/    # Agent runtime: OpenCode + AgentCore Browser (AWS deploy)
+│   └── agentcore/              # CDK infra for deploying to AgentCore Runtime
+├── sample-app/                 # CardDemo banking app — the application under test
+│   ├── backend/                # Spring Boot API (port 8021)
+│   └── frontend/               # React + Vite, proxied through nginx (port 8020)
+├── terraform/                  # Mode 2 (prod): EKS (Fargate) + ALB + CloudFront + ECR
+│   ├── testrunner/             # Deploys backend + frontend + agent-runtime-local
+│   └── sample-app/             # Deploys the CardDemo sample app
+└── docker-compose.yml          # Mode 1 (dev): runs backend + frontend + agent-runtime-local on one host
+```
+
+## Architecture
+
+The orchestrator backend implements Agentic Distributed Testing across two agent modes, both using OpenCode as the agent framework:
+
+### Local mode (`AGENT_MODE=local`)
+
+```
+Browser (you)
+     |
+     v
+frontend :5175  ──/api/*──>  backend :4010  ──HTTP──>  agent-runtime-local :4020
+                                  |                          |
+                              WebSocket                 OpenCode CLI
+                           (live results)           chrome-devtools-mcp
+                                  |                    local Chromium
+                                  v
+                            S3 (evidence
+                             snapshots)
+```
+
+### AgentCore mode (`AGENT_MODE=agentcore`)
+
+```
+Browser (you)
+     |
+     v
+frontend :5175  ──/api/*──>  backend :4010  ──InvokeAgentRuntime──>  AgentCore Runtime (AWS)
+                                  |                                         |
+                              WebSocket                               OpenCode CLI
+                           (live results)                          chrome-devtools-mcp
+                                  |                              AgentCore Browser (managed Chrome)
+                                  v
+                            S3 (evidence
+                             snapshots)
+```
+
+In both modes:
+- OpenCode drives the agent loop with `assert_pass` / `assert_fail` MCP tools for verdict
+- Screenshots stream back via SSE → WebSocket to the frontend in real time
+- Test cases are plain English; no DOM selectors
+- Non-blank screenshot frames are sampled per test case and uploaded to S3 as evidence, viewable from the Analysis page
+
+## User Interface
+
+The frontend is a single-page app with three views, reachable from the top nav:
+
+- **Editor** — author test cases by hand (module → test case → preconditions/steps/expected result), import/export as YAML, or generate a whole suite from a natural-language spec (see "Agentic test-suite generation" under Features below).
+- **Runner** — pick modules/test cases and execute them; watch each module's browser session live via streamed screenshots, with pass/fail status updating in real time over WebSocket.
+- **Analysis** — browse past runs, drill into a run's per-module/per-test-case results, and view the S3 evidence screenshots captured for each test case.
+
+## Deployment Modes
+
+Two ways to run this repo, aimed at two different situations:
+
+| | Mode 1 — Dev | Mode 2 — Prod |
+|---|---|---|
+| **Use case** | Local development, quick demos on your own machine | A durable, publicly-reachable deployment |
+| **How** | `docker compose` on one host | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
+| **Where** | `docker-compose.yml` (repo root) | `terraform/` |
+| **Setup** | `./deploy-local.sh` (or `docker compose --profile local up --build`) | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
+
+### Mode 1 — Dev (local Docker Compose)
+
+```bash
+# Copy the example env and adjust as needed
+cp .env.example .env
+
+# Run sample-app + testrunner (backend + frontend + local agent runtime)
+./deploy-local.sh
+# Testrunner: http://localhost:5175 — Target URL already defaults to the
+# sample app at http://localhost:8020, so no Settings change needed.
+
+# Tear down when you're done:
+./deploy-local.sh --down
+```
+
+`deploy-local.sh` just wraps the two `docker compose up --build` calls below (`--sample-app`/`--testrunner` flags deploy either alone); run them directly if you'd rather not use the script:
+
+```bash
+docker compose --profile local up --build              # backend + frontend + local agent runtime
+(cd sample-app && docker compose up --build)            # the app under test
+```
+
+Everything runs as sibling containers on one Docker host, talking to each other over `network_mode: host` — no ALB, no CloudFront, no auth in front of the UI. This is the fastest way to try the project or iterate on it.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TARGET_URL` | `http://localhost:8020` | Application under test |
+| `AGENT_MODE` | `local` | `local` or `agentcore` |
+| `ENABLE_AGENTCORE` | `false` | Whether the `agentcore` mode exists on this deployment at all. When `false`, the backend refuses to switch into `agentcore` mode and the frontend Settings modal hides the Agent Mode picker and AgentCore Region field entirely. `deploy-local.sh --with-agentcore` sets this to `true` automatically after a successful AgentCore Runtime deploy. |
+| `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID used for agent inference, test generation, and health checks |
+| `BEDROCK_REGION` | `us-east-1` | AWS region for Bedrock model inference |
+| `BROWSER_REGION` | `ap-southeast-1` | AWS region for AgentCore Runtime + AgentCore Browser (defaults to the EC2 host's own region when running on EC2, if unset) |
+| `AGENTCORE_RUNTIME_ARN` | — | Required for `agentcore` mode; the ARN of your deployed AgentCore Runtime. Filled in automatically by `deploy-local.sh --with-agentcore` |
+| `S3_SNAPSHOT_BUCKET` | — | S3 bucket for evidence snapshots shown on the Analysis page. Leave unset to disable snapshot capture entirely |
+| `S3_SNAPSHOT_REGION` | `ap-southeast-1` | Region of the snapshot bucket |
+| `PORT` | `4010` | Backend HTTP port (set by docker-compose; rarely overridden) |
+| `LOCAL_RUNTIME_URL` | `http://localhost:4020` | Where the backend reaches `agent-runtime-local` (local mode only) |
+
+Most of these can also be changed at runtime from the frontend's Settings modal (model, agent mode, Bedrock region, AgentCore region, target URL, auth) — the backend persists your choices to `backend/src/state/config.json` so they survive a restart. Env vars only supply the initial defaults.
+
+If you enable S3 snapshots, the container's IAM role needs `s3:PutObject` and `s3:GetObject` on the bucket. A lifecycle policy that expires objects after ~30 days is recommended. Object keys follow `runs/<runId>/<tcId>/<seq>.png`.
+
+## Features
+
+- **Multi-page UI** — dedicated Editor, Runner, and Analysis pages instead of one crowded screen (see "User Interface" above).
+- **Agentic test-suite generation** — paste an application spec (and optional module hints) into the Editor's Generate flow; a Bedrock "planner" call decides on 3-10 modules, then a per-module "worker" call streams detailed test cases (happy path, edge cases, negative tests) for each module in turn. See `backend/src/routes/generate.js`.
+- **Evidence snapshots** — screenshots captured during each test case run are uploaded to S3 and shown alongside the result on the Analysis page, so a FAIL verdict comes with visual proof. See `backend/src/services/snapshots.js`.
+- **Multi-model support** — the Settings modal lets you pick from a curated list of Bedrock models across providers (Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, Moonshot Kimi, MiniMax, Alibaba Qwen, Z.ai GLM), or enter any custom model ID. A "Check" button runs a live health-check call against the selected model/region.
+- **Independently configurable regions** — Bedrock model inference and AgentCore Runtime/Browser can each point at a different AWS region, changeable from Settings without a restart.
+
+## Sample App
+
+`sample-app/` is a CardDemo banking application (Spring Boot + React) used as the target for test cases. It has no relation to the test runner's own stack — it exists purely as a realistic app to test against. See `sample-app/README.md` for details on what it implements and how it maps to the original COBOL/CICS/VSAM mainframe application.
+
+```bash
+cd sample-app
+docker compose up --build
+# Frontend: http://localhost:8020
+# Backend API: http://localhost:8021
+```
+
+## AgentCore Deployment
+
+To deploy `agent-runtime-agentcore` to AWS AgentCore Runtime:
+
+```bash
+cd agent-runtime-agentcore/agentcore
+npm install
+npx agentcore deploy
+```
+
+The CDK stack builds the Node.js container, pushes it to ECR, and provisions the AgentCore Runtime endpoint. Update `AGENTCORE_RUNTIME_ARN` in your `.env` (or `docker-compose.yml`) with the resulting ARN, and set `AGENT_MODE=agentcore`.
+
+## Deploying to AWS
+
+### Mode 2 — Prod (EKS + ALB + CloudFront + ECR)
+
+`terraform/` contains a self-service production deployment of the containerized parts of this repo — EKS (Fargate profiles, no EC2 node groups to patch) behind an ALB provisioned by the AWS Load Balancer Controller, fronted by CloudFront, with images in ECR:
+
+- `terraform/testrunner/` — deploys the test runner itself (backend + frontend + agent-runtime-local), behind Cognito auth
+- `terraform/sample-app/` — deploys the CardDemo sample app (no auth — it's the target under test, not a portal)
+
+The two stacks are independent — deploy either or both. Neither is required for local development (see Mode 1 above). `agent-runtime-agentcore/` deploys separately via its own CDK flow (see above) since AgentCore Runtime isn't an EKS workload; see `terraform/README.md` for how the two paths connect if you want `AGENT_MODE=agentcore` running in AWS. Full instructions, variables, and cost/architecture notes are in `terraform/README.md`. `deploy-prod.sh` (repo root) automates the full two-phase apply + image build/push + rollout flow for both stacks — the Mode 2 counterpart to `deploy-local.sh`.
+
+## License
+
+Licensed under [MIT-0](LICENSE) (MIT No Attribution) — see the `LICENSE` file at the repo root. Every package (`backend/`, `frontend/`, `agent-runtime-local/`, `agent-runtime-agentcore/`, `sample-app/frontend/`) declares the same license in its `package.json`.
+
+This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment.

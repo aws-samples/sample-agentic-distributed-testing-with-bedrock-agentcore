@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8021:8021"
+    volumes:
+      - db-data:/app
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8020:80"
+    depends_on:
+      - backend
+
+volumes:
+  db-data:

@@ -1,0 +1,112 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Dark theme (default) ── */
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #7d8590;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --orange: #db6d28;
+  --purple: #bc8cff;
+  --teal: #39d353;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface2: #f0f2f5;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #636c76;
+  --accent: #0969da;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --yellow: #9a6700;
+  --orange: #bc4c00;
+  --purple: #8250df;
+  --teal: #2da44e;
+}
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 3px; height: 3px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+button { cursor: pointer; }
+a { text-decoration: none; }
+
+/* Material Symbols inside buttons */
+.btn .material-symbols-rounded { font-size: 15px; line-height: 1; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Buttons ── */
+.btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+/* Primary: filled accent with white text — works in both themes
+   (dark accent #58a6ff and light accent #0969da both have enough
+   contrast against white text) */
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover { opacity: 0.9; color: #fff; border-color: var(--accent); }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: rgba(248,81,73,0.1); border-color: var(--red); }
+.btn-success { border-color: var(--green); color: var(--green); }
+.btn-success:hover { border-color: var(--green); color: var(--green); }
+[data-theme="light"] .btn-success { background: var(--green); color: #fff; }
+[data-theme="light"] .btn-success:hover { opacity: 0.9; color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Status badges ── */
+.status-badge {
+  padding: 2px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.status-PENDING { background: rgba(125,133,144,0.2); color: var(--text-muted); }
+.status-RUNNING { background: rgba(210,153,34,0.2); color: var(--yellow); animation: pulse 1s infinite; }
+.status-PASS { background: rgba(63,185,80,0.2); color: var(--green); }
+.status-FAIL { background: rgba(248,81,73,0.2); color: var(--red); }
+
+/* ── Form inputs ── */
+.form-input {
+  padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+.form-input:focus { border-color: var(--accent); }
+textarea.form-input { resize: vertical; min-height: 60px; font-family: inherit; }
+select.form-input { cursor: pointer; }

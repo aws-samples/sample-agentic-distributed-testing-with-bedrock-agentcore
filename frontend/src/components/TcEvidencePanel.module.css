@@ -1,0 +1,322 @@
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+/* Header bar */
+.tcHeader {
+  padding: 11px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tcId {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tcDot {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.tcTitle {
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Scrollable body */
+.body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+/* Sections */
+.section {
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Verdict */
+.verdictBadge {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.verdict_PASS {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--green);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.verdict_FAIL {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--red);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.verdict_PENDING {
+  background: rgba(125, 133, 144, 0.15);
+  color: var(--text-muted);
+  border: 1px solid rgba(125, 133, 144, 0.3);
+}
+
+.verdict_RUNNING {
+  background: rgba(210, 153, 34, 0.15);
+  color: var(--yellow);
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.verdictReason {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* Screenshot */
+.screenshot {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.noScreenshot {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* Agent Log — terminal style matching FocusModal */
+.logPanel {
+  background: #0e0e0e;
+  border-radius: 6px;
+  border: 1px solid #2a2a2a;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.resumePill {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+.resumePill :global(.material-symbols-rounded) { font-size: 14px; }
+.resumePill:hover { filter: brightness(1.1); }
+
+.logBody {
+  overflow-y: auto;
+  max-height: 320px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.logBody::-webkit-scrollbar { width: 4px; }
+.logBody::-webkit-scrollbar-track { background: transparent; }
+.logBody::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+.logBody::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+.logEmpty {
+  color: #444;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.logEntry {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 1px 4px;
+  border-radius: 2px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.logTs {
+  font-size: 10px;
+  color: #444;
+  margin-right: 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Entry kinds — same as FocusModal */
+.logEntry_info   { color: #666; }
+.logEntry_text   { color: #c8c8c8; }
+.logEntry_tool   { color: #4fc1ff; }
+.logEntry_pass   { color: #4ec94e; font-weight: 700; }
+.logEntry_fail   { color: #f44747; font-weight: 700; }
+.logEntry_warn   { color: #cca700; }
+
+/* ── Evidence snapshot gallery ───────────────────────────────────────────── */
+.snapCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.snapGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.snapItem {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.snapItem:hover { border-color: var(--accent); }
+
+.snapThumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+  background: #000;
+}
+
+.snapLoading {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.snapCaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+}
+.snapSeq {
+  font-weight: 700;
+  color: var(--text);
+}
+.snapAction {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Lightbox ────────────────────────────────────────────────────────────── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  padding: 32px;
+}
+.lightboxImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+}
+.lightboxClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightboxClose:hover { background: rgba(0, 0, 0, 0.8); }

@@ -1,0 +1,14 @@
+{
+  "name": "agent-runtime",
+  "version": "1.0.0",
+  "license": "MIT-0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
