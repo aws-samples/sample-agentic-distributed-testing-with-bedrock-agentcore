@@ -3,6 +3,7 @@ import yaml from 'js-yaml';
 import { config, moduleList, testCasesByModule } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { nextTcId, normArray } from '../services/tcIds.js';
+import { replaceAllModulesAndCases } from '../state/db.js';
 
 const router = Router();
 
@@ -65,6 +66,7 @@ router.post('/import', (req, res) => {
     }
   }
   if (doc.targetUrl) { try { new URL(doc.targetUrl); config.targetUrl = doc.targetUrl; } catch { /* ignore */ } }
+  replaceAllModulesAndCases(moduleList, testCasesByModule);
   broadcast({ type: 'config', targetUrl: config.targetUrl, modules: moduleList });
   broadcast({ type: 'cases_updated', module: null });
   res.json({ ok: true, summary });

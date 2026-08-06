@@ -14,9 +14,10 @@
     "@aws-sdk/s3-request-presigner": "^3.996.0",
     "aws-jwt-verify": "^4.0.1",
     "bedrock-agentcore": "^0.2.4",
+    "better-sqlite3": "^12.10.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "ws": "^8.18.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "ws": "^8.18.0"
   }
 }

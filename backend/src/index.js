@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { initWebSocket } from './services/websocket.js';
 import { config, moduleList, testCasesByModule, initEc2Region } from './state/store.js';
 import { nextTcId, normArray } from './services/tcIds.js';
+import { replaceAllModulesAndCases } from './state/db.js';
 import { requireAuth, authEnabled } from './middleware/auth.js';
 import configRoutes   from './routes/config.js';
 import moduleRoutes   from './routes/modules.js';
@@ -54,6 +55,7 @@ function loadSeed() {
         }
       }
     }
+    replaceAllModulesAndCases(moduleList, testCasesByModule);
     console.log('Seed loaded:', moduleList.map(m => `${m}(${(testCasesByModule[m]||[]).length})`).join(', '));
   } catch (e) {
     console.warn('Seed load skipped:', e.message);

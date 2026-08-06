@@ -16,6 +16,8 @@ target/
 
 # SQLite runtime databases
 *.db
+*.db-wal
+*.db-shm
 
 # AgentCore build cache
 agent-runtime-agentcore/agentcore/.cache/

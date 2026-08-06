@@ -3,6 +3,7 @@ import { moduleList, testCasesByModule } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
 import { nextTcId, normArray } from '../services/tcIds.js';
+import { insertModule, deleteModule, upsertCase, deleteCase as deleteCaseRow } from '../state/db.js';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.post('/modules', (req, res) => {
   if (moduleList.includes(modName)) return res.status(409).json({ error: 'Module already exists' });
   moduleList.push(modName);
   testCasesByModule[modName] = [];
+  insertModule(modName);
   broadcast({ type: 'module_added', module: modName, modules: moduleList });
   res.json({ module: modName, modules: moduleList });
 });
@@ -25,6 +27,7 @@ router.delete('/modules/:name', async (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Module not found' });
   moduleList.splice(idx, 1);
   delete testCasesByModule[modName];
+  deleteModule(modName); // ON DELETE CASCADE also removes this module's test_cases rows
   await killSession(modName);
   broadcast({ type: 'module_removed', module: modName, modules: moduleList });
   res.json({ modules: moduleList });
@@ -48,6 +51,7 @@ router.post('/modules/:module/cases', (req, res) => {
     expectedResult: normArray(expectedResult),
   };
   testCasesByModule[mod].push(tc);
+  upsertCase(tc);
   broadcast({ type: 'cases_updated', module: mod });
   res.status(201).json(tc);
 });
@@ -62,6 +66,7 @@ router.patch('/cases/:tcId', (req, res) => {
       if (preconditions !== undefined) tc.preconditions = normArray(preconditions);
       if (steps !== undefined) tc.steps = steps;
       if (expectedResult !== undefined) tc.expectedResult = expectedResult;
+      upsertCase(tc);
       broadcast({ type: 'cases_updated', module: mod });
       return res.json(tc);
     }
@@ -75,6 +80,7 @@ router.delete('/cases/:tcId', (req, res) => {
     const idx = testCasesByModule[mod].findIndex(t => t.id === tcId);
     if (idx !== -1) {
       testCasesByModule[mod].splice(idx, 1);
+      deleteCaseRow(tcId);
       broadcast({ type: 'cases_updated', module: mod });
       return res.json({ ok: true });
     }
