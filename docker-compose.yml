@@ -20,9 +20,6 @@ services:
       # 'agentcore' routes to AgentCore Runtime (default)
       # 'local' routes test execution to agent-runtime container (OpenCode + chrome-devtools-mcp)
       AGENT_MODE: "${AGENT_MODE:-agentcore}"
-      # Gates the agentcore mode/UI entirely — see backend/src/state/store.js
-      # and .env.example.
-      ENABLE_AGENTCORE: "${ENABLE_AGENTCORE:-true}"
       LOCAL_RUNTIME_URL: "http://localhost:4020"
       # S3 bucket for evidence snapshots shown in Analysis page. Leave unset
       # to disable snapshot capture entirely — see .env.example.

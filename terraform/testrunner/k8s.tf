@@ -1,12 +1,5 @@
 locals {
   agentcore_arn_effective = var.agent_mode == "agentcore" ? var.agentcore_runtime_arn : ""
-  # Backend gate (backend/src/state/store.js) that also drives whether the
-  # frontend Settings modal shows the AgentCore option at all — see
-  # frontend/src/components/SettingsModal.jsx. Deploying with
-  # agent_mode = "agentcore" (or having a runtime ARN configured at all, so a
-  # later switch back to "local" doesn't hide the option you might want to
-  # switch back from) implies AgentCore should be selectable here.
-  agentcore_enabled_effective = var.agent_mode == "agentcore" || var.agentcore_runtime_arn != ""
 }
 
 module "testrunner_service" {
@@ -47,7 +40,6 @@ module "testrunner_service" {
         BROWSER_REGION        = var.browser_region
         AGENTCORE_RUNTIME_ARN = local.agentcore_arn_effective
         AGENT_MODE            = var.agent_mode
-        ENABLE_AGENTCORE      = local.agentcore_enabled_effective ? "true" : "false"
         LOCAL_RUNTIME_URL     = "http://localhost:4020"
         S3_SNAPSHOT_BUCKET    = aws_s3_bucket.snapshots.bucket
         S3_SNAPSHOT_REGION    = local.region

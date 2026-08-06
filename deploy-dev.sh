@@ -16,18 +16,14 @@
 # deploy-prod.sh instead. This script only touches sample-app's Docker
 # state, plus (by default) the one-time AgentCore Runtime deploy above.
 #
-# AgentCore is double-gated: .env's ENABLE_AGENTCORE must be true (this is
-# also what the backend and frontend Settings modal check to decide whether
-# to expose agentcore as a mode at all — see backend/src/state/store.js and
-# frontend/src/components/SettingsModal.jsx) AND --local must not be passed.
-# ENABLE_AGENTCORE=false skips the AWS deploy step even without --local, so
-# flipping it off is enough to guarantee this script never touches AWS.
+# Whether this script touches AWS is controlled by --local alone — pass it
+# to skip the AgentCore deploy entirely and stay local-only.
 #
 # Usage:
 #   ./deploy-dev.sh              # sample-app + AgentCore Runtime deploy (default)
-#   ./deploy-dev.sh --local      # sample-app only, no AWS calls
-#   ./deploy-dev.sh --down       # stop sample-app (leaves any deployed
-#                                 # AgentCore Runtime running in AWS)
+#   ./deploy-dev.sh --local      # sample-app + agent-runtime-local (Docker), no AWS calls
+#   ./deploy-dev.sh --down       # stop sample-app + agent-runtime-local (leaves any
+#                                 # deployed AgentCore Runtime running in AWS)
 #   ./deploy-dev.sh --destroy    # --down, plus tear down the AgentCore Runtime
 #                                 # in AWS if one was deployed (the Mode 1
 #                                 # counterpart to deploy-prod.sh <target> --destroy)
@@ -69,8 +65,8 @@ ensure_env() {
 
 # set_env_var NAME VALUE — updates NAME=VALUE in .env in place, or appends it
 # if the key isn't present yet. Used to auto-fill AGENTCORE_RUNTIME_ARN (and
-# flip AGENT_MODE/ENABLE_AGENTCORE) after a successful agentcore deploy, so
-# you never have to copy an ARN out of terminal output by hand.
+# flip AGENT_MODE) after a successful agentcore deploy, so you never have to
+# copy an ARN out of terminal output by hand.
 set_env_var() {
   local name="$1" value="$2"
   if grep -q "^${name}=" .env; then
@@ -79,23 +75,6 @@ set_env_var() {
     printf '%s=%s\n' "$name" "$value" >> .env
   fi
 }
-
-# Reads ENABLE_AGENTCORE from .env (defaulting to false if unset/missing) —
-# the single source of truth for whether this deployment offers AgentCore at
-# all, shared with the backend (ENABLE_AGENTCORE env var — see
-# backend/src/state/store.js) and the frontend Settings modal.
-agentcore_enabled_in_env() {
-  ensure_env
-  local val
-  val="$(grep -E '^ENABLE_AGENTCORE=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
-  [ "$val" = "true" ]
-}
-
-if [ "$DO_AGENTCORE" = "1" ] && ! agentcore_enabled_in_env; then
-  warn "Defaulting to agentcore, but ENABLE_AGENTCORE is not true in .env — skipping the AgentCore deploy and falling back to local agent mode."
-  warn "Set ENABLE_AGENTCORE=true in .env first if you actually want agentcore, or pass --local to silence this."
-  DO_AGENTCORE=0
-fi
 
 # aws-targets.json ships checked into git with a placeholder account ID
 # ("000000000000" — see the file's own "description" field) since a real
@@ -163,11 +142,33 @@ up_sample_app() {
   log "Sample app: http://localhost:8020 (frontend)  http://localhost:8021 (backend API)"
 }
 
+# agent-runtime-local (OpenCode + chrome-devtools-mcp + local Chromium) is
+# behind docker-compose.yml's "local" profile — plain `docker compose up`
+# never starts it, so --local drives it explicitly here. Also flips
+# AGENT_MODE=local into .env, mirroring what deploy_agentcore does for the
+# agentcore case, so .env and the running mode actually agree.
+up_local_runtime() {
+  log "═══ agent-runtime-local (Docker) ═══"
+  docker compose --profile local up --build -d agent-runtime-local
+  log "agent-runtime-local: http://localhost:4020"
+  ensure_env
+  set_env_var AGENT_MODE local
+  log "Wired AGENT_MODE=local into .env"
+}
+
+# Counterpart to up_local_runtime — a no-op if it was never started (the
+# "local" profile scopes this to just that one container, and docker
+# compose down on an absent container warns but exits 0).
+down_local_runtime() {
+  log "Stopping agent-runtime-local"
+  docker compose --profile local down agent-runtime-local
+}
+
 # Deploys agent-runtime-agentcore to AWS AgentCore Runtime and writes the
-# resulting ARN + AGENT_MODE=agentcore + ENABLE_AGENTCORE=true into .env —
-# matches the manual flow documented under "AgentCore Deployment" in the
-# root README, just automated end-to-end. This is the only part of this
-# script that touches real AWS infrastructure.
+# resulting ARN + AGENT_MODE=agentcore into .env — matches the manual flow
+# documented under "AgentCore Deployment" in the root README, just automated
+# end-to-end. This is the only part of this script that touches real AWS
+# infrastructure.
 deploy_agentcore() {
   log "═══ AgentCore Runtime (AWS) ═══"
   local agentcore_dir="$SCRIPT_DIR/agent-runtime-agentcore/agentcore"
@@ -218,8 +219,7 @@ print(runtimes[name]['runtimeArn'])
   ensure_env
   set_env_var AGENTCORE_RUNTIME_ARN "$arn"
   set_env_var AGENT_MODE agentcore
-  set_env_var ENABLE_AGENTCORE true
-  log "Wired AGENTCORE_RUNTIME_ARN, AGENT_MODE=agentcore, and ENABLE_AGENTCORE=true into .env"
+  log "Wired AGENTCORE_RUNTIME_ARN and AGENT_MODE=agentcore into .env"
 }
 
 # Tears down the AgentCore Runtime deployed by deploy_agentcore, if any —
@@ -286,13 +286,18 @@ check_prereqs
 
 if [ "$DO_DOWN" = "1" ]; then
   down_sample_app
+  down_local_runtime
   [ "$DO_DESTROY" = "1" ] && destroy_agentcore
   log "Done."
   exit 0
 fi
 
 up_sample_app
-[ "$DO_AGENTCORE" = "1" ] && deploy_agentcore
+if [ "$DO_AGENTCORE" = "1" ]; then
+  deploy_agentcore
+else
+  up_local_runtime
+fi
 
 log "Done."
 log "Now run the testrunner yourself: npm run dev:backend / npm run dev:frontend (from the repo root)"

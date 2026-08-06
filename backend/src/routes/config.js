@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
-import { config, moduleList, sessions, saveConfig, agentcoreEnabled } from '../state/store.js';
+import { config, moduleList, sessions, saveConfig } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
 
@@ -47,7 +47,6 @@ router.get('/config', (req, res) => {
     modules:          moduleList,
     model:            config.bedrockModel,
     agentMode:        config.agentMode,
-    agentcoreEnabled,
     bedrockRegion:    config.bedrockRegion,
     browserRegion:    config.browserRegion,
     auth:             authOut,
@@ -120,9 +119,6 @@ router.patch('/config/auth', (req, res) => {
 router.patch('/config/mode', async (req, res) => {
   const { mode } = req.body;
   if (!['local', 'agentcore'].includes(mode)) return res.status(400).json({ error: 'mode must be local or agentcore' });
-  if (mode === 'agentcore' && !agentcoreEnabled) {
-    return res.status(400).json({ error: 'agentcore mode is disabled on this deployment (ENABLE_AGENTCORE=false)' });
-  }
   config.agentMode = mode;
   saveConfig();
   for (const sid of Object.keys(sessions)) {

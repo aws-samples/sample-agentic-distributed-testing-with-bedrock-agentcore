@@ -51,23 +51,10 @@ async function detectEc2Region() {
   });
 }
 
-// Deploy-time switch (env only, not user-settable, not persisted) — whether
-// the agentcore agent mode exists at all in this deployment. Defaults to
-// true (see .env.example / docker-compose.yml) since AgentCore is now the
-// default agent mode; set to false to fall back to local-only without a
-// deployed AgentCore Runtime behind it. See
-// frontend/src/components/SettingsModal.jsx, which hides the AgentCore
-// Runtime option and AgentCore Region field when this is false.
-export const agentcoreEnabled = process.env.ENABLE_AGENTCORE === 'true';
-
 export const config = {
   targetUrl:    _persisted.targetUrl  ?? (process.env.TARGET_URL    || 'http://localhost:8020'),
   bedrockModel: _persisted.bedrockModel ?? (process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-5'),
-  // Force 'local' when agentcore is disabled at the deploy level, even if a
-  // stale config.json (from before ENABLE_AGENTCORE was turned off) says
-  // otherwise — persisted state should never re-enable a mode this
-  // deployment doesn't support.
-  agentMode: (!agentcoreEnabled) ? 'local' : (_persisted.agentMode ?? (process.env.AGENT_MODE || 'agentcore')),   // 'local' | 'agentcore'
+  agentMode: _persisted.agentMode ?? (process.env.AGENT_MODE || 'agentcore'),   // 'local' | 'agentcore'
   // Bedrock model inference region. Defaults to BEDROCK_REGION env or us-east-1.
   bedrockRegion: _persisted.bedrockRegion ?? (process.env.BEDROCK_REGION || 'us-east-1'),
   // AgentCore Runtime / Browser region. Defaults to BROWSER_REGION env or the

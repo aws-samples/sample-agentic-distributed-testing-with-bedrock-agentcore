@@ -37,12 +37,6 @@ const KNOWN_MODELS = MODEL_GROUPS.flatMap(g => g.models)
 export default function SettingsModal({ open, onClose, currentModel, currentMode, api, onSave, theme, onToggleTheme }) {
   const [modelSelect, setModelSelect] = useState('global.anthropic.claude-sonnet-5')
   const [modelCustom, setModelCustom] = useState('')
-  // Deploy-time switch, not user-settable — hydrated from /api/config below.
-  // Agent Mode itself is set via AGENT_MODE in .env (deploy-time, an
-  // engineer's call, not a per-session UI choice) — see .env.example and
-  // deploy-dev.sh. This only gates whether the AgentCore Region field below
-  // is meaningful to show at all.
-  const [agentcoreEnabled, setAgentcoreEnabled] = useState(false)
   const [healthStatus, setHealthStatus] = useState('')
   const [healthColor, setHealthColor] = useState('var(--text-muted)')
   const [healthLoading, setHealthLoading] = useState(false)
@@ -74,7 +68,6 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
     // Hydrate region inputs from the backend's live config — these may have
     // been changed in a previous session and persisted in config.json.
     api.getConfig().then(cfg => {
-      setAgentcoreEnabled(!!cfg.agentcoreEnabled)
       if (cfg.bedrockRegion) {
         if (knownRegions.includes(cfg.bedrockRegion)) {
           setBedrockRegion(cfg.bedrockRegion); setBedrockRegionCustom('')
@@ -259,10 +252,9 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         </div>
       </div>
 
-      {/* AgentCore region — Runtime + Browser. Hidden unless an AgentCore
-          Runtime is actually deployed for this environment
-          (ENABLE_AGENTCORE=true) — meaningless otherwise. */}
-      {agentcoreEnabled && (
+      {/* AgentCore region — Runtime + Browser. Hidden unless this deployment
+          is currently running in agentcore mode — meaningless otherwise. */}
+      {currentMode === 'agentcore' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           AgentCore Region <span style={{ fontWeight: 400, textTransform: 'none' }}>(Runtime + Browser)</span>
