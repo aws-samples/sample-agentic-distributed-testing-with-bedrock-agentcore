@@ -179,7 +179,10 @@ deploy_testrunner() {
     frontend_repo="$(echo "$repos" | python3 -c "import sys,json; print(json.load(sys.stdin)['frontend'])")"
 
     log "Building + pushing backend"
-    docker build -t "$backend_repo:latest" "$REPO_ROOT/backend"
+    # backend/ and frontend/ share one npm workspace rooted at the repo root
+    # (see /package.json) — build context must be the repo root, not
+    # backend/, so the Dockerfile can see the root package-lock.json.
+    docker build -t "$backend_repo:latest" -f "$REPO_ROOT/backend/Dockerfile" "$REPO_ROOT"
     docker push "$backend_repo:latest"
 
     log "Building + pushing agent-runtime-local"
@@ -204,7 +207,7 @@ deploy_testrunner() {
       --build-arg "VITE_COGNITO_DOMAIN=$domain" \
       --build-arg "VITE_COGNITO_CLIENT_ID=$client_id" \
       --build-arg "VITE_COGNITO_USER_POOL_ID=$pool_id" \
-      -t "$frontend_repo:latest" "$REPO_ROOT/frontend"
+      -t "$frontend_repo:latest" -f "$REPO_ROOT/frontend/Dockerfile" "$REPO_ROOT"
     docker push "$frontend_repo:latest"
   fi
 

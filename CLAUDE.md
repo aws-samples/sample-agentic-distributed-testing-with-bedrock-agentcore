@@ -5,10 +5,11 @@
 Source repo for the **Agentic Test Runner** — an AI-powered parallel browser testing tool. The core focus is **AWS AgentCore Runtime + AgentCore Browser** orchestration using OpenCode as the agent framework.
 
 Structure:
+- `/package.json` — npm workspace root; `backend/` and `frontend/` share one `node_modules`. `npm run dev` (or `dev:backend` / `dev:frontend` separately) runs the testrunner for local iteration — see Mode 1 in the root README
 - `backend/` — Node.js + Express orchestrator (port 4010); routes test execution to the appropriate agent runtime, streams screenshots via SSE, pushes results to frontend via WebSocket, uploads evidence snapshots to S3
-- `frontend/` — React + Vite UI served by nginx (port 5175); three pages — Editor (author/generate test cases), Runner (execute + watch live), Analysis (past runs + evidence screenshots)
+- `frontend/` — React + Vite UI (dev: `npm run dev`, Vite dev server on :5173; prod build served by nginx on :5175); three pages — Editor (author/generate test cases), Runner (execute + watch live), Analysis (past runs + evidence screenshots)
 - `agent-runtime-local/` — Agent runtime for local mode: OpenCode + chrome-devtools-mcp + local Chromium (port 4020)
-- `agent-runtime-agentcore/` — Agent runtime for agentcore mode: OpenCode + chrome-devtools-mcp + AgentCore Browser; deployed to AWS via CDK in `agentcore/`
+- `agent-runtime-agentcore/` — Agent runtime for agentcore mode: OpenCode + chrome-devtools-mcp + AgentCore Browser; deployable code lives in `app/` (Dockerfile + package.json + src/), deployed to AWS via CDK in `agentcore/` (kept separate from `app/` — the `agentcore` CLI zips `codeLocation` as a raw, unfiltered asset, so CDK tooling can never share a directory with it)
 - `sample-app/` — CardDemo banking app (Spring Boot + React); the application under test, not part of the test runner stack
 - `docker-compose.yml` — Runs backend + frontend + agent-runtime-local (profile: local)
 - `terraform/` — Mode 2 (prod) deployment: EKS (Fargate) + ALB + CloudFront + ECR for the testrunner and sample-app stacks; see `terraform/README.md`

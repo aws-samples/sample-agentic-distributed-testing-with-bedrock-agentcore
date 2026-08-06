@@ -1,0 +1,13 @@
+**/node_modules/
+**/dist/
+**/.git/
+sample-app/
+agent-runtime-agentcore/
+agent-runtime-local/
+terraform/
+.deploy-dev-native-logs/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local

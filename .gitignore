@@ -28,7 +28,3 @@ backend/src/state/testResults.json
 
 # Local editor/agent tool config (personal, not part of the sample)
 .claude/
-
-# deploy-dev.sh --native process bookkeeping
-.deploy-dev-native.pids
-.deploy-dev-native-logs/

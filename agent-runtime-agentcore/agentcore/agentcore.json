@@ -12,7 +12,7 @@
       "name": "TestRunnerAgent",
       "build": "Container",
       "entrypoint": "src/index.js",
-      "codeLocation": "../",
+      "codeLocation": "app",
       "networkMode": "PUBLIC",
       "protocol": "HTTP"
     }

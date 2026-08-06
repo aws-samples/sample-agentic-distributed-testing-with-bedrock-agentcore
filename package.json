@@ -1,0 +1,17 @@
+{
+  "name": "agentic-test-runner",
+  "private": true,
+  "license": "MIT-0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm start --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}

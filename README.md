@@ -27,20 +27,28 @@ Every test case run also captures S3 evidence screenshots for human review on th
 
 ```
 .
-├── backend/                    # Node.js + Express orchestrator (port 4010)
-├── frontend/                   # React + Vite UI served by nginx (port 5175)
-├── agent-runtime-local/        # Agent runtime: OpenCode + local Chromium (port 4020)
-├── agent-runtime-agentcore/    # Agent runtime: OpenCode + AgentCore Browser (AWS deploy)
-│   └── agentcore/              # CDK infra for deploying to AgentCore Runtime
-├── sample-app/                 # CardDemo banking app — the application under test
-│   ├── backend/                # Spring Boot API (port 8021)
-│   └── frontend/               # React + Vite, proxied through nginx (port 8020)
-├── terraform/                  # Mode 2 (prod): EKS (Fargate) + ALB + CloudFront + ECR
-│   ├── testrunner/             # Deploys backend + frontend + agent-runtime-local
-│   └── sample-app/             # Deploys the CardDemo sample app
-└── docker-compose.yml          # Mode 1 (dev): agent-runtime-local (--local only); deploy-dev.sh
-                                 # runs backend/frontend as native npm processes instead, and
-                                 # sample-app/docker-compose.yml brings up the app under test
+├── package.json                 # npm workspace root — backend/ + frontend/ share one
+│                                 # node_modules; `npm run dev` starts both
+├── backend/                     # Node.js + Express orchestrator (port 4010)
+├── frontend/                    # React + Vite UI (dev: :5173; prod build served by nginx :5175)
+├── agent-runtime-local/         # Agent runtime: OpenCode + local Chromium (port 4020)
+├── agent-runtime-agentcore/     # Agent runtime: OpenCode + AgentCore Browser (AWS deploy)
+│   ├── app/                     # Dockerfile + package.json + src/ — the deployable code
+│   │                            # (kept separate from agentcore/ below: the CLI zips
+│   │                            # codeLocation as a raw asset with no filtering, so CDK
+│   │                            # tooling can never share a directory with it)
+│   └── agentcore/               # CDK infra for deploying to AgentCore Runtime
+├── sample-app/                  # CardDemo banking app — the application under test
+│   ├── backend/                 # Spring Boot API (port 8021)
+│   └── frontend/                # React + Vite, proxied through nginx (port 8020)
+├── terraform/                   # Mode 2 (prod): EKS (Fargate) + ALB + CloudFront + ECR
+│   ├── testrunner/               # Deploys backend + frontend + agent-runtime-local
+│   └── sample-app/               # Deploys the CardDemo sample app
+└── docker-compose.yml            # Mode 1 (dev): backend + frontend (built from repo-root
+                                   # context — see backend/Dockerfile) + agent-runtime-local
+                                   # (--local only); deploy-dev.sh only drives sample-app +
+                                   # the AgentCore deploy — run backend/frontend yourself
+                                   # with `npm run dev` for local iteration instead
 ```
 
 ## Architecture
@@ -100,41 +108,51 @@ Two ways to run this repo, aimed at two different situations:
 | | Mode 1 — Dev | Mode 2 — Prod |
 |---|---|---|
 | **Use case** | Local development, quick demos on your own machine | A durable, publicly-reachable deployment |
-| **How** | testrunner as native `npm` processes, sample-app via `docker compose` | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
-| **Where** | `docker-compose.yml` (sample-app + agent-runtime-local only) | `terraform/` |
-| **Setup** | `./deploy-dev.sh` | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
+| **How** | sample-app via `docker compose`; testrunner run yourself with `npm run dev:*` | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
+| **Where** | `docker-compose.yml` (agent-runtime-local), `sample-app/docker-compose.yml` | `terraform/` |
+| **Setup** | `./deploy-dev.sh` (infra), then `npm run dev:backend` / `npm run dev:frontend` yourself | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
 | **Cleanup** | `./deploy-dev.sh --destroy` — see [Cleaning Up](#cleaning-up) below | `./deploy-prod.sh <target> --destroy` |
 
 ### Mode 1 — Dev
+
+`deploy-dev.sh` handles the infra half — sample-app (Docker) and, by default, the one-time AgentCore Runtime deploy. The testrunner itself (backend/frontend) you run yourself, in your own terminal(s):
 
 ```bash
 # Copy the example env and adjust as needed
 cp .env.example .env
 
-# Run sample-app (Docker) + testrunner (backend/frontend as native npm
-# processes), agentcore agent mode by default — this deploys
+# Install once (root workspace covers both backend/ and frontend/ — see /package.json)
+npm install
+
+# Sample-app (Docker) + agentcore agent mode by default — this deploys
 # agent-runtime-agentcore to AWS AgentCore Runtime the first time (real AWS
 # resources, costs money while it exists).
 ./deploy-dev.sh
-# Testrunner: http://localhost:5173 (Vite dev server, hot reload) — Target
-# URL already defaults to the sample app at http://localhost:8020, so no
-# Settings change needed.
+
+# In your own terminal — running this directly (not backgrounded by a
+# script) means your editor's port auto-forwarding (e.g. VS Code, which
+# watches a terminal's own output) picks up both ports correctly:
+npm run dev   # backend :4010 + frontend :5173 (Vite dev server, hot reload)
+# Or run them separately in their own terminals: npm run dev:backend / npm run dev:frontend
+# Target URL already defaults to the sample app at http://localhost:8020,
+# so no Settings change needed.
 
 # Prefer local agent mode instead (no AWS calls; runs agent-runtime-local
 # in Docker — it needs opencode-ai + a local Chromium, not installed on a
 # bare host)?
 ./deploy-dev.sh --local
 
-# Stop everything when you're done (leaves any deployed AgentCore Runtime
-# running in AWS — see Cleaning Up below):
+# Stop sample-app when you're done (leaves any deployed AgentCore Runtime
+# running in AWS — see Cleaning Up below); stop backend/frontend yourself
+# (Ctrl-C in their terminals):
 ./deploy-dev.sh --down
 
-# Stop everything AND tear down the AgentCore Runtime in AWS if one was
+# Stop sample-app AND tear down the AgentCore Runtime in AWS if one was
 # deployed:
 ./deploy-dev.sh --destroy
 ```
 
-Backend runs via `npm start` (port 4010), frontend via `npm run dev` (Vite dev server, port 5173, hot reload) — `deploy-dev.sh` runs `npm install` for each on first use. sample-app (Spring Boot + Maven) and, under `--local`, agent-runtime-local (needs `opencode-ai` and a local Chromium) stay in Docker regardless, since a bare host typically doesn't have a JDK or those tools installed. Backend/frontend logs land in `.deploy-dev-native-logs/` (gitignored); their PIDs are tracked in `.deploy-dev-native.pids` so `--down`/`--destroy` can stop them from a later invocation of the script. State persists to SQLite (`backend/src/state/data.db`) and S3 for evidence snapshots — no ALB, no CloudFront, no auth in front of the UI.
+`backend/` and `frontend/` share one npm workspace rooted at the repo root (`/package.json`) — a single `npm install` there covers both, with one shared `node_modules`. State persists to SQLite (`backend/src/state/data.db`) and S3 for evidence snapshots — no ALB, no CloudFront, no auth in front of the UI.
 
 ### Cleaning Up
 
@@ -191,15 +209,14 @@ docker compose up --build
 
 ## AgentCore Deployment
 
-To deploy `agent-runtime-agentcore` to AWS AgentCore Runtime:
+`deploy-dev.sh` automates this (see Mode 1 above) — the manual equivalent:
 
 ```bash
-cd agent-runtime-agentcore/agentcore
-npm install
-npx agentcore deploy
+cd agent-runtime-agentcore/agentcore/cdk && npm install && cd ..
+cd .. && npx agentcore deploy   # must run from agent-runtime-agentcore/, not agentcore/
 ```
 
-The CDK stack builds the Node.js container, pushes it to ECR, and provisions the AgentCore Runtime endpoint. Update `AGENTCORE_RUNTIME_ARN` in your `.env` (or `docker-compose.yml`) with the resulting ARN, and set `AGENT_MODE=agentcore`.
+The CDK stack packages `agent-runtime-agentcore/app/` (Dockerfile + package.json + src/ — see `agentcore.json`'s `codeLocation`) for CodeBuild to build as a container, pushes it to ECR, and provisions the AgentCore Runtime endpoint. Update `AGENTCORE_RUNTIME_ARN` in your `.env` with the resulting ARN, and set `AGENT_MODE=agentcore`.
 
 ## Deploying to AWS
 
@@ -218,4 +235,4 @@ This is sample code, for non-production usage. You should work with your securit
 
 ## License
 
-Licensed under [MIT-0](LICENSE) (MIT No Attribution) — see the `LICENSE` file at the repo root. Every package (`backend/`, `frontend/`, `agent-runtime-local/`, `agent-runtime-agentcore/`, `sample-app/frontend/`) declares the same license in its `package.json`.
+Licensed under [MIT-0](LICENSE) (MIT No Attribution) — see the `LICENSE` file at the repo root. Every package (the workspace root, `backend/`, `frontend/`, `agent-runtime-local/`, `agent-runtime-agentcore/app/`, `sample-app/frontend/`) declares the same license in its `package.json`.

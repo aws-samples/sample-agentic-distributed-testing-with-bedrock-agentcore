@@ -1,6 +1,11 @@
 services:
   backend:
-    build: ./backend
+    # backend/ and frontend/ share one npm workspace rooted at the repo root
+    # (see /package.json) — build context must be the repo root so the
+    # Dockerfile can see the root package-lock.json.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: cardtest-v2-backend
     network_mode: host
     environment:
@@ -26,7 +31,7 @@ services:
     volumes:
       # Persists the SQLite DB (test cases, run archive) plus config.json /
       # testResults.json across container rebuilds, not just restarts.
-      - backend-state:/app/src/state
+      - backend-state:/app/backend/src/state
     restart: unless-stopped
 
   # Local agent runtime — OpenCode + chrome-devtools-mcp + local Chromium.
@@ -47,7 +52,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: cardtest-v2-frontend
     network_mode: host
     restart: unless-stopped

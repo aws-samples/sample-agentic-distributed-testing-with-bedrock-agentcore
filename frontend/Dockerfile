@@ -1,8 +1,15 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
-COPY . .
+
+# backend/ and frontend/ share one npm workspace rooted at the repo root
+# (see /package.json) — build context must be the repo root, not frontend/,
+# so this can see the root package-lock.json. --workspace scopes the
+# install to just this package's dependencies (plus shared root deps).
+COPY package.json package-lock.json ./
+COPY frontend/package.json ./frontend/
+RUN npm ci --workspace=frontend
+COPY frontend/ ./frontend/
+WORKDIR /app/frontend
 
 # Vite inlines import.meta.env.VITE_* into the built JS bundle at build time
 # (not read at container runtime) — so Cognito config must be passed as
@@ -22,6 +29,6 @@ ENV VITE_COGNITO_USER_POOL_ID=$VITE_COGNITO_USER_POOL_ID
 RUN npm run build
 
 FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 #
-# Automates Mode 1 (dev) from the README. sample-app runs in Docker
-# (Spring Boot + Maven — no JDK on a bare host); the testrunner itself
-# (backend + frontend) runs natively as plain npm processes — npm start /
-# npm run dev — for fast iteration (hot reload, no image rebuild). Defaults
-# to AGENT_MODE=agentcore, which means a plain run deploys
+# Automates the infra half of Mode 1 (dev) from the README: sample-app
+# (Docker — Spring Boot + Maven) and, by default, a one-time deploy of
 # agent-runtime-agentcore to AWS AgentCore Runtime (real AWS resources,
-# costs money while the Runtime exists) — pass --local to skip AWS entirely
-# and use the agent-runtime-local container instead (still Docker: it needs
-# opencode-ai + a local Chromium, not installed on a bare host).
+# costs money while the Runtime exists) — pass --local to skip AWS entirely.
+#
+# This does NOT run the testrunner itself (backend/frontend) — run those
+# yourself with `npm run dev:backend` / `npm run dev:frontend` from the repo
+# root (see /package.json) in your own terminal(s). Running them directly
+# rather than backgrounded by this script means editor tooling (e.g. VS
+# Code's port auto-forwarding, which watches a terminal's own output for the
+# "Local: http://..." line) picks them up correctly.
 #
 # This is NOT the Mode 2 (prod) flow — for EKS + ALB + CloudFront, see
-# deploy-prod.sh instead. This script only touches local Docker/npm state,
-# plus (by default) the one-time AgentCore Runtime deploy described above.
+# deploy-prod.sh instead. This script only touches sample-app's Docker
+# state, plus (by default) the one-time AgentCore Runtime deploy above.
 #
 # AgentCore is double-gated: .env's ENABLE_AGENTCORE must be true (this is
 # also what the backend and frontend Settings modal check to decide whether
@@ -22,33 +24,19 @@
 # flipping it off is enough to guarantee this script never touches AWS.
 #
 # Usage:
-#   ./deploy-dev.sh                 # sample-app + testrunner, agentcore agent mode (default)
-#                                    # Testrunner: http://localhost:5173 (Vite dev server)
-#   ./deploy-dev.sh --local         # same, but local agent mode (no AWS calls; runs
-#                                    # agent-runtime-local in Docker)
-#   ./deploy-dev.sh --sample-app    # sample-app only
-#   ./deploy-dev.sh --testrunner    # testrunner only (sample-app must already be running)
-#   ./deploy-dev.sh --down          # stop testrunner (npm processes) + sample-app (Docker)
-#                                    # — leaves any deployed AgentCore Runtime running in AWS
-#   ./deploy-dev.sh --destroy       # --down, plus tear down the AgentCore Runtime in AWS
-#                                    # if one was deployed (the Mode 1 counterpart to
-#                                    # deploy-prod.sh <target> --destroy)
+#   ./deploy-dev.sh              # sample-app + AgentCore Runtime deploy (default)
+#   ./deploy-dev.sh --local      # sample-app only, no AWS calls
+#   ./deploy-dev.sh --down       # stop sample-app (leaves any deployed
+#                                 # AgentCore Runtime running in AWS)
+#   ./deploy-dev.sh --destroy    # --down, plus tear down the AgentCore Runtime
+#                                 # in AWS if one was deployed (the Mode 1
+#                                 # counterpart to deploy-prod.sh <target> --destroy)
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Backend/frontend run as plain npm processes, not containers, so there's no
-# `docker compose down` to rely on for cleanup. PIDs are recorded here so
-# --down/--destroy can stop them later, from a different invocation of this
-# script (a different shell, possibly after a reboot of your terminal) — a
-# shell variable wouldn't survive that.
-NATIVE_PID_FILE="$SCRIPT_DIR/.deploy-dev-native.pids"
-NATIVE_LOG_DIR="$SCRIPT_DIR/.deploy-dev-native-logs"
-
-DO_SAMPLE_APP=1
-DO_TESTRUNNER=1
 DO_AGENTCORE=1
 DO_DOWN=0
 DO_DESTROY=0
@@ -60,13 +48,11 @@ die()  { err "$*"; exit 1; }
 
 for arg in "$@"; do
   case "$arg" in
-    --sample-app)     DO_SAMPLE_APP=1; DO_TESTRUNNER=0 ;;
-    --testrunner)     DO_SAMPLE_APP=0; DO_TESTRUNNER=1 ;;
     --local)          DO_AGENTCORE=0 ;;
     --down)           DO_DOWN=1 ;;
     --destroy)        DO_DOWN=1; DO_DESTROY=1 ;;
     -h|--help)
-      sed -n '2,32p' "$0" | sed 's/^#//'
+      sed -n '2,29p' "$0" | sed 's/^#//'
       exit 0
       ;;
     *) die "Unknown flag: $arg (see --help)" ;;
@@ -116,16 +102,22 @@ fi
 # account number shouldn't be committed. If it's still the placeholder (e.g.
 # a fresh clone, or a `git checkout` that reset a local edit), CDK tries to
 # assume a deploy role in that nonexistent account and fails. Keep it synced
-# to whatever account the current AWS credentials resolve to, so deploy/
-# destroy always target the right place without a manual edit first.
+# to whatever account the current AWS credentials resolve to, and to .env's
+# BROWSER_REGION (the var that governs AgentCore Runtime/Browser region
+# everywhere else in this project — see .env.example) — NOT the ambient
+# AWS_REGION/AWS_DEFAULT_REGION env var, which the agentcore CLI falls back
+# to on its own and can silently point a deploy at the wrong region if it
+# differs from what .env says.
 ensure_agentcore_account() {
   local agentcore_dir="$1"
   local targets_file="$agentcore_dir/aws-targets.json"
   [ -f "$targets_file" ] || return 0
 
-  local account
+  local account region
   account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
   [ -z "$account" ] && { warn "Could not resolve AWS account via 'aws sts get-caller-identity' — leaving $targets_file as-is."; return 1; }
+  region="$(grep -E '^BROWSER_REGION=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+  [ -z "$region" ] && region="ap-southeast-1"
 
   python3 -c "
 import json
@@ -136,6 +128,9 @@ for t in d:
     if t.get('account') != '$account':
         t['account'] = '$account'
         changed = True
+    if t.get('region') != '$region':
+        t['region'] = '$region'
+        changed = True
 if changed:
     json.dump(d, open(p, 'w'), indent=2)
     print('updated')
@@ -144,9 +139,7 @@ if changed:
 
 check_prereqs() {
   local missing=()
-  # Needed for sample-app (Docker) and the testrunner itself (npm).
   command -v docker >/dev/null 2>&1 || missing+=("docker")
-  command -v npm    >/dev/null 2>&1 || missing+=("npm")
   if [ ${#missing[@]} -gt 0 ]; then
     die "Missing required tools: ${missing[*]}"
   fi
@@ -162,29 +155,6 @@ check_prereqs() {
 down_sample_app() {
   log "Stopping sample-app"
   (cd sample-app && docker compose down)
-}
-
-down_testrunner() {
-  log "Stopping testrunner (backend + frontend npm processes, agent-runtime-local container)"
-  docker compose --profile local down
-  down_testrunner_native
-}
-
-# Stops the backend/frontend npm processes, tracked in NATIVE_PID_FILE.
-# Always safe to call — a no-op if the file doesn't exist or a listed PID
-# already died (e.g. process was killed manually, or the machine rebooted
-# since the last run).
-down_testrunner_native() {
-  [ -f "$NATIVE_PID_FILE" ] || return 0
-  local name pid
-  while IFS='=' read -r name pid; do
-    [ -z "$pid" ] && continue
-    if kill -0 "$pid" 2>/dev/null; then
-      log "Stopping native $name (pid $pid)"
-      kill "$pid" 2>/dev/null || true
-    fi
-  done < "$NATIVE_PID_FILE"
-  rm -f "$NATIVE_PID_FILE"
 }
 
 up_sample_app() {
@@ -203,13 +173,22 @@ deploy_agentcore() {
   local agentcore_dir="$SCRIPT_DIR/agent-runtime-agentcore/agentcore"
   [ -d "$agentcore_dir" ] || die "agent-runtime-agentcore/agentcore not found"
 
+  ensure_env
   ensure_agentcore_account "$agentcore_dir"
 
   log "npm install (agent-runtime-agentcore/agentcore/cdk)"
   (cd "$agentcore_dir/cdk" && npm install)
 
   log "agentcore deploy"
-  (cd "$agentcore_dir" && npx agentcore deploy)
+  # Run from the project root (one level up from agentcore/), not agentcore/
+  # itself — this CLI version enforces cwd == project root for `deploy`.
+  # agentcore.json's codeLocation ("app") resolves relative to this same
+  # root — see agent-runtime-agentcore/app/ (Dockerfile + package.json +
+  # src/, deliberately kept separate from agentcore/'s CDK tooling: this
+  # CLI zips codeLocation as a raw CDK asset with no filtering, so anything
+  # under agentcore/ — including its own actively-growing cdk.out build
+  # output — must never be inside it).
+  (cd "$agentcore_dir/.." && npx agentcore deploy)
 
   # The `agentcore` CLI writes the definitive runtime ARN to its own state
   # file after every successful deploy — read that instead of scraping CLI
@@ -231,7 +210,7 @@ print(runtimes[name]['runtimeArn'])
 
   if [ -z "$arn" ]; then
     warn "Could not read the deployed runtime ARN from $state_file."
-    warn "Copy it manually into .env as AGENTCORE_RUNTIME_ARN=... and re-run with --testrunner."
+    warn "Copy it manually into .env as AGENTCORE_RUNTIME_ARN=..."
     return 1
   fi
 
@@ -274,6 +253,7 @@ sys.exit(0 if d.get('targets') else 1)
 
   log "═══ Tearing down AgentCore Runtime '$runtime_name' (AWS) ═══"
 
+  ensure_env
   ensure_agentcore_account "$agentcore_dir"
 
   local backup
@@ -288,11 +268,8 @@ sys.exit(0 if d.get('targets') else 1)
 
   # Run from the project root (one level up from agentcore/), not agentcore/
   # itself — this CLI version enforces cwd == project root for `deploy`
-  # (unlike `remove agent` above, which works from either). Safe to do only
-  # because agentcore.json now has an empty runtimes list after the remove
-  # above: no container to build means no Dockerfile/codeLocation resolution
-  # happens, so this can't hit the codeLocation path-resolution bug that
-  # affects a fresh (non-teardown) deploy on this CLI version.
+  # (unlike `remove agent` above, which works from either). See
+  # deploy_agentcore's comment for why codeLocation is "app" to match.
   if ! (cd "$agentcore_dir/.." && npx agentcore deploy -y); then
     warn "agentcore deploy (teardown) failed — restoring agentcore.json. The AWS stack may still exist; check the AWS console."
     cp "$backup" "$agentcore_dir/agentcore.json"
@@ -305,70 +282,17 @@ sys.exit(0 if d.get('targets') else 1)
   log "AgentCore Runtime destroyed; agentcore.json restored for future deploys."
 }
 
-# Runs backend + frontend as plain npm processes (npm start / npm run dev)
-# instead of Docker builds — fast iteration, hot reload, no image rebuild.
-# agent-runtime-local (when --local is passed) stays in Docker — it needs
-# opencode-ai + a local Chromium, not installed on a bare host.
-up_testrunner() {
-  log "═══ Testrunner (backend + frontend, native$([ "$DO_AGENTCORE" = "0" ] && echo ' + agent-runtime-local in Docker')) ═══"
-  ensure_env
-
-  if [ "$DO_AGENTCORE" = "0" ]; then
-    log "AGENT_MODE=local — starting agent-runtime-local container"
-    docker compose --profile local up --build -d agent-runtime-local
-  fi
-
-  mkdir -p "$NATIVE_LOG_DIR"
-  : > "$NATIVE_PID_FILE"
-
-  if [ ! -d "$SCRIPT_DIR/backend/node_modules" ]; then
-    log "npm install (backend)"
-    (cd "$SCRIPT_DIR/backend" && npm install)
-  fi
-  if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
-    log "npm install (frontend)"
-    (cd "$SCRIPT_DIR/frontend" && npm install)
-  fi
-
-  log "Starting backend (npm start, port 4010)"
-  # .env holds placeholder values like AGENTCORE_RUNTIME_ARN=...:<region>:...
-  # — `<`/`>` make `source .env` fail (bash parses it as shell, not a plain
-  # KEY=VALUE file the way docker-compose's env_file does). Read it as plain
-  # data into an array instead, so no shell metacharacter in a value is ever
-  # re-interpreted.
-  local -a env_pairs=()
-  while IFS= read -r line; do
-    [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && env_pairs+=("$line")
-  done < "$SCRIPT_DIR/.env"
-  (
-    cd "$SCRIPT_DIR/backend"
-    env "${env_pairs[@]}" npm start
-  ) > "$NATIVE_LOG_DIR/backend.log" 2>&1 &
-  echo "backend=$!" >> "$NATIVE_PID_FILE"
-
-  log "Starting frontend (npm run dev, port 5173 — Vite dev server, hot reload)"
-  (cd "$SCRIPT_DIR/frontend" && exec npm run dev) > "$NATIVE_LOG_DIR/frontend.log" 2>&1 &
-  echo "frontend=$!" >> "$NATIVE_PID_FILE"
-
-  log "Testrunner (native): http://localhost:5173"
-  log "  Logs: $NATIVE_LOG_DIR/{backend,frontend}.log"
-  log "  If sample-app is running, set Target URL to http://localhost:8020 from Settings"
-  log "  (or set TARGET_URL in .env before the next run)."
-  log "  Stop with: ./deploy-dev.sh --down"
-}
-
 check_prereqs
 
 if [ "$DO_DOWN" = "1" ]; then
   down_sample_app
-  down_testrunner
   [ "$DO_DESTROY" = "1" ] && destroy_agentcore
   log "Done."
   exit 0
 fi
 
-[ "$DO_SAMPLE_APP" = "1" ] && up_sample_app
+up_sample_app
 [ "$DO_AGENTCORE" = "1" ] && deploy_agentcore
-[ "$DO_TESTRUNNER" = "1" ] && up_testrunner
 
 log "Done."
+log "Now run the testrunner yourself: npm run dev:backend / npm run dev:frontend (from the repo root)"
