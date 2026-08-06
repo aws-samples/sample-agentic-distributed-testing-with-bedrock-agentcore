@@ -62,7 +62,7 @@ export const agentcoreEnabled = process.env.ENABLE_AGENTCORE === 'true';
 
 export const config = {
   targetUrl:    _persisted.targetUrl  ?? (process.env.TARGET_URL    || 'http://localhost:8020'),
-  bedrockModel: _persisted.bedrockModel ?? (process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-6'),
+  bedrockModel: _persisted.bedrockModel ?? (process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-5'),
   // Force 'local' when agentcore is disabled at the deploy level, even if a
   // stale config.json (from before ENABLE_AGENTCORE was turned off) says
   // otherwise — persisted state should never re-enable a mode this

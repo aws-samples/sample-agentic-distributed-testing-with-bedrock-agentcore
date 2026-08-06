@@ -25,7 +25,7 @@ const ASSERT_SERVER = join(__dirname, 'assert-server.js');
 
 const PORT           = process.env.PORT           || 8080;
 const BEDROCK_REGION = process.env.BEDROCK_REGION || process.env.AWS_REGION || 'ap-southeast-1';
-const BEDROCK_MODEL  = process.env.BEDROCK_MODEL  || 'amazon-bedrock/us.anthropic.claude-sonnet-4-6';
+const BEDROCK_MODEL  = process.env.BEDROCK_MODEL  || 'amazon-bedrock/us.anthropic.claude-sonnet-5';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));

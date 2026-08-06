@@ -173,7 +173,7 @@ For Mode 2, `./deploy-prod.sh <target> --destroy` runs `terraform destroy` for t
 | `TARGET_URL` | `http://localhost:8020` | Application under test |
 | `AGENT_MODE` | `agentcore` | `agentcore` or `local` |
 | `ENABLE_AGENTCORE` | `true` | Whether the `agentcore` mode exists on this deployment at all. When `false`, the backend refuses to switch into `agentcore` mode (falling back to `local`) and the frontend Settings modal hides the Agent Mode picker and AgentCore Region field entirely. `deploy-dev.sh` sets this to `true` automatically after a successful AgentCore Runtime deploy (its default, unless you pass `--local`). |
-| `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID used for agent inference, test generation, and health checks |
+| `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | Bedrock model ID used for agent inference, test generation, and health checks |
 | `BEDROCK_REGION` | `us-east-1` | AWS region for Bedrock model inference |
 | `BROWSER_REGION` | `ap-southeast-1` | AWS region for AgentCore Runtime + AgentCore Browser (defaults to the EC2 host's own region when running on EC2, if unset) |
 | `AGENTCORE_RUNTIME_ARN` | — | Required for `agentcore` mode; the ARN of your deployed AgentCore Runtime. Filled in automatically by `deploy-dev.sh` |

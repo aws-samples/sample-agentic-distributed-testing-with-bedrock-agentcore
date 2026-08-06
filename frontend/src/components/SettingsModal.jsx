@@ -8,22 +8,13 @@ import Icon from './Icon'
 // at the bottom of the dropdown accepts any id for models not listed.
 const MODEL_GROUPS = [
   { label: 'Anthropic Claude', models: [
+    'global.anthropic.claude-opus-5',
+    'global.anthropic.claude-sonnet-5',
     'global.anthropic.claude-opus-4-8',
     'global.anthropic.claude-opus-4-7',
-    'global.anthropic.claude-sonnet-4-6',
-    'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-  ]},
-  { label: 'Amazon Nova', models: [
-    'amazon.nova-2-lite-v1:0',
-    'amazon.nova-2-lite-v1:0:256k',
-    'amazon.nova-pro-v1:0',
-    'amazon.nova-pro-v1:0:300k',
-    'amazon.nova-2-sonic-v1:0',
   ]},
   { label: 'OpenAI GPT-OSS', models: [
     'openai.gpt-oss-120b-1:0',
-    'openai.gpt-oss-20b-1:0',
     'openai.gpt-oss-safeguard-120b',
   ]},
   { label: 'Moonshot Kimi', models: [
@@ -31,27 +22,20 @@ const MODEL_GROUPS = [
     'moonshotai.kimi-k2.5',
   ]},
   { label: 'MiniMax', models: [
-    'minimax.minimax-m2',
-    'minimax.minimax-m2.1',
     'minimax.minimax-m2.5',
   ]},
   { label: 'Alibaba Qwen', models: [
     'qwen.qwen3-coder-next',
     'qwen.qwen3-next-80b-a3b',
-    'qwen.qwen3-32b-v1:0',
-    'qwen.qwen3-vl-235b-a22b',
-    'qwen.qwen3-coder-30b-a3b-v1:0',
   ]},
   { label: 'Z.ai GLM', models: [
-    'zai.glm-5',
-    'zai.glm-4.7',
-    'zai.glm-4.7-flash',
+    'zai.glm-5'
   ]},
 ]
 const KNOWN_MODELS = MODEL_GROUPS.flatMap(g => g.models)
 
 export default function SettingsModal({ open, onClose, currentModel, currentMode, api, onSave, theme, onToggleTheme }) {
-  const [modelSelect, setModelSelect] = useState('global.anthropic.claude-sonnet-4-6')
+  const [modelSelect, setModelSelect] = useState('global.anthropic.claude-sonnet-5')
   const [modelCustom, setModelCustom] = useState('')
   // Deploy-time switch, not user-settable — hydrated from /api/config below.
   // Agent Mode itself is set via AGENT_MODE in .env (deploy-time, an
@@ -83,7 +67,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       setModelSelect('__custom__')
       setModelCustom(cur)
     } else {
-      setModelSelect('global.anthropic.claude-sonnet-4-6')
+      setModelSelect('global.anthropic.claude-sonnet-5')
     }
     setHealthStatus('')
     setRegionDirty(false)
