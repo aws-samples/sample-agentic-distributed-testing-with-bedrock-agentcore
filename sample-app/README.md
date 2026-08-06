@@ -40,7 +40,7 @@ cd backend
 mvn spring-boot:run
 ```
 
-The backend starts on http://localhost:8080 and creates `carddemo.db` (SQLite) with seed data automatically.
+The backend starts on http://localhost:8021 and creates `carddemo.db` (SQLite) with seed data automatically.
 
 ### 2. Start the Frontend
 
@@ -50,7 +50,7 @@ npm install
 npm run dev
 ```
 
-The frontend starts on http://localhost:3000 and proxies API calls to the backend.
+The frontend starts on http://localhost:8020 and proxies API calls to the backend.
 
 ### 3. Login
 
