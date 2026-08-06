@@ -19,8 +19,9 @@ services:
       # and .env.example.
       ENABLE_AGENTCORE: "${ENABLE_AGENTCORE:-true}"
       LOCAL_RUNTIME_URL: "http://localhost:4020"
-      # S3 bucket for evidence snapshots shown in Analysis page
-      S3_SNAPSHOT_BUCKET: "${S3_SNAPSHOT_BUCKET:-paperclip-testrunner-snapshots-ap-southeast-1}"
+      # S3 bucket for evidence snapshots shown in Analysis page. Leave unset
+      # to disable snapshot capture entirely — see .env.example.
+      S3_SNAPSHOT_BUCKET: "${S3_SNAPSHOT_BUCKET:-}"
       S3_SNAPSHOT_REGION: "${S3_SNAPSHOT_REGION:-ap-southeast-1}"
     volumes:
       # Persists the SQLite DB (test cases, run archive) plus config.json /

@@ -22,7 +22,11 @@
 #   ./deploy-dev.sh --local         # same, but local agent mode (no AWS calls)
 #   ./deploy-dev.sh --sample-app    # sample-app only
 #   ./deploy-dev.sh --testrunner    # testrunner only (sample-app must already be running)
-#   ./deploy-dev.sh --down          # stop + remove containers from both stacks
+#   ./deploy-dev.sh --down          # stop + remove containers from both stacks (leaves
+#                                    # any deployed AgentCore Runtime running in AWS)
+#   ./deploy-dev.sh --destroy       # --down, plus tear down the AgentCore Runtime in AWS
+#                                    # if one was deployed (the Mode 1 counterpart to
+#                                    # deploy-prod.sh <target> --destroy)
 #
 set -euo pipefail
 
@@ -33,6 +37,7 @@ DO_SAMPLE_APP=1
 DO_TESTRUNNER=1
 DO_AGENTCORE=1
 DO_DOWN=0
+DO_DESTROY=0
 
 log()  { printf '\033[1;36m[deploy-dev]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[deploy-dev]\033[0m %s\n' "$*" >&2; }
@@ -45,8 +50,9 @@ for arg in "$@"; do
     --testrunner)     DO_SAMPLE_APP=0; DO_TESTRUNNER=1 ;;
     --local)          DO_AGENTCORE=0 ;;
     --down)           DO_DOWN=1 ;;
+    --destroy)        DO_DOWN=1; DO_DESTROY=1 ;;
     -h|--help)
-      sed -n '2,20p' "$0" | sed 's/^#//'
+      sed -n '2,29p' "$0" | sed 's/^#//'
       exit 0
       ;;
     *) die "Unknown flag: $arg (see --help)" ;;
@@ -91,17 +97,49 @@ if [ "$DO_AGENTCORE" = "1" ] && ! agentcore_enabled_in_env; then
   DO_AGENTCORE=0
 fi
 
+# aws-targets.json ships checked into git with a placeholder account ID
+# ("000000000000" — see the file's own "description" field) since a real
+# account number shouldn't be committed. If it's still the placeholder (e.g.
+# a fresh clone, or a `git checkout` that reset a local edit), CDK tries to
+# assume a deploy role in that nonexistent account and fails. Keep it synced
+# to whatever account the current AWS credentials resolve to, so deploy/
+# destroy always target the right place without a manual edit first.
+ensure_agentcore_account() {
+  local agentcore_dir="$1"
+  local targets_file="$agentcore_dir/aws-targets.json"
+  [ -f "$targets_file" ] || return 0
+
+  local account
+  account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+  [ -z "$account" ] && { warn "Could not resolve AWS account via 'aws sts get-caller-identity' — leaving $targets_file as-is."; return 1; }
+
+  python3 -c "
+import json
+p = '$targets_file'
+d = json.load(open(p))
+changed = False
+for t in d:
+    if t.get('account') != '$account':
+        t['account'] = '$account'
+        changed = True
+if changed:
+    json.dump(d, open(p, 'w'), indent=2)
+    print('updated')
+"
+}
+
 check_prereqs() {
   local missing=()
   command -v docker >/dev/null 2>&1 || missing+=("docker")
   if [ ${#missing[@]} -gt 0 ]; then
     die "Missing required tools: ${missing[*]}"
   fi
-  if [ "$DO_AGENTCORE" = "1" ]; then
+  if [ "$DO_AGENTCORE" = "1" ] || [ "$DO_DESTROY" = "1" ]; then
     command -v npm       >/dev/null 2>&1 || die "npm is required for agentcore mode (or pass --local)"
     command -v npx       >/dev/null 2>&1 || die "npx is required for agentcore mode (or pass --local)"
     command -v agentcore >/dev/null 2>&1 || die "agentcore CLI not found on PATH (npm install -g @aws/agentcore) — required for agentcore mode (or pass --local)"
     command -v python3   >/dev/null 2>&1 || die "python3 is required for agentcore mode (parses the deployed runtime ARN)"
+    command -v aws        >/dev/null 2>&1 || die "aws CLI is required for agentcore mode (resolves your account ID for aws-targets.json)"
   fi
 }
 
@@ -130,6 +168,8 @@ deploy_agentcore() {
   log "═══ AgentCore Runtime (AWS) ═══"
   local agentcore_dir="$SCRIPT_DIR/agent-runtime-agentcore/agentcore"
   [ -d "$agentcore_dir" ] || die "agent-runtime-agentcore/agentcore not found"
+
+  ensure_agentcore_account "$agentcore_dir"
 
   log "npm install (agent-runtime-agentcore/agentcore/cdk)"
   (cd "$agentcore_dir/cdk" && npm install)
@@ -169,6 +209,68 @@ print(runtimes[name]['runtimeArn'])
   log "Wired AGENTCORE_RUNTIME_ARN, AGENT_MODE=agentcore, and ENABLE_AGENTCORE=true into .env"
 }
 
+# Tears down the AgentCore Runtime deployed by deploy_agentcore, if any —
+# the remove-then-redeploy flow documented by the agentcore CLI itself
+# (agent-runtime-agentcore/agentcore/node_modules/@aws/agentcore's
+# AGENTS.md): removing the runtime from agentcore.json and re-running
+# `agentcore deploy` destroys the underlying CDK stack. agentcore.json is
+# checked into git, so this restores it afterward — otherwise the working
+# tree would end up dirty, and a future deploy-dev.sh run would have
+# nothing left to redeploy.
+destroy_agentcore() {
+  local agentcore_dir="$SCRIPT_DIR/agent-runtime-agentcore/agentcore"
+  local state_file="$agentcore_dir/.cli/deployed-state.json"
+
+  if [ ! -f "$state_file" ] || ! python3 -c "
+import json, sys
+d = json.load(open('$state_file'))
+sys.exit(0 if d.get('targets') else 1)
+" 2>/dev/null; then
+    log "No deployed AgentCore Runtime found — nothing to destroy in AWS."
+    return 0
+  fi
+
+  local runtime_name
+  runtime_name="$(python3 -c "import json; print(json.load(open('$agentcore_dir/agentcore.json'))['runtimes'][0]['name'])" 2>/dev/null || true)"
+  if [ -z "$runtime_name" ]; then
+    warn "Could not read runtime name from agentcore.json — skipping AgentCore teardown."
+    warn "Destroy it manually: cd $agentcore_dir && npx agentcore remove agent --name <name> -y && npx agentcore deploy -y"
+    return 1
+  fi
+
+  log "═══ Tearing down AgentCore Runtime '$runtime_name' (AWS) ═══"
+
+  ensure_agentcore_account "$agentcore_dir"
+
+  local backup
+  backup="$(mktemp)"
+  cp "$agentcore_dir/agentcore.json" "$backup"
+
+  if ! (cd "$agentcore_dir" && npx agentcore remove agent --name "$runtime_name" -y); then
+    warn "agentcore remove agent failed — leaving agentcore.json untouched."
+    rm -f "$backup"
+    return 1
+  fi
+
+  # Run from the project root (one level up from agentcore/), not agentcore/
+  # itself — this CLI version enforces cwd == project root for `deploy`
+  # (unlike `remove agent` above, which works from either). Safe to do only
+  # because agentcore.json now has an empty runtimes list after the remove
+  # above: no container to build means no Dockerfile/codeLocation resolution
+  # happens, so this can't hit the codeLocation path-resolution bug that
+  # affects a fresh (non-teardown) deploy on this CLI version.
+  if ! (cd "$agentcore_dir/.." && npx agentcore deploy -y); then
+    warn "agentcore deploy (teardown) failed — restoring agentcore.json. The AWS stack may still exist; check the AWS console."
+    cp "$backup" "$agentcore_dir/agentcore.json"
+    rm -f "$backup"
+    return 1
+  fi
+
+  cp "$backup" "$agentcore_dir/agentcore.json"
+  rm -f "$backup"
+  log "AgentCore Runtime destroyed; agentcore.json restored for future deploys."
+}
+
 up_testrunner() {
   log "═══ Testrunner (backend + frontend$([ "$DO_AGENTCORE" = "0" ] && echo ' + agent-runtime-local')) ═══"
   ensure_env
@@ -189,6 +291,7 @@ check_prereqs
 if [ "$DO_DOWN" = "1" ]; then
   down_sample_app
   down_testrunner
+  [ "$DO_DESTROY" = "1" ] && destroy_agentcore
   log "Done."
   exit 0
 fi

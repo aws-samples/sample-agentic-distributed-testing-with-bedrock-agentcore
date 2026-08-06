@@ -1,8 +1,1 @@
-[
-  {
-    "name": "default",
-    "description": "REPLACE account with your 12-digit AWS account ID before running `agentcore deploy` / `cdk deploy` (the account field must be exactly 12 digits or the CLI's schema validation will reject this file)",
-    "account": "000000000000",
-    "region": "ap-southeast-1"
-  }
-]
+[]

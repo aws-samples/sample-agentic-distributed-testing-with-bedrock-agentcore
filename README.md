@@ -101,6 +101,7 @@ Two ways to run this repo, aimed at two different situations:
 | **How** | `docker compose` on one host | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
 | **Where** | `docker-compose.yml` (repo root) | `terraform/` |
 | **Setup** | `./deploy-dev.sh` (or `docker compose up --build`) | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
+| **Cleanup** | `./deploy-dev.sh --destroy` — see [Cleaning Up](#cleaning-up) below | `./deploy-prod.sh <target> --destroy` |
 
 ### Mode 1 — Dev (local Docker Compose)
 
@@ -118,8 +119,13 @@ cp .env.example .env
 # Prefer local agent mode instead (no AWS calls, uses agent-runtime-local)?
 ./deploy-dev.sh --local
 
-# Tear down when you're done:
+# Stop the containers when you're done (leaves any deployed AgentCore
+# Runtime running in AWS — see Cleaning Up below):
 ./deploy-dev.sh --down
+
+# Stop the containers AND tear down the AgentCore Runtime in AWS if one
+# was deployed:
+./deploy-dev.sh --destroy
 ```
 
 `deploy-dev.sh` just wraps the `docker compose up --build` calls below (`--sample-app`/`--testrunner` flags deploy either alone; `--local` skips the AgentCore deploy); run them directly if you'd rather not use the script:
@@ -131,6 +137,18 @@ docker compose --profile local up --build                # backend + frontend + 
 ```
 
 Everything runs as sibling containers on one Docker host (SQLite for state, S3 for evidence snapshots), talking to each other over `network_mode: host` — no ALB, no CloudFront, no auth in front of the UI. This is the fastest way to try the project or iterate on it, in either agent mode.
+
+### Cleaning Up
+
+Since `deploy-dev.sh` defaults to `AGENT_MODE=agentcore`, a plain run deploys a real AgentCore Runtime to AWS — `--down` alone only stops the local Docker containers and leaves that Runtime (and its cost) running. Use `--destroy` instead when you want both:
+
+```bash
+./deploy-dev.sh --destroy   # stop the containers AND tear down the AgentCore Runtime if one was deployed
+```
+
+This runs the same remove-then-redeploy flow documented for the `agentcore` CLI (remove the runtime from `agent-runtime-agentcore/agentcore/agentcore.json`, `agentcore deploy` to destroy the underlying CDK stack, then restore `agentcore.json` so the next `./deploy-dev.sh` has something to redeploy). Safe to run even if you only ever used `--local` — it detects there's nothing deployed and skips the AWS step.
+
+For Mode 2, `./deploy-prod.sh <target> --destroy` runs `terraform destroy` for that stack (see [Deploying to AWS](#deploying-to-aws) and `terraform/README.md`'s Cleanup section).
 
 ## Environment Variables
 
