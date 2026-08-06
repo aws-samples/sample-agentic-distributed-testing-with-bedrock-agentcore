@@ -38,7 +38,9 @@ Every test case run also captures S3 evidence screenshots for human review on th
 ├── terraform/                  # Mode 2 (prod): EKS (Fargate) + ALB + CloudFront + ECR
 │   ├── testrunner/             # Deploys backend + frontend + agent-runtime-local
 │   └── sample-app/             # Deploys the CardDemo sample app
-└── docker-compose.yml          # Mode 1 (dev): runs backend + frontend + agent-runtime-local on one host
+└── docker-compose.yml          # Mode 1 (dev): agent-runtime-local (--local only); deploy-dev.sh
+                                 # runs backend/frontend as native npm processes instead, and
+                                 # sample-app/docker-compose.yml brings up the app under test
 ```
 
 ## Architecture
@@ -98,45 +100,41 @@ Two ways to run this repo, aimed at two different situations:
 | | Mode 1 — Dev | Mode 2 — Prod |
 |---|---|---|
 | **Use case** | Local development, quick demos on your own machine | A durable, publicly-reachable deployment |
-| **How** | `docker compose` on one host | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
-| **Where** | `docker-compose.yml` (repo root) | `terraform/` |
-| **Setup** | `./deploy-dev.sh` (or `docker compose up --build`) | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
+| **How** | testrunner as native `npm` processes, sample-app via `docker compose` | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
+| **Where** | `docker-compose.yml` (sample-app + agent-runtime-local only) | `terraform/` |
+| **Setup** | `./deploy-dev.sh` | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
 | **Cleanup** | `./deploy-dev.sh --destroy` — see [Cleaning Up](#cleaning-up) below | `./deploy-prod.sh <target> --destroy` |
 
-### Mode 1 — Dev (local Docker Compose)
+### Mode 1 — Dev
 
 ```bash
 # Copy the example env and adjust as needed
 cp .env.example .env
 
-# Run sample-app + testrunner (backend + frontend), agentcore agent mode by
-# default — this deploys agent-runtime-agentcore to AWS AgentCore Runtime
-# the first time (real AWS resources, costs money while it exists).
+# Run sample-app (Docker) + testrunner (backend/frontend as native npm
+# processes), agentcore agent mode by default — this deploys
+# agent-runtime-agentcore to AWS AgentCore Runtime the first time (real AWS
+# resources, costs money while it exists).
 ./deploy-dev.sh
-# Testrunner: http://localhost:5175 — Target URL already defaults to the
-# sample app at http://localhost:8020, so no Settings change needed.
+# Testrunner: http://localhost:5173 (Vite dev server, hot reload) — Target
+# URL already defaults to the sample app at http://localhost:8020, so no
+# Settings change needed.
 
-# Prefer local agent mode instead (no AWS calls, uses agent-runtime-local)?
+# Prefer local agent mode instead (no AWS calls; runs agent-runtime-local
+# in Docker — it needs opencode-ai + a local Chromium, not installed on a
+# bare host)?
 ./deploy-dev.sh --local
 
-# Stop the containers when you're done (leaves any deployed AgentCore
-# Runtime running in AWS — see Cleaning Up below):
+# Stop everything when you're done (leaves any deployed AgentCore Runtime
+# running in AWS — see Cleaning Up below):
 ./deploy-dev.sh --down
 
-# Stop the containers AND tear down the AgentCore Runtime in AWS if one
-# was deployed:
+# Stop everything AND tear down the AgentCore Runtime in AWS if one was
+# deployed:
 ./deploy-dev.sh --destroy
 ```
 
-`deploy-dev.sh` just wraps the `docker compose up --build` calls below (`--sample-app`/`--testrunner` flags deploy either alone; `--local` skips the AgentCore deploy); run them directly if you'd rather not use the script:
-
-```bash
-docker compose up --build                               # backend + frontend, agentcore agent mode
-docker compose --profile local up --build                # backend + frontend + local agent runtime, local agent mode
-(cd sample-app && docker compose up --build)             # the app under test
-```
-
-Everything runs as sibling containers on one Docker host (SQLite for state, S3 for evidence snapshots), talking to each other over `network_mode: host` — no ALB, no CloudFront, no auth in front of the UI. This is the fastest way to try the project or iterate on it, in either agent mode.
+Backend runs via `npm start` (port 4010), frontend via `npm run dev` (Vite dev server, port 5173, hot reload) — `deploy-dev.sh` runs `npm install` for each on first use. sample-app (Spring Boot + Maven) and, under `--local`, agent-runtime-local (needs `opencode-ai` and a local Chromium) stay in Docker regardless, since a bare host typically doesn't have a JDK or those tools installed. Backend/frontend logs land in `.deploy-dev-native-logs/` (gitignored); their PIDs are tracked in `.deploy-dev-native.pids` so `--down`/`--destroy` can stop them from a later invocation of the script. State persists to SQLite (`backend/src/state/data.db`) and S3 for evidence snapshots — no ALB, no CloudFront, no auth in front of the UI.
 
 ### Cleaning Up
 

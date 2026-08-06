@@ -53,11 +53,11 @@ const KNOWN_MODELS = MODEL_GROUPS.flatMap(g => g.models)
 export default function SettingsModal({ open, onClose, currentModel, currentMode, api, onSave, theme, onToggleTheme }) {
   const [modelSelect, setModelSelect] = useState('global.anthropic.claude-sonnet-4-6')
   const [modelCustom, setModelCustom] = useState('')
-  const [agentMode, setAgentMode] = useState('local')
   // Deploy-time switch, not user-settable — hydrated from /api/config below.
-  // When false, AgentCore isn't wired up on this deployment, so both the
-  // Agent Mode choice and the AgentCore Region field are hidden entirely
-  // rather than shown as a dead-end option.
+  // Agent Mode itself is set via AGENT_MODE in .env (deploy-time, an
+  // engineer's call, not a per-session UI choice) — see .env.example and
+  // deploy-dev.sh. This only gates whether the AgentCore Region field below
+  // is meaningful to show at all.
   const [agentcoreEnabled, setAgentcoreEnabled] = useState(false)
   const [healthStatus, setHealthStatus] = useState('')
   const [healthColor, setHealthColor] = useState('var(--text-muted)')
@@ -75,7 +75,6 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
 
   useEffect(() => {
     if (!open) return
-    setAgentMode(currentMode || 'local')
     const cur = currentModel || ''
     if (KNOWN_MODELS.includes(cur)) {
       setModelSelect(cur)
@@ -157,7 +156,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         console.error('Failed to save regions:', e)
       }
     }
-    await onSave({ model, agentMode })
+    await onSave({ model })
     onClose()
   }
 
@@ -200,48 +199,17 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         </button>
       </div>
 
-      {/* Agent Mode — only shown once an AgentCore Runtime is actually
-          deployed for this environment (ENABLE_AGENTCORE=true); otherwise
-          'local' is the only real choice, so the picker is just noise. */}
-      {agentcoreEnabled && (
+      {/* Agent Mode — read-only. Set via AGENT_MODE in .env (deploy-time,
+          an engineer's call) — see .env.example and deploy-dev.sh. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Agent Mode</label>
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          {[
-            { value: 'local', label: 'Local', sub: 'OpenCode + Chrome DevTools MCP' },
-            { value: 'agentcore', label: 'AgentCore Runtime', sub: 'OpenCode on AgentCore + AgentCore Browser' },
-          ].map(opt => (
-            <label
-              key={opt.value}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                cursor: 'pointer',
-                padding: '7px 12px',
-                border: `1px solid ${agentMode === opt.value ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 6,
-                flex: 1,
-                transition: 'border-color 0.15s',
-              }}
-            >
-              <input
-                type="radio"
-                name="agentMode"
-                value={opt.value}
-                checked={agentMode === opt.value}
-                onChange={() => setAgentMode(opt.value)}
-                style={{ accentColor: 'var(--accent)' }}
-              />
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 12 }}>{opt.label}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{opt.sub}</div>
-              </div>
-            </label>
-          ))}
+        <div style={{ fontSize: 12, padding: '7px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          {currentMode === 'agentcore' ? 'AgentCore Runtime' : 'Local'}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+          Set via <code>AGENT_MODE</code> at deploy time, not changeable from here.
         </div>
       </div>
-      )}
 
       {/* Model */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -307,8 +275,9 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         </div>
       </div>
 
-      {/* AgentCore region — Runtime + Browser. Same gate as the Agent Mode
-          picker above: meaningless without a deployed AgentCore Runtime. */}
+      {/* AgentCore region — Runtime + Browser. Hidden unless an AgentCore
+          Runtime is actually deployed for this environment
+          (ENABLE_AGENTCORE=true) — meaningless otherwise. */}
       {agentcoreEnabled && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>

@@ -33,22 +33,14 @@ export default function NavBar({ rightContent }) {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSaveSettings = useCallback(async ({ model, agentMode }) => {
-    if (agentMode !== state.agentMode) {
-      try {
-        await api.updateMode(agentMode)
-        dispatch({ type: 'SET_CONFIG', agentMode })
-      } catch (e) {
-        console.error('Failed to update agent mode:', e)
-      }
-    }
+  const handleSaveSettings = useCallback(async ({ model }) => {
     try {
       await api.updateModel(model)
       dispatch({ type: 'SET_CONFIG', model })
     } catch (e) {
       console.error('Failed to update model:', e)
     }
-  }, [api, dispatch, state.agentMode])
+  }, [api, dispatch])
 
   return (
     <header className={styles.header}>
