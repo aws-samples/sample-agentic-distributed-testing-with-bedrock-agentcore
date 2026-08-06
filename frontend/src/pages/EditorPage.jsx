@@ -333,8 +333,10 @@ export default function EditorPage() {
     setSelectedTcId(null)
   }
 
-  const handleTcClick = (tcId) => {
-    setSelectedTcId(prev => prev === tcId ? null : tcId)
+  const handleTcClick = (tcId, modName) => {
+    const idx = doc.modules.findIndex(m => m.name === modName)
+    if (idx !== -1) setSelectedModIdx(idx)
+    setSelectedTcId(prev => (prev === tcId && selectedModIdx === idx) ? null : tcId)
   }
 
   const handleDeleteMod = (modName) => {

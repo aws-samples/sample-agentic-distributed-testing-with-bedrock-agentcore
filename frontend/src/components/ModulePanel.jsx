@@ -87,7 +87,7 @@ export default function ModulePanel({
   }
 
   // TC expansion (only when showTcDetail)
-  const handleTcClick = (tcId) => {
+  const handleTcClick = (tcId, mod) => {
     if (showTcDetail) {
       setExpandedTcs(prev => {
         const next = new Set(prev)
@@ -95,7 +95,7 @@ export default function ModulePanel({
         return next
       })
     }
-    onTcClick?.(tcId)
+    onTcClick?.(tcId, mod)
   }
 
   const allTcIds = () => Object.values(testCases).flat().map(t => t.id)
@@ -199,7 +199,7 @@ export default function ModulePanel({
                       <div key={tc.id} className={styles.tcGroup}>
                         <div
                           className={`${styles.tcItem}${isSelected ? ' ' + styles.tcSelected : ''}${tcExpanded ? ' ' + styles.tcExpanded : ''}`}
-                          onClick={() => handleTcClick(tc.id)}
+                          onClick={() => handleTcClick(tc.id, mod)}
                         >
                           {showTcDetail && (
                             <span className={styles.tcChevron}>{tcExpanded ? '▾' : '▸'}</span>
