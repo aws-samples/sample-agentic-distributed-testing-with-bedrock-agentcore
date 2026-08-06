@@ -12,7 +12,7 @@ Structure:
 - `sample-app/` — CardDemo banking app (Spring Boot + React); the application under test, not part of the test runner stack
 - `docker-compose.yml` — Runs backend + frontend + agent-runtime-local (profile: local)
 - `terraform/` — Mode 2 (prod) deployment: EKS (Fargate) + ALB + CloudFront + ECR for the testrunner and sample-app stacks; see `terraform/README.md`
-- `deploy-local.sh` / `deploy-prod.sh` — automate Mode 1 (dev, local Docker Compose) and Mode 2 (prod, Terraform/EKS) respectively; see the root `README.md`'s Deployment Modes section
+- `deploy-dev.sh` / `deploy-prod.sh` — automate Mode 1 (dev, local Docker Compose) and Mode 2 (prod, Terraform/EKS) respectively; see the root `README.md`'s Deployment Modes section
 
 The frontend, backend, and sample-app are **intentionally simple Docker deployments**. The architectural interest is in the agent runtime layer.
 

@@ -75,9 +75,9 @@ variable "target_url" {
 }
 
 variable "agent_mode" {
-  description = "Which runtime executes tests: 'local' (agent-runtime-local container, deployed by this stack) or 'agentcore' (AWS AgentCore Runtime, deployed separately via agent-runtime-agentcore/agentcore/)."
+  description = "Which runtime executes tests: 'agentcore' (AWS AgentCore Runtime, deployed separately via agent-runtime-agentcore/agentcore/) or 'local' (agent-runtime-local container, deployed by this stack)."
   type        = string
-  default     = "local"
+  default     = "agentcore"
 
   validation {
     condition     = contains(["local", "agentcore"], var.agent_mode)

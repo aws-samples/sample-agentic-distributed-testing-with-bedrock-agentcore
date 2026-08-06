@@ -12,7 +12,7 @@
 #      running image)
 #
 # This is NOT the Mode 1 (dev) flow — for a local Docker Compose stack on
-# one host, see deploy-local.sh instead. This script provisions real AWS
+# one host, see deploy-dev.sh instead. This script provisions real AWS
 # infrastructure (EKS, ALB, CloudFront, ECR, Cognito, etc) and costs money
 # while it's running.
 #

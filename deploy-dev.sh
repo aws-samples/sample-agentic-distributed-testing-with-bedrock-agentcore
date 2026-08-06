@@ -1,31 +1,28 @@
 #!/usr/bin/env bash
 #
 # Automates Mode 1 (dev) from the README: sample-app + testrunner as sibling
-# Docker containers on this host, plus an optional one-time AgentCore
-# Runtime deploy if you want AGENT_MODE=agentcore instead of local.
+# Docker containers on this host. Defaults to AGENT_MODE=agentcore, which
+# means a plain run deploys agent-runtime-agentcore to AWS AgentCore Runtime
+# (real AWS resources, costs money while the Runtime exists) — pass --local
+# to skip AWS entirely and use the agent-runtime-local container instead.
 #
 # This is NOT the Mode 2 (prod) flow — for EKS + ALB + CloudFront, see
-# deploy-prod.sh instead. This script only touches local Docker state
-# (and, with --with-agentcore, provisions real AWS resources for the
-# AgentCore Runtime — everything else here is free and fully reversible).
+# deploy-prod.sh instead. This script only touches local Docker state, plus
+# (by default) the one-time AgentCore Runtime deploy described above.
 #
 # AgentCore is double-gated: .env's ENABLE_AGENTCORE must be true (this is
 # also what the backend and frontend Settings modal check to decide whether
 # to expose agentcore as a mode at all — see backend/src/state/store.js and
-# frontend/src/components/SettingsModal.jsx) AND you must pass
-# --with-agentcore. ENABLE_AGENTCORE=false skips the deploy step even if
-# --with-agentcore is passed, so flipping it off is enough to guarantee this
-# script never touches AWS.
+# frontend/src/components/SettingsModal.jsx) AND --local must not be passed.
+# ENABLE_AGENTCORE=false skips the AWS deploy step even without --local, so
+# flipping it off is enough to guarantee this script never touches AWS.
 #
 # Usage:
-#   ./deploy-local.sh                  # sample-app + testrunner, local agent mode
-#   ./deploy-local.sh --sample-app     # sample-app only
-#   ./deploy-local.sh --testrunner     # testrunner only (sample-app must already be running)
-#   ./deploy-local.sh --with-agentcore # also deploy agent-runtime-agentcore to AWS
-#                                      # (only if ENABLE_AGENTCORE=true in .env),
-#                                      # wire AGENTCORE_RUNTIME_ARN into .env, and
-#                                      # bring the testrunner up with AGENT_MODE=agentcore
-#   ./deploy-local.sh --down           # stop + remove containers from both stacks
+#   ./deploy-dev.sh                 # sample-app + testrunner, agentcore agent mode (default)
+#   ./deploy-dev.sh --local         # same, but local agent mode (no AWS calls)
+#   ./deploy-dev.sh --sample-app    # sample-app only
+#   ./deploy-dev.sh --testrunner    # testrunner only (sample-app must already be running)
+#   ./deploy-dev.sh --down          # stop + remove containers from both stacks
 #
 set -euo pipefail
 
@@ -34,19 +31,19 @@ cd "$SCRIPT_DIR"
 
 DO_SAMPLE_APP=1
 DO_TESTRUNNER=1
-DO_AGENTCORE=0
+DO_AGENTCORE=1
 DO_DOWN=0
 
-log()  { printf '\033[1;36m[deploy-local]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[deploy-local]\033[0m %s\n' "$*" >&2; }
-err()  { printf '\033[1;31m[deploy-local]\033[0m %s\n' "$*" >&2; }
+log()  { printf '\033[1;36m[deploy-dev]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[deploy-dev]\033[0m %s\n' "$*" >&2; }
+err()  { printf '\033[1;31m[deploy-dev]\033[0m %s\n' "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
 for arg in "$@"; do
   case "$arg" in
     --sample-app)     DO_SAMPLE_APP=1; DO_TESTRUNNER=0 ;;
     --testrunner)     DO_SAMPLE_APP=0; DO_TESTRUNNER=1 ;;
-    --with-agentcore) DO_AGENTCORE=1 ;;
+    --local)          DO_AGENTCORE=0 ;;
     --down)           DO_DOWN=1 ;;
     -h|--help)
       sed -n '2,20p' "$0" | sed 's/^#//'
@@ -89,8 +86,8 @@ agentcore_enabled_in_env() {
 }
 
 if [ "$DO_AGENTCORE" = "1" ] && ! agentcore_enabled_in_env; then
-  warn "--with-agentcore was passed but ENABLE_AGENTCORE is not true in .env — skipping the AgentCore deploy."
-  warn "Set ENABLE_AGENTCORE=true in .env first if you actually want this."
+  warn "Defaulting to agentcore, but ENABLE_AGENTCORE is not true in .env — skipping the AgentCore deploy and falling back to local agent mode."
+  warn "Set ENABLE_AGENTCORE=true in .env first if you actually want agentcore, or pass --local to silence this."
   DO_AGENTCORE=0
 fi
 
@@ -101,10 +98,10 @@ check_prereqs() {
     die "Missing required tools: ${missing[*]}"
   fi
   if [ "$DO_AGENTCORE" = "1" ]; then
-    command -v npm       >/dev/null 2>&1 || die "npm is required for --with-agentcore"
-    command -v npx       >/dev/null 2>&1 || die "npx is required for --with-agentcore"
-    command -v agentcore >/dev/null 2>&1 || die "agentcore CLI not found on PATH (npm install -g @aws/agentcore) — required for --with-agentcore"
-    command -v python3   >/dev/null 2>&1 || die "python3 is required for --with-agentcore (parses the deployed runtime ARN)"
+    command -v npm       >/dev/null 2>&1 || die "npm is required for agentcore mode (or pass --local)"
+    command -v npx       >/dev/null 2>&1 || die "npx is required for agentcore mode (or pass --local)"
+    command -v agentcore >/dev/null 2>&1 || die "agentcore CLI not found on PATH (npm install -g @aws/agentcore) — required for agentcore mode (or pass --local)"
+    command -v python3   >/dev/null 2>&1 || die "python3 is required for agentcore mode (parses the deployed runtime ARN)"
   fi
 }
 

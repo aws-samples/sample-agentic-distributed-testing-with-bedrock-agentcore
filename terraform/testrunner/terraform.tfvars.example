@@ -15,12 +15,12 @@ environment  = "demo"
 target_url = "http://localhost:8020"
 
 # ─── Agent mode ─────────────────────────────────────────────────────────────
-# 'local'     = OpenCode + chrome-devtools-mcp run in the agent-runtime-local
-#               container deployed by this stack (default, no extra setup).
 # 'agentcore' = tests are routed to an AWS AgentCore Runtime deployed
 #               separately via agent-runtime-agentcore/agentcore/ (agentcore
-#               deploy). Set agentcore_runtime_arn below if you choose this.
-agent_mode = "local"
+#               deploy) (default). Set agentcore_runtime_arn below.
+# 'local'     = OpenCode + chrome-devtools-mcp run in the agent-runtime-local
+#               container deployed by this stack instead (no extra setup).
+agent_mode = "agentcore"
 
 # ─── Bedrock ────────────────────────────────────────────────────────────────
 bedrock_model  = "global.anthropic.claude-sonnet-4-6"

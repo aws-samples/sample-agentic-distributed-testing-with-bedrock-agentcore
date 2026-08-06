@@ -12,16 +12,20 @@ services:
       # agent-runtime-agentcore (see agent-runtime-agentcore/agentcore/) to the
       # ARN of your deployed AgentCore Runtime. Not needed for local mode.
       AGENTCORE_RUNTIME_ARN: "${AGENTCORE_RUNTIME_ARN:-}"
-      # 'local' routes test execution to agent-runtime container (OpenCode + chrome-devtools-mcp)
       # 'agentcore' routes to AgentCore Runtime (default)
-      AGENT_MODE: "${AGENT_MODE:-local}"
+      # 'local' routes test execution to agent-runtime container (OpenCode + chrome-devtools-mcp)
+      AGENT_MODE: "${AGENT_MODE:-agentcore}"
       # Gates the agentcore mode/UI entirely — see backend/src/state/store.js
       # and .env.example.
-      ENABLE_AGENTCORE: "${ENABLE_AGENTCORE:-false}"
+      ENABLE_AGENTCORE: "${ENABLE_AGENTCORE:-true}"
       LOCAL_RUNTIME_URL: "http://localhost:4020"
       # S3 bucket for evidence snapshots shown in Analysis page
       S3_SNAPSHOT_BUCKET: "${S3_SNAPSHOT_BUCKET:-paperclip-testrunner-snapshots-ap-southeast-1}"
       S3_SNAPSHOT_REGION: "${S3_SNAPSHOT_REGION:-ap-southeast-1}"
+    volumes:
+      # Persists the SQLite DB (test cases, run archive) plus config.json /
+      # testResults.json across container rebuilds, not just restarts.
+      - backend-state:/app/src/state
     restart: unless-stopped
 
   # Local agent runtime — OpenCode + chrome-devtools-mcp + local Chromium.
@@ -46,3 +50,6 @@ services:
     container_name: cardtest-v2-frontend
     network_mode: host
     restart: unless-stopped
+
+volumes:
+  backend-state:

@@ -7,6 +7,7 @@ import fs   from 'fs';
 import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
+import { loadModulesAndCases } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_FILE = path.join(__dirname, 'testResults.json');
@@ -51,11 +52,12 @@ async function detectEc2Region() {
 }
 
 // Deploy-time switch (env only, not user-settable, not persisted) — whether
-// the agentcore agent mode exists at all in this deployment. Off by default
-// so local dev doesn't advertise a mode with no deployed AgentCore Runtime
-// behind it. See .env.example and frontend/src/components/SettingsModal.jsx,
-// which hides the AgentCore Runtime option and AgentCore Region field when
-// this is false.
+// the agentcore agent mode exists at all in this deployment. Defaults to
+// true (see .env.example / docker-compose.yml) since AgentCore is now the
+// default agent mode; set to false to fall back to local-only without a
+// deployed AgentCore Runtime behind it. See
+// frontend/src/components/SettingsModal.jsx, which hides the AgentCore
+// Runtime option and AgentCore Region field when this is false.
 export const agentcoreEnabled = process.env.ENABLE_AGENTCORE === 'true';
 
 export const config = {
@@ -65,7 +67,7 @@ export const config = {
   // stale config.json (from before ENABLE_AGENTCORE was turned off) says
   // otherwise — persisted state should never re-enable a mode this
   // deployment doesn't support.
-  agentMode: (!agentcoreEnabled) ? 'local' : (_persisted.agentMode ?? (process.env.AGENT_MODE || 'local')),   // 'local' | 'agentcore'
+  agentMode: (!agentcoreEnabled) ? 'local' : (_persisted.agentMode ?? (process.env.AGENT_MODE || 'agentcore')),   // 'local' | 'agentcore'
   // Bedrock model inference region. Defaults to BEDROCK_REGION env or us-east-1.
   bedrockRegion: _persisted.bedrockRegion ?? (process.env.BEDROCK_REGION || 'us-east-1'),
   // AgentCore Runtime / Browser region. Defaults to BROWSER_REGION env or the
@@ -105,9 +107,13 @@ export function saveConfig() {
   }, 300);
 }
 
-export const moduleList = [];
+// Hydrated from SQLite (backend/src/state/data.db) on boot. index.js's
+// loadSeed() only populates the DB the very first time it's empty; after
+// that, edits made via the Editor persist here and survive restarts.
+const { modules: _seedModules, casesByModule: _seedCases } = loadModulesAndCases();
+export const moduleList = _seedModules;
 
-export const testCasesByModule = {};
+export const testCasesByModule = _seedCases;
 export const testRuns          = {};
 export const stopFlags         = {};
 // Per-run, per-TC log accumulator: runLogs[runId][tcId] = [{ts,msg,kind}]

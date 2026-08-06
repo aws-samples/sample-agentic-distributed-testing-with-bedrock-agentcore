@@ -113,7 +113,7 @@ security group (see each stack's `sg.tf`).
 
 ### Automated (recommended)
 
-`deploy-prod.sh` lives at the repo root, alongside `deploy-local.sh` (Mode 1):
+`deploy-prod.sh` lives at the repo root, alongside `deploy-dev.sh` (Mode 1):
 
 ```bash
 cd ..   # repo root, if you're not already there

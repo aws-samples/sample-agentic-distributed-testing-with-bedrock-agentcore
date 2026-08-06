@@ -100,7 +100,7 @@ Two ways to run this repo, aimed at two different situations:
 | **Use case** | Local development, quick demos on your own machine | A durable, publicly-reachable deployment |
 | **How** | `docker compose` on one host | Terraform: EKS (Fargate) + ALB + CloudFront + ECR |
 | **Where** | `docker-compose.yml` (repo root) | `terraform/` |
-| **Setup** | `./deploy-local.sh` (or `docker compose --profile local up --build`) | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
+| **Setup** | `./deploy-dev.sh` (or `docker compose up --build`) | `./deploy-prod.sh` — see [Deploying to AWS](#deploying-to-aws) below |
 
 ### Mode 1 — Dev (local Docker Compose)
 
@@ -108,41 +108,49 @@ Two ways to run this repo, aimed at two different situations:
 # Copy the example env and adjust as needed
 cp .env.example .env
 
-# Run sample-app + testrunner (backend + frontend + local agent runtime)
-./deploy-local.sh
+# Run sample-app + testrunner (backend + frontend), agentcore agent mode by
+# default — this deploys agent-runtime-agentcore to AWS AgentCore Runtime
+# the first time (real AWS resources, costs money while it exists).
+./deploy-dev.sh
 # Testrunner: http://localhost:5175 — Target URL already defaults to the
 # sample app at http://localhost:8020, so no Settings change needed.
 
+# Prefer local agent mode instead (no AWS calls, uses agent-runtime-local)?
+./deploy-dev.sh --local
+
 # Tear down when you're done:
-./deploy-local.sh --down
+./deploy-dev.sh --down
 ```
 
-`deploy-local.sh` just wraps the two `docker compose up --build` calls below (`--sample-app`/`--testrunner` flags deploy either alone); run them directly if you'd rather not use the script:
+`deploy-dev.sh` just wraps the `docker compose up --build` calls below (`--sample-app`/`--testrunner` flags deploy either alone; `--local` skips the AgentCore deploy); run them directly if you'd rather not use the script:
 
 ```bash
-docker compose --profile local up --build              # backend + frontend + local agent runtime
-(cd sample-app && docker compose up --build)            # the app under test
+docker compose up --build                               # backend + frontend, agentcore agent mode
+docker compose --profile local up --build                # backend + frontend + local agent runtime, local agent mode
+(cd sample-app && docker compose up --build)             # the app under test
 ```
 
-Everything runs as sibling containers on one Docker host, talking to each other over `network_mode: host` — no ALB, no CloudFront, no auth in front of the UI. This is the fastest way to try the project or iterate on it.
+Everything runs as sibling containers on one Docker host (SQLite for state, S3 for evidence snapshots), talking to each other over `network_mode: host` — no ALB, no CloudFront, no auth in front of the UI. This is the fastest way to try the project or iterate on it, in either agent mode.
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TARGET_URL` | `http://localhost:8020` | Application under test |
-| `AGENT_MODE` | `local` | `local` or `agentcore` |
-| `ENABLE_AGENTCORE` | `false` | Whether the `agentcore` mode exists on this deployment at all. When `false`, the backend refuses to switch into `agentcore` mode and the frontend Settings modal hides the Agent Mode picker and AgentCore Region field entirely. `deploy-local.sh --with-agentcore` sets this to `true` automatically after a successful AgentCore Runtime deploy. |
+| `AGENT_MODE` | `agentcore` | `agentcore` or `local` |
+| `ENABLE_AGENTCORE` | `true` | Whether the `agentcore` mode exists on this deployment at all. When `false`, the backend refuses to switch into `agentcore` mode (falling back to `local`) and the frontend Settings modal hides the Agent Mode picker and AgentCore Region field entirely. `deploy-dev.sh` sets this to `true` automatically after a successful AgentCore Runtime deploy (its default, unless you pass `--local`). |
 | `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-4-6` | Bedrock model ID used for agent inference, test generation, and health checks |
 | `BEDROCK_REGION` | `us-east-1` | AWS region for Bedrock model inference |
 | `BROWSER_REGION` | `ap-southeast-1` | AWS region for AgentCore Runtime + AgentCore Browser (defaults to the EC2 host's own region when running on EC2, if unset) |
-| `AGENTCORE_RUNTIME_ARN` | — | Required for `agentcore` mode; the ARN of your deployed AgentCore Runtime. Filled in automatically by `deploy-local.sh --with-agentcore` |
+| `AGENTCORE_RUNTIME_ARN` | — | Required for `agentcore` mode; the ARN of your deployed AgentCore Runtime. Filled in automatically by `deploy-dev.sh` |
 | `S3_SNAPSHOT_BUCKET` | — | S3 bucket for evidence snapshots shown on the Analysis page. Leave unset to disable snapshot capture entirely |
 | `S3_SNAPSHOT_REGION` | `ap-southeast-1` | Region of the snapshot bucket |
 | `PORT` | `4010` | Backend HTTP port (set by docker-compose; rarely overridden) |
 | `LOCAL_RUNTIME_URL` | `http://localhost:4020` | Where the backend reaches `agent-runtime-local` (local mode only) |
 
 Most of these can also be changed at runtime from the frontend's Settings modal (model, agent mode, Bedrock region, AgentCore region, target URL, auth) — the backend persists your choices to `backend/src/state/config.json` so they survive a restart. Env vars only supply the initial defaults.
+
+Test cases (Editor page) and the run archive (Analysis page) are persisted to a SQLite database at `backend/src/state/data.db` (schema in `backend/src/state/db.js`), so edits and past runs survive a backend restart. Docker Compose mounts a named volume (`backend-state`) over `backend/src/state/` so this — along with `config.json`/`testResults.json` — also survives a container rebuild, not just a restart.
 
 If you enable S3 snapshots, the container's IAM role needs `s3:PutObject` and `s3:GetObject` on the bucket. A lifecycle policy that expires objects after ~30 days is recommended. Object keys follow `runs/<runId>/<tcId>/<seq>.png`.
 
@@ -186,7 +194,7 @@ The CDK stack builds the Node.js container, pushes it to ECR, and provisions the
 - `terraform/testrunner/` — deploys the test runner itself (backend + frontend + agent-runtime-local), behind Cognito auth
 - `terraform/sample-app/` — deploys the CardDemo sample app (no auth — it's the target under test, not a portal)
 
-The two stacks are independent — deploy either or both. Neither is required for local development (see Mode 1 above). `agent-runtime-agentcore/` deploys separately via its own CDK flow (see above) since AgentCore Runtime isn't an EKS workload; see `terraform/README.md` for how the two paths connect if you want `AGENT_MODE=agentcore` running in AWS. Full instructions, variables, and cost/architecture notes are in `terraform/README.md`. `deploy-prod.sh` (repo root) automates the full two-phase apply + image build/push + rollout flow for both stacks — the Mode 2 counterpart to `deploy-local.sh`.
+The two stacks are independent — deploy either or both. Neither is required for local development (see Mode 1 above). `agent-runtime-agentcore/` deploys separately via its own CDK flow (see above) since AgentCore Runtime isn't an EKS workload; see `terraform/README.md` for how the two paths connect if you want `AGENT_MODE=agentcore` running in AWS. Full instructions, variables, and cost/architecture notes are in `terraform/README.md`. `deploy-prod.sh` (repo root) automates the full two-phase apply + image build/push + rollout flow for both stacks — the Mode 2 counterpart to `deploy-dev.sh`.
 
 ## Security & Compliance
 
