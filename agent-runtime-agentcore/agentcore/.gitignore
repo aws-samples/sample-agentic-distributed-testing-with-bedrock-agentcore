@@ -1,6 +1,11 @@
 # Secrets (local environment files are never committed)
 .env.local
 
+# Deployment targets (account ID + region) — derived from `aws sts
+# get-caller-identity` + .env's BROWSER_REGION by deploy-dev.sh's
+# ensure_agentcore_account(), not something to check in. See deploy-dev.sh.
+aws-targets.json
+
 # CDK Build Artifacts
 cdk/cdk.out/
 cdk/node_modules/

@@ -76,21 +76,17 @@ set_env_var() {
   fi
 }
 
-# aws-targets.json ships checked into git with a placeholder account ID
-# ("000000000000" — see the file's own "description" field) since a real
-# account number shouldn't be committed. If it's still the placeholder (e.g.
-# a fresh clone, or a `git checkout` that reset a local edit), CDK tries to
-# assume a deploy role in that nonexistent account and fails. Keep it synced
-# to whatever account the current AWS credentials resolve to, and to .env's
-# BROWSER_REGION (the var that governs AgentCore Runtime/Browser region
-# everywhere else in this project — see .env.example) — NOT the ambient
-# AWS_REGION/AWS_DEFAULT_REGION env var, which the agentcore CLI falls back
-# to on its own and can silently point a deploy at the wrong region if it
-# differs from what .env says.
+# aws-targets.json is generated (gitignored — see agent-runtime-agentcore/agentcore/.gitignore)
+# since it holds a real AWS account ID, which shouldn't be committed. Create
+# or refresh it from whatever account the current AWS credentials resolve
+# to, and from .env's BROWSER_REGION (the var that governs AgentCore
+# Runtime/Browser region everywhere else in this project — see
+# .env.example) — NOT the ambient AWS_REGION/AWS_DEFAULT_REGION env var,
+# which the agentcore CLI falls back to on its own and can silently point a
+# deploy at the wrong region if it differs from what .env says.
 ensure_agentcore_account() {
   local agentcore_dir="$1"
   local targets_file="$agentcore_dir/aws-targets.json"
-  [ -f "$targets_file" ] || return 0
 
   local account region
   account="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
@@ -99,9 +95,11 @@ ensure_agentcore_account() {
   [ -z "$region" ] && region="ap-southeast-1"
 
   python3 -c "
-import json
+import json, os
 p = '$targets_file'
-d = json.load(open(p))
+d = json.load(open(p)) if os.path.exists(p) else []
+if not d:
+    d = [{'name': 'default', 'description': 'Default target'}]
 changed = False
 for t in d:
     if t.get('account') != '$account':
@@ -110,7 +108,7 @@ for t in d:
     if t.get('region') != '$region':
         t['region'] = '$region'
         changed = True
-if changed:
+if changed or not os.path.exists(p):
     json.dump(d, open(p, 'w'), indent=2)
     print('updated')
 "
