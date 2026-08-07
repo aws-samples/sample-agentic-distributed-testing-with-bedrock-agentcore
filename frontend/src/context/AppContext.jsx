@@ -9,6 +9,7 @@ const initialState = {
   sessionStatus: {},    // module -> { connected, connecting, screenshot, action }
   activeModules: new Set(),
   currentRunId: null,
+  stopping: false,
   targetUrl: '',
   model: '',
   agentMode: 'local',
@@ -57,6 +58,8 @@ function reducer(state, action) {
       return { ...state, activeModules: new Set() }
     case 'SET_CURRENT_RUN_ID':
       return { ...state, currentRunId: action.runId }
+    case 'SET_STOPPING':
+      return { ...state, stopping: action.stopping }
     case 'APPEND_SESSION_LOG': {
       const prev = state.sessionLogs[action.module] || []
       const next = [...prev, action.entry]
@@ -103,6 +106,7 @@ function reducer(state, action) {
         loadingAnalysis: new Set(),
         activeModules: new Set(),
         currentRunId: null,
+        stopping: false,
         sessionStatus: clearedSessions,
         sessionLogs: clearedLogs,
         focusedModule: null,

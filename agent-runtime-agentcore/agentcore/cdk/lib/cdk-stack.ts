@@ -113,6 +113,43 @@ export class AgentCoreStack extends Stack {
     }
     this.application = new AgentCoreApplication(this, 'Application', appProps as any);
 
+    // Wire BEDROCK_MODEL/BEDROCK_REGION into the runtime container's actual
+    // environment. agent-runtime-agentcore/app/src/index.js reads these once
+    // at container startup, not per-invocation from the InvokeAgentRuntime
+    // payload, and agentcore.json/aws-targets.json have no field for this —
+    // without it the container silently falls back to its own hardcoded
+    // model default, which Bedrock rejects as invalid. deploy-dev.sh exports
+    // both from .env before invoking `agentcore deploy` so process.env has
+    // them at synth time here.
+    for (const env of this.application.environments.values()) {
+      if (process.env.BEDROCK_MODEL) {
+        env.runtime.addEnvironmentVariable('BEDROCK_MODEL', process.env.BEDROCK_MODEL);
+      }
+      if (process.env.BEDROCK_REGION) {
+        env.runtime.addEnvironmentVariable('BEDROCK_REGION', process.env.BEDROCK_REGION);
+      }
+    }
+
+    // Grant every agent's execution role permission to use AgentCore Browser.
+    // The CLI's auto-generated execution-role policy (bedrock model invoke,
+    // ECR, logs, KMS, configuration bundles) has no bedrock-agentcore:*
+    // actions at all, so any agent using the bedrock-agentcore/browser SDK
+    // (see agent-runtime-agentcore/app/src/index.js) gets AccessDenied on its
+    // very first StartBrowserSession call. A policy scoped to just the SDK's
+    // named browser commands let session lifecycle calls succeed but still
+    // 403'd on the actual CDP WebSocket connection to the automation stream
+    // ("User is not authorized to access automation stream") — that route
+    // doesn't map to any action exposed by the SDK, so this grants the full
+    // bedrock-agentcore action set instead of guessing further.
+    for (const env of this.application.environments.values()) {
+      env.runtime.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['bedrock-agentcore:*'],
+          resources: ['*'],
+        })
+      );
+    }
+
     // Create AgentCoreMcp if there are gateways configured
     if (mcpSpec?.agentCoreGateways && mcpSpec.agentCoreGateways.length > 0) {
       new AgentCoreMcp(this, 'Mcp', {

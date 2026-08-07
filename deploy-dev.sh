@@ -203,6 +203,12 @@ deploy_agentcore() {
   ensure_env
   ensure_agentcore_account "$agentcore_dir"
 
+  # cdk-stack.ts reads these at synth time to wire them into the runtime
+  # container's environment — export so `npx agentcore deploy` below inherits
+  # them (see that file's comment).
+  export BEDROCK_MODEL="$(grep -E '^BEDROCK_MODEL=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+  export BEDROCK_REGION="$(grep -E '^BEDROCK_REGION=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+
   log "npm install (agent-runtime-agentcore/agentcore/cdk)"
   (cd "$agentcore_dir/cdk" && npm install)
 

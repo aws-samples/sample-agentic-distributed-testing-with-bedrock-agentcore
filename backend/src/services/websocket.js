@@ -56,16 +56,19 @@ export function initWebSocket(server) {
     }
 
     // 3. Replay persisted test results so the UI restores status on reconnect.
-    // Merge in any RUNNING TCs from in-flight runs so the Stop button
-    // (driven by isRunning) reappears mid-run after a page refresh.
+    // Merge in any RUNNING TCs from in-flight runs — including ones already
+    // stopping (stopFlags set but modules still finishing their current test
+    // case) — so the Stop/Stopping state reappears correctly after a page
+    // refresh instead of silently reverting to idle.
     const snapshot = { ...testResultsCache };
     let activeRunId = null;
+    let activeRunStopping = false;
     for (const [rid, run] of Object.entries(testRuns)) {
-      if (stopFlags[rid]) continue;
       for (const [tcId, r] of Object.entries(run.results || {})) {
         if (r?.status === 'RUNNING') {
           snapshot[tcId] = { status: 'RUNNING' };
           activeRunId = rid;
+          if (stopFlags[rid]) activeRunStopping = true;
         }
       }
     }
@@ -77,6 +80,7 @@ export function initWebSocket(server) {
         results: snapshot,
         activeModules: activeMods,
         currentRunId: activeRunId,
+        stopping: activeRunStopping,
       }));
     }
   });

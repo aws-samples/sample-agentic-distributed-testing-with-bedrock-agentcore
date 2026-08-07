@@ -147,16 +147,19 @@ export function useWebSocket(onLog) {
             msg.stopped ? 'warn' : 'pass'
           )
           dispatch({ type: 'SET_CURRENT_RUN_ID', runId: null })
+          dispatch({ type: 'SET_STOPPING', stopping: false })
           break
 
         case 'run_stopped':
           onLog?.('Stop acknowledged', 'warn')
+          dispatch({ type: 'SET_STOPPING', stopping: true })
           break
 
         case 'test_results_snapshot':
           // Bulk-restore persisted results on reconnect / page refresh.
-          // Includes RUNNING entries from in-flight runs and the set of
-          // modules currently active so the Stop button reappears mid-run.
+          // Includes RUNNING entries from in-flight runs (even ones already
+          // stopping) and the set of modules currently active, so Stop /
+          // Stopping state reappears correctly after a page refresh.
           if (msg.results) {
             for (const [tcId, result] of Object.entries(msg.results)) {
               dispatch({ type: 'SET_TEST_RESULT', tcId, result })
@@ -170,6 +173,7 @@ export function useWebSocket(onLog) {
           if (msg.currentRunId) {
             dispatch({ type: 'SET_CURRENT_RUN_ID', runId: msg.currentRunId })
           }
+          dispatch({ type: 'SET_STOPPING', stopping: !!msg.stopping })
           break
 
         case 'module_added':

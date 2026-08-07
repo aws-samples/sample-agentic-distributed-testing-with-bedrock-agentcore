@@ -56,6 +56,27 @@ export function stopScreenPoller(sessionId) {
   }
 }
 
+// ─── Screen polling (agentcore mode) ─────────────────────────────────────────
+// grabLatestScreenshot opens a new signed WebSocket connection per call, so
+// this polls slower than local mode's 500ms to avoid 429s across parallel
+// modules.
+const agentcoreScreenPollers = {};
+
+export function startAgentcoreScreenPoller(sessionId) {
+  if (agentcoreScreenPollers[sessionId]) return;
+  agentcoreScreenPollers[sessionId] = setInterval(async () => {
+    if (!sessions[sessionId]) { stopAgentcoreScreenPoller(sessionId); return; }
+    await grabLatestScreenshot(sessionId, sessions[sessionId]?.browserSessionId);
+  }, 2000);
+}
+
+export function stopAgentcoreScreenPoller(sessionId) {
+  if (agentcoreScreenPollers[sessionId]) {
+    clearInterval(agentcoreScreenPollers[sessionId]);
+    delete agentcoreScreenPollers[sessionId];
+  }
+}
+
 // ─── Local runtime invoke ─────────────────────────────────────────────────────
 
 export async function invokeLocalRuntime(body, onLine) {
@@ -116,6 +137,7 @@ export async function ensureSession(sessionId) {
       const cmd = new InvokeAgentRuntimeCommand({
         agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT',
         runtimeSessionId: sessId,
+        contentType: 'application/json',
         payload: new TextEncoder().encode(JSON.stringify(initPayload)),
       });
       const response = await getAgentCoreClient().send(cmd);
@@ -126,6 +148,9 @@ export async function ensureSession(sessionId) {
       }
     }
 
+    // Collect text deltas too — the runtime reports its own failure reason
+    // via emitText() as a JSON string ({status:'error', error: '...'}).
+    const textDeltas = [];
     for (const line of rawText.split('\n')) {
       if (!line.startsWith('data: ')) continue;
       try {
@@ -134,6 +159,14 @@ export async function ensureSession(sessionId) {
           sessions[sessionId].screenshot = ev.screenshot.data;
           broadcast({ type: 'screenshot', sessionId, data: ev.screenshot.data, action: '' });
         }
+        const text = ev?.contentBlockDelta?.delta?.text;
+        if (text) {
+          textDeltas.push(text);
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed?.browserSessionId) sessions[sessionId].browserSessionId = parsed.browserSessionId;
+          } catch { /* not JSON, ignore */ }
+        }
       } catch { /* skip */ }
     }
 
@@ -141,9 +174,20 @@ export async function ensureSession(sessionId) {
     sessions[sessionId].connected = ok;
     sessions[sessionId].action = '';
     broadcast({ type: 'session_status', sessionId, connected: ok, module: sessionId });
-    if (!ok) throw new Error('No screenshot received from runtime');
-    // Start 2fps polling for live screenshot updates (local mode only)
+    if (!ok) {
+      let runtimeError = null;
+      for (const text of textDeltas) {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error) runtimeError = parsed.error;
+        } catch { /* not JSON, ignore */ }
+      }
+      const detail = runtimeError || (textDeltas.length ? textDeltas.join(' | ') : 'no response text from runtime');
+      throw new Error(`No screenshot received from runtime: ${detail}`);
+    }
+    // Start live-view polling for screenshot updates
     if (config.agentMode === 'local') startScreenPoller(sessionId);
+    else startAgentcoreScreenPoller(sessionId);
   } catch (e) {
     console.error(`[session] init failed for ${sessionId}:`, e.message);
     sessions[sessionId] = { ...sessions[sessionId], connected: false, action: '' };
@@ -154,6 +198,7 @@ export async function ensureSession(sessionId) {
 
 export async function killSession(sessionId) {
   stopScreenPoller(sessionId);
+  stopAgentcoreScreenPoller(sessionId);
   const sess = sessions[sessionId];
   if (!sess) return;
   try { if (sess.ws) sess.ws.close(); } catch { /* ignore */ }
@@ -161,28 +206,62 @@ export async function killSession(sessionId) {
   broadcast({ type: 'session_status', sessionId, connected: false, module: sessionId });
 }
 
-export async function grabLatestScreenshot(moduleId) {
+export async function grabLatestScreenshot(moduleId, browserSessionId) {
   try {
+    // Must attach the specific session this module's browser is using — an
+    // unscoped listSessions()[0] would grab an arbitrary READY session,
+    // liable to show one module's live view sourced from a completely
+    // different module's browser tab when several run in parallel.
+    if (!browserSessionId) return;
     const browser = new Browser({ region: config.browserRegion });
-    const { items } = await browser.listSessions({ status: 'READY' });
-    if (!items?.length) return;
-    const latest = items[0];
-    browser.attachSession(latest.sessionId);
+    browser.attachSession(browserSessionId);
     const { url, headers } = await browser.generateWebSocketUrl();
     const ws = new WS(url, { headers });
     await new Promise((resolve, reject) => {
+      let nextId = 1;
+      function send(method, params = {}, cdpSessionId) {
+        const id = nextId++;
+        const msg = { id, method, params };
+        if (cdpSessionId) msg.sessionId = cdpSessionId;
+        ws.send(JSON.stringify(msg));
+        return id;
+      }
       const timeout = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, 8000);
+      const pending = {}; // id → what we're waiting for
       ws.on('open', () => {
-        ws.send(JSON.stringify({ id: 1, method: 'Page.enable', params: {} }));
-        setTimeout(() => ws.send(JSON.stringify({ id: 2, method: 'Page.captureScreenshot', params: { format: 'jpeg', quality: 50 } })), 500);
+        pending[send('Target.getTargets')] = 'getTargets';
       });
       ws.on('message', (data) => {
         const msg = JSON.parse(data.toString());
-        if (msg.id === 2 && msg.result?.data) {
+        const waitingFor = pending[msg.id];
+        // AgentCore Browser's CDP endpoint is a real multi-target browser —
+        // target-scoped methods like Page.captureScreenshot need
+        // Target.attachToTarget first (see agent-runtime-agentcore/app/src/
+        // index.js's agentCoreScreenshot, same handshake).
+        if (waitingFor === 'getTargets') {
+          delete pending[msg.id];
+          const pageTarget = msg.result?.targetInfos?.find(t => t.type === 'page');
+          if (!pageTarget) { clearTimeout(timeout); ws.close(); reject(new Error('no page target found')); return; }
+          pending[send('Target.attachToTarget', { targetId: pageTarget.targetId, flatten: true })] = 'attach';
+        } else if (waitingFor === 'attach') {
+          delete pending[msg.id];
+          const cdpSessionId = msg.result?.sessionId;
+          if (!cdpSessionId) { clearTimeout(timeout); ws.close(); reject(new Error('attach returned no sessionId')); return; }
+          send('Page.enable', {}, cdpSessionId);
+          setTimeout(() => {
+            pending[send('Page.captureScreenshot', { format: 'jpeg', quality: 50 }, cdpSessionId)] = 'screenshot';
+          }, 500);
+        } else if (waitingFor === 'screenshot') {
+          delete pending[msg.id];
           clearTimeout(timeout);
-          const sess = sessions[moduleId];
-          if (sess) { sess.screenshot = msg.result.data; broadcast({ type: 'screenshot', sessionId: moduleId, data: msg.result.data, action: sess.action || '' }); }
-          ws.close(); resolve();
+          ws.close();
+          if (msg.result?.data) {
+            const sess = sessions[moduleId];
+            if (sess) { sess.screenshot = msg.result.data; broadcast({ type: 'screenshot', sessionId: moduleId, data: msg.result.data, action: sess.action || '' }); }
+            resolve();
+          } else {
+            reject(new Error(`screenshot failed: ${JSON.stringify(msg.error || msg)}`));
+          }
         }
       });
       ws.on('error', e => { clearTimeout(timeout); reject(e); });

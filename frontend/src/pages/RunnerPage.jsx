@@ -35,6 +35,17 @@ export default function RunnerPage() {
     Object.values(state.testResults).some(r => r.status === 'RUNNING')
   const dragRef = useRef({ dragging: false, startY: 0, startH: 0 })
 
+  // Stop can't interrupt a test case already running inside the agent
+  // runtime — it only takes effect once that module's current test case
+  // finishes, so isRunning can stay true well after the Stop click. `stopping`
+  // lives in global state (not local useState) and is restored from the
+  // backend's reconnect snapshot, so it still shows "Stopping…" correctly
+  // after a page refresh instead of reverting to a bare "Running".
+  const stopping = state.stopping
+  useEffect(() => {
+    if (!isRunning && stopping) dispatch({ type: 'SET_STOPPING', stopping: false })
+  }, [isRunning, stopping, dispatch])
+
   const addLog = useCallback((msg, type = '') => {
     const ts = new Date().toLocaleTimeString()
     setLogs(prev => {
@@ -289,7 +300,8 @@ export default function RunnerPage() {
       try {
         await api.stopRun()
         setStopped(true)
-        addLog('Stop requested', 'warn')
+        dispatch({ type: 'SET_STOPPING', stopping: true })
+        addLog('Stop requested — finishing in-flight test case(s)…', 'warn')
       } catch (e) {
         addLog(`Stop error: ${e.message}`, 'fail')
       }
@@ -367,8 +379,9 @@ export default function RunnerPage() {
         {connectBtnText}
       </Btn>
       {isRunning && (
-        <Btn variant={stopped ? 'success' : 'danger'} disabled={resetting} onClick={handleStop}>
-          {stopped ? <><Icon name="play_arrow" />Resume</> : <><Icon name="stop" />Stop</>}
+        <Btn variant={stopped && !stopping ? 'success' : 'danger'} disabled={resetting || stopping} onClick={handleStop}
+          title={stopping ? 'Waiting for in-flight test case(s) to finish…' : ''}>
+          {stopping ? <><Icon name="sync" />Stopping…</> : stopped ? <><Icon name="play_arrow" />Resume</> : <><Icon name="stop" />Stop</>}
         </Btn>
       )}
       <Btn onClick={handleReset} disabled={resetting} title={resetting ? 'Resetting in progress…' : 'Clear all session data, results, and connections'}>

@@ -1,7 +1,7 @@
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
 import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeModules } from '../state/store.js';
 import { broadcast } from './websocket.js';
-import { ensureSession, invokeLocalRuntime, grabLatestScreenshot } from './sessions.js';
+import { ensureSession, invokeLocalRuntime } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
 
 // Per-region client cache so live region changes from Settings are picked up
@@ -124,7 +124,7 @@ export async function invokeRuntime(tc, runId, sessionId) {
       });
     } else {
       const sessId = `${sessionId.replace(/\s+/g, '_')}-${tc.id}-${Date.now()}`.padEnd(33, '0');
-      const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId: sessId, payload: new TextEncoder().encode(JSON.stringify(payload)) });
+      const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId: sessId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
       const response = await getAgentCoreClient().send(cmd);
       if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
     }
@@ -175,7 +175,6 @@ export async function runModuleTests(module, testCases, runId) {
       broadcast({ type: 'test_result', testId: tc.id, sessionId, status, reason: result.reason, runId });
       saveTestResult(tc.id, status, result.reason || '');
       console.log(`[${module}] ${tc.id}: ${status} — ${(result.reason || '').slice(0, 80)} (${snapshots.length} snapshots)`);
-      grabLatestScreenshot(sessionId).catch(() => {});
     } catch (e) {
       const snapshots = await flushTcSnapshots(runId, tc.id);
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message, snapshots };
