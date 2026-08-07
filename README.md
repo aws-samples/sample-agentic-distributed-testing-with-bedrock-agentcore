@@ -18,7 +18,7 @@ UI test scripts are brittle: Selenium/Playwright scripts rely on hard-coded sele
 
 Replace selector-based scripts with AI agents that read the live page and reason about each step of a plain-English test case — a relocated button or renamed field doesn't break the test the way it breaks a scripted one. This repo demonstrates two pieces of that approach:
 
-- **Adaptive execution** — natural-language test cases fanned out across many parallel AI agents (OpenCode on Amazon Bedrock — Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, and other models all work), each driving its own isolated **AgentCore Browser** session. No DOM selectors, no scripted steps. The core focus of this project is the **AWS AgentCore Runtime + AgentCore Browser** orchestration layer; the frontend, backend, and sample app are intentionally simple Docker deployments built to support that demo.
+- **Adaptive execution** — natural-language test cases fanned out across many parallel AI agents (OpenCode on Amazon Bedrock — Anthropic Claude, OpenAI GPT-OSS, and other models all work), each driving its own isolated **AgentCore Browser** session. No DOM selectors, no scripted steps. The core focus of this project is the **AWS AgentCore Runtime + AgentCore Browser** orchestration layer; the frontend, backend, and sample app are intentionally simple Docker deployments built to support that demo.
 - **Spec generation** — generate a full test suite from a plain-language app description via a Bedrock planner + per-module worker agent loop.
 
 Every test case run also captures S3 evidence screenshots for human review on the Analysis page — a first step toward automated failure remediation, not yet a closed loop.
@@ -46,9 +46,9 @@ Every test case run also captures S3 evidence screenshots for human review on th
 │   └── sample-app/               # Deploys the CardDemo sample app
 └── docker-compose.yml            # Mode 1 (dev): backend + frontend (built from repo-root
                                    # context — see backend/Dockerfile) + agent-runtime-local
-                                   # (--local only); deploy-dev.sh only drives sample-app +
-                                   # the AgentCore deploy — run backend/frontend yourself
-                                   # with `npm run dev` for local iteration instead
+                                   # (--local only, driven by deploy-dev.sh --local); run
+                                   # backend/frontend yourself with `npm run dev` for local
+                                   # iteration instead
 ```
 
 ## Architecture
@@ -115,7 +115,7 @@ Two ways to run this repo, aimed at two different situations:
 
 ### Mode 1 — Dev
 
-`deploy-dev.sh` handles the infra half — sample-app (Docker) and, by default, the one-time AgentCore Runtime deploy. The testrunner itself (backend/frontend) you run yourself, in your own terminal(s):
+`deploy-dev.sh` handles the infra half — sample-app (Docker), and either the one-time AgentCore Runtime deploy (default) or the `agent-runtime-local` container (`--local`) — and writes the resulting `AGENT_MODE` into `.env` either way. The testrunner itself (backend/frontend) you run yourself, in your own terminal(s):
 
 ```bash
 # Copy the example env and adjust as needed
@@ -137,14 +137,14 @@ npm run dev   # backend :4010 + frontend :5173 (Vite dev server, hot reload)
 # Target URL already defaults to the sample app at http://localhost:8020,
 # so no Settings change needed.
 
-# Prefer local agent mode instead (no AWS calls; runs agent-runtime-local
-# in Docker — it needs opencode-ai + a local Chromium, not installed on a
-# bare host)?
+# Prefer local agent mode instead? No AWS calls — starts agent-runtime-local
+# in Docker (needs opencode-ai + a local Chromium, not installed on a bare
+# host) and writes AGENT_MODE=local into .env:
 ./deploy-dev.sh --local
 
-# Stop sample-app when you're done (leaves any deployed AgentCore Runtime
-# running in AWS — see Cleaning Up below); stop backend/frontend yourself
-# (Ctrl-C in their terminals):
+# Stop sample-app + agent-runtime-local when you're done (leaves any deployed
+# AgentCore Runtime running in AWS — see Cleaning Up below); stop
+# backend/frontend yourself (Ctrl-C in their terminals):
 ./deploy-dev.sh --down
 
 # Stop sample-app AND tear down the AgentCore Runtime in AWS if one was
@@ -156,7 +156,7 @@ npm run dev   # backend :4010 + frontend :5173 (Vite dev server, hot reload)
 
 ### Cleaning Up
 
-Since `deploy-dev.sh` defaults to `AGENT_MODE=agentcore`, a plain run deploys a real AgentCore Runtime to AWS — `--down` alone only stops the local Docker containers and leaves that Runtime (and its cost) running. Use `--destroy` instead when you want both:
+Since `deploy-dev.sh` defaults to `AGENT_MODE=agentcore`, a plain run deploys a real AgentCore Runtime to AWS — `--down` alone only stops the local Docker containers (sample-app + `agent-runtime-local`, if it was running) and leaves that Runtime (and its cost) running. Use `--destroy` instead when you want both:
 
 ```bash
 ./deploy-dev.sh --destroy   # stop the containers AND tear down the AgentCore Runtime if one was deployed
@@ -192,7 +192,7 @@ If you enable S3 snapshots, the container's IAM role needs `s3:PutObject` and `s
 - **Multi-page UI** — dedicated Editor, Runner, and Analysis pages instead of one crowded screen (see "User Interface" above).
 - **Agentic test-suite generation** — paste an application spec (and optional module hints) into the Editor's Generate flow; a Bedrock "planner" call decides on 3-10 modules, then a per-module "worker" call streams detailed test cases (happy path, edge cases, negative tests) for each module in turn. See `backend/src/routes/generate.js`.
 - **Evidence snapshots** — screenshots captured during each test case run are uploaded to S3 and shown alongside the result on the Analysis page, so a FAIL verdict comes with visual proof. See `backend/src/services/snapshots.js`.
-- **Multi-model support** — the Settings modal lets you pick from a curated list of Bedrock models across providers (Anthropic Claude, Amazon Nova, OpenAI GPT-OSS, Moonshot Kimi, MiniMax, Alibaba Qwen, Z.ai GLM), or enter any custom model ID. A "Check" button runs a live health-check call against the selected model/region.
+- **Multi-model support** — the Settings modal lets you pick from a curated list of Bedrock models across providers (Anthropic Claude, OpenAI GPT-OSS, Moonshot Kimi, MiniMax, Alibaba Qwen, Z.ai GLM), or enter any custom model ID. A "Check" button runs a live health-check call against the selected model/region.
 - **Independently configurable regions** — Bedrock model inference and AgentCore Runtime/Browser can each point at a different AWS region, changeable from Settings without a restart.
 
 ## Sample App

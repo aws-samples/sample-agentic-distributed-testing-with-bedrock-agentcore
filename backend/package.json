@@ -16,6 +16,7 @@
     "bedrock-agentcore": "^0.2.4",
     "better-sqlite3": "^12.10.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "js-yaml": "^4.1.0",
     "ws": "^8.18.0"

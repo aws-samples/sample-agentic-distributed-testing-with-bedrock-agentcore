@@ -164,6 +164,34 @@ down_local_runtime() {
   docker compose --profile local down agent-runtime-local
 }
 
+# Runs `npx agentcore deploy [args...]` from $1 (the agentcore project root)
+# and verifies it actually succeeded by reading the per-run log it just
+# wrote under .cli/logs/deploy/, rather than trusting its process exit code.
+# Observed in practice: this CLI can exit 0 while its own log ends "FAILED"
+# (e.g. a region/state mismatch where deployed-state.json still pointed at a
+# stack in a different region than aws-targets.json) — trusting exit status
+# alone let a failed deploy fall through and read the ARN from a stale
+# previous deploy, silently wiring a wrong/outdated ARN into .env.
+run_agentcore_deploy_verified() {
+  local agentcore_dir="$1"; shift
+  local logs_dir="$agentcore_dir/.cli/logs/deploy"
+  local before_log
+  before_log="$(ls -1t "$logs_dir" 2>/dev/null | head -1 || true)"
+
+  (cd "$agentcore_dir/.." && npx agentcore deploy "$@") || true
+
+  local latest_log
+  latest_log="$(ls -1t "$logs_dir" 2>/dev/null | head -1 || true)"
+  if [ -z "$latest_log" ] || [ "$latest_log" = "$before_log" ]; then
+    warn "agentcore deploy did not produce a new log under $logs_dir — check its output above for errors."
+    return 1
+  fi
+  if ! tail -5 "$logs_dir/$latest_log" | grep -q "COMPLETED SUCCESSFULLY"; then
+    warn "agentcore deploy failed — see $logs_dir/$latest_log for details."
+    return 1
+  fi
+}
+
 # Deploys agent-runtime-agentcore to AWS AgentCore Runtime and writes the
 # resulting ARN + AGENT_MODE=agentcore into .env — matches the manual flow
 # documented under "AgentCore Deployment" in the root README, just automated
@@ -189,7 +217,7 @@ deploy_agentcore() {
   # CLI zips codeLocation as a raw CDK asset with no filtering, so anything
   # under agentcore/ — including its own actively-growing cdk.out build
   # output — must never be inside it).
-  (cd "$agentcore_dir/.." && npx agentcore deploy)
+  run_agentcore_deploy_verified "$agentcore_dir" || die "agentcore deploy failed — .env was left untouched."
 
   # The `agentcore` CLI writes the definitive runtime ARN to its own state
   # file after every successful deploy — read that instead of scraping CLI
@@ -269,8 +297,8 @@ sys.exit(0 if d.get('targets') else 1)
   # Run from the project root (one level up from agentcore/), not agentcore/
   # itself — this CLI version enforces cwd == project root for `deploy`
   # (unlike `remove agent` above, which works from either). See
-  # deploy_agentcore's comment for why codeLocation is "app" to match.
-  if ! (cd "$agentcore_dir/.." && npx agentcore deploy -y); then
+  # run_agentcore_deploy_verified for why we check its log instead of exit code.
+  if ! run_agentcore_deploy_verified "$agentcore_dir" -y; then
     warn "agentcore deploy (teardown) failed — restoring agentcore.json. The AWS stack may still exist; check the AWS console."
     cp "$backup" "$agentcore_dir/agentcore.json"
     rm -f "$backup"

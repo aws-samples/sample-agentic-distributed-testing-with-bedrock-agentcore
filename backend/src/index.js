@@ -1,3 +1,4 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -5,6 +6,13 @@ import yaml from 'js-yaml';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+const __dirname_early = path.dirname(fileURLToPath(import.meta.url));
+// Only docker-compose reads .env automatically — `npm run dev`/`npm start`
+// don't, so load the repo-root .env (shared with frontend/deploy-dev.sh,
+// not backend/.env) ourselves. Doesn't override already-set env vars, so
+// docker-compose's own environment: block still wins in that path.
+dotenv.config({ path: path.join(__dirname_early, '..', '..', '.env') });
 
 import { initWebSocket } from './services/websocket.js';
 import { config, moduleList, testCasesByModule, initEc2Region } from './state/store.js';
