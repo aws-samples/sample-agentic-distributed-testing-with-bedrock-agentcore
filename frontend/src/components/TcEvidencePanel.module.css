@@ -320,3 +320,35 @@
   justify-content: center;
 }
 .lightboxClose:hover { background: rgba(0, 0, 0, 0.8); }
+
+.lightboxNav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightboxNav:hover { background: rgba(0, 0, 0, 0.8); }
+.lightboxNavPrev { left: 16px; }
+.lightboxNavNext { right: 16px; }
+
+.lightboxCounter {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+}

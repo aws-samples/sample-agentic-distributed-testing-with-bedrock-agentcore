@@ -28,9 +28,20 @@ function useSnapshotUrls(snapshots) {
 }
 
 export default function TcEvidencePanel({ tc }) {
-  const [lightboxUrl, setLightboxUrl] = useState(null)
+  const [lightboxIndex, setLightboxIndex] = useState(null)
   const snapshots = tc?.snapshots || []
   const snapshotUrls = useSnapshotUrls(snapshots)
+
+  useEffect(() => {
+    if (lightboxIndex === null) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setLightboxIndex(null)
+      else if (e.key === 'ArrowLeft') setLightboxIndex(i => (i - 1 + snapshots.length) % snapshots.length)
+      else if (e.key === 'ArrowRight') setLightboxIndex(i => (i + 1) % snapshots.length)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [lightboxIndex, snapshots.length])
 
   const {
     ref: logBodyRef,
@@ -107,7 +118,7 @@ export default function TcEvidencePanel({ tc }) {
                         alt={label}
                         className={styles.snapThumb}
                         loading="lazy"
-                        onClick={() => setLightboxUrl(url)}
+                        onClick={() => setLightboxIndex(i)}
                       />
                     ) : (
                       <div className={styles.snapLoading}>Loading…</div>
@@ -152,12 +163,32 @@ export default function TcEvidencePanel({ tc }) {
       </div>
 
       {/* Click-to-enlarge lightbox */}
-      {lightboxUrl && (
-        <div className={styles.lightbox} onClick={() => setLightboxUrl(null)}>
-          <img src={lightboxUrl} alt="Snapshot full size" className={styles.lightboxImg} />
-          <button className={styles.lightboxClose} onClick={() => setLightboxUrl(null)}>✕</button>
-        </div>
-      )}
+      {lightboxIndex !== null && (() => {
+        const activeSnap = snapshots[lightboxIndex]
+        const activeUrl = activeSnap && snapshotUrls[activeSnap.key]
+        const canNav = snapshots.length > 1
+        const goPrev = (e) => { e.stopPropagation(); setLightboxIndex(i => (i - 1 + snapshots.length) % snapshots.length) }
+        const goNext = (e) => { e.stopPropagation(); setLightboxIndex(i => (i + 1) % snapshots.length) }
+        return (
+          <div className={styles.lightbox} onClick={() => setLightboxIndex(null)}>
+            {canNav && (
+              <button className={`${styles.lightboxNav} ${styles.lightboxNavPrev}`} onClick={goPrev} aria-label="Previous snapshot">
+                <Icon name="chevron_left" size={28} />
+              </button>
+            )}
+            {activeUrl && (
+              <img src={activeUrl} alt="Snapshot full size" className={styles.lightboxImg} onClick={(e) => e.stopPropagation()} />
+            )}
+            {canNav && (
+              <button className={`${styles.lightboxNav} ${styles.lightboxNavNext}`} onClick={goNext} aria-label="Next snapshot">
+                <Icon name="chevron_right" size={28} />
+              </button>
+            )}
+            <div className={styles.lightboxCounter}>{lightboxIndex + 1} / {snapshots.length}</div>
+            <button className={styles.lightboxClose} onClick={() => setLightboxIndex(null)}>✕</button>
+          </div>
+        )
+      })()}
     </div>
   )
 }
