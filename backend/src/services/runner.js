@@ -24,7 +24,7 @@ function getRuntimeArn() {
   return config.agentcoreRuntimeArn;
 }
 
-function parseSSE(rawText, sessionId, runId, tcId) {
+function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
   const textParts = [];
   let assertResult = null;
 
@@ -49,11 +49,12 @@ function parseSSE(rawText, sessionId, runId, tcId) {
       }
 
       const textDelta = ev.contentBlockDelta?.delta?.text;
-      if (textDelta) { textParts.push(textDelta); broadcast({ type: 'step_detail', sessionId, action: textDelta, kind: 'text' }); }
+      if (textDelta) { textParts.push(textDelta); broadcast({ type: 'step_detail', sessionId, action: textDelta, kind: 'text' }); logEntry?.(textDelta, 'text'); }
 
       const toolStart = ev.contentBlockStart?.start?.toolUse;
       if (toolStart?.name && toolStart.name !== 'assert_pass' && toolStart.name !== 'assert_fail') {
         broadcast({ type: 'step_detail', sessionId, action: `→ ${toolStart.name}`, kind: 'tool' });
+        logEntry?.(`→ ${toolStart.name}`, 'tool');
       }
       if (toolStart?.name === 'assert_pass') assertResult = { passed: true, reason: '' };
       else if (toolStart?.name === 'assert_fail') assertResult = { passed: false, reason: '' };
@@ -128,7 +129,9 @@ export async function invokeRuntime(tc, runId, sessionId) {
       const response = await getAgentCoreClient().send(cmd);
       if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
     }
-    return parseSSE(rawText, sessionId, runId, tc.id);
+    // Local mode already logged text/tool events live via the onLine callback above;
+    // only pass logEntry here for agentcore mode, where parseSSE is the sole log source.
+    return parseSSE(rawText, sessionId, runId, tc.id, config.agentMode === 'local' ? null : logEntry);
   } catch (e) {
     return { passed: false, reason: `Runtime error: ${e.message}` };
   }
