@@ -113,20 +113,26 @@ export class AgentCoreStack extends Stack {
     }
     this.application = new AgentCoreApplication(this, 'Application', appProps as any);
 
-    // Wire BEDROCK_MODEL/BEDROCK_REGION into the runtime container's actual
-    // environment. agent-runtime-agentcore/app/src/index.js reads these once
-    // at container startup, not per-invocation from the InvokeAgentRuntime
-    // payload, and agentcore.json/aws-targets.json have no field for this —
-    // without it the container silently falls back to its own hardcoded
-    // model default, which Bedrock rejects as invalid. deploy-dev.sh exports
-    // both from .env before invoking `agentcore deploy` so process.env has
-    // them at synth time here.
+    // Wire BEDROCK_MODEL/BEDROCK_REGION/BROWSER_REGION into the runtime
+    // container's actual environment. agent-runtime-agentcore/app/src/index.js
+    // reads these once at container startup, not per-invocation from the
+    // InvokeAgentRuntime payload, and agentcore.json/aws-targets.json have no
+    // field for this — without BEDROCK_MODEL/BEDROCK_REGION the container
+    // silently falls back to its own hardcoded model default, which Bedrock
+    // rejects as invalid; without BROWSER_REGION it falls back to
+    // BEDROCK_REGION, which 404s the backend's screenshot poller whenever the
+    // two regions differ (the poller attaches to the browser session via
+    // config.browserRegion). deploy-dev.sh exports all three from .env before
+    // invoking `agentcore deploy` so process.env has them at synth time here.
     for (const env of this.application.environments.values()) {
       if (process.env.BEDROCK_MODEL) {
         env.runtime.addEnvironmentVariable('BEDROCK_MODEL', process.env.BEDROCK_MODEL);
       }
       if (process.env.BEDROCK_REGION) {
         env.runtime.addEnvironmentVariable('BEDROCK_REGION', process.env.BEDROCK_REGION);
+      }
+      if (process.env.BROWSER_REGION) {
+        env.runtime.addEnvironmentVariable('BROWSER_REGION', process.env.BROWSER_REGION);
       }
     }
 

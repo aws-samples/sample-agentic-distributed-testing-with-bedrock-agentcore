@@ -1,7 +1,7 @@
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
 import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeModules } from '../state/store.js';
 import { broadcast } from './websocket.js';
-import { ensureSession, invokeLocalRuntime } from './sessions.js';
+import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
 
 // Per-region client cache so live region changes from Settings are picked up
@@ -124,8 +124,13 @@ export async function invokeRuntime(tc, runId, sessionId) {
         } catch { /* skip */ }
       });
     } else {
-      const sessId = `${sessionId.replace(/\s+/g, '_')}-${tc.id}-${Date.now()}`.padEnd(33, '0');
-      const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId: sessId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
+      // Reuse the same runtimeSessionId minted at connect time (see
+      // makeRuntimeSessionId in services/sessions.js) so every test case in
+      // this module keeps landing on the same warm container — and thus the
+      // same in-memory AgentCore Browser session — instead of each getting
+      // its own container with its own abandoned browser session.
+      const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
+      const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
       const response = await getAgentCoreClient().send(cmd);
       if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
     }
@@ -168,6 +173,11 @@ export async function runModuleTests(module, testCases, runId) {
     if (sess) sess.action = `[${tc.id}] Running on ${label}...`;
     broadcast({ type: 'action', sessionId, text: `[${tc.id}] Invoking ${label}...`, testId: tc.id });
 
+    // Pause the agentcore-mode screenshot poller for this module while the
+    // agent's own CDP connection is live — see the comment in
+    // startAgentcoreScreenPoller (services/sessions.js) for why a second
+    // concurrent connection to the same AgentCore Browser session 429s.
+    if (sess) sess.testRunning = true;
     try {
       const result = await invokeRuntime(tc, runId, sessionId);
       const status = result.passed ? 'PASS' : 'FAIL';
@@ -184,7 +194,7 @@ export async function runModuleTests(module, testCases, runId) {
       broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: e.message, runId });
       saveTestResult(tc.id, 'FAIL', e.message);
     }
-    if (sess) sess.action = '';
+    if (sess) { sess.testRunning = false; sess.action = ''; }
   }
 
   activeModules.delete(module);

@@ -27,6 +27,12 @@ const ASSERT_SERVER = join(__dirname, 'assert-server.js');
 
 const PORT           = process.env.PORT           || 8080;
 const BEDROCK_REGION = process.env.BEDROCK_REGION || process.env.AWS_REGION || 'ap-southeast-1';
+// AgentCore Runtime/Browser region — intentionally separate from
+// BEDROCK_REGION (Bedrock model inference region). The backend's
+// grabLatestScreenshot (backend/src/services/sessions.js) attaches to this
+// same browser session using config.browserRegion, so the Browser SDK here
+// must use the same region or the signed CDP WebSocket 404s.
+const BROWSER_REGION = process.env.BROWSER_REGION || BEDROCK_REGION;
 // BEDROCK_MODEL is shared with the backend/frontend as a bare model ID (e.g.
 // "global.anthropic.claude-sonnet-5" — see .env.example), but opencode's
 // config schema requires the "amazon-bedrock/<model-id>" provider prefix
@@ -78,7 +84,7 @@ async function getOrCreateBrowserSession(sessionName) {
 
   console.log(`[browser] provisioning AgentCore Browser session for "${sessionName}"`);
   await logCallerIdentity(`before startSession("${sessionName}")`);
-  const browser = new Browser({ region: BEDROCK_REGION });
+  const browser = new Browser({ region: BROWSER_REGION });
   const session = await browser.startSession({ sessionName });
 
   browserSessions[sessionName] = { browser, sessionId: session.sessionId };
@@ -117,7 +123,7 @@ async function stopBrowserSession(sessionName) {
 // open), so target-scoped methods need Target.getTargets → pick the page
 // target → Target.attachToTarget({flatten: true}) first, tagging every
 // subsequent command with the resulting CDP session ID.
-async function agentCoreScreenshot(sessionName) {
+async function agentCoreScreenshot(sessionName, navigateUrl) {
   const { url: cdpWsUrl, headers: cdpWsHeaders } = await getCdpWebSocket(sessionName);
   return new Promise((resolve, reject) => {
     const ws = new WS(cdpWsUrl, { headers: cdpWsHeaders });
@@ -129,7 +135,9 @@ async function agentCoreScreenshot(sessionName) {
       ws.send(JSON.stringify(msg));
       return id;
     }
-    const timeout = setTimeout(() => { ws.close(); reject(new Error('AgentCore Browser screenshot timed out')); }, 8000);
+    // Longer than the no-navigate case (was 8000) — a real Page.navigate
+    // round trip plus render wait can take a few seconds beyond attach.
+    const timeout = setTimeout(() => { ws.close(); reject(new Error('AgentCore Browser screenshot timed out')); }, navigateUrl ? 15000 : 8000);
     const pending = {}; // id → what we're waiting for
     ws.on('open', () => {
       pending[send('Target.getTargets')] = 'getTargets';
@@ -170,9 +178,21 @@ async function agentCoreScreenshot(sessionName) {
           return;
         }
         send('Page.enable', {}, cdpSessionId);
+        if (navigateUrl) {
+          pending[send('Page.navigate', { url: navigateUrl }, cdpSessionId)] = 'navigate';
+        } else {
+          setTimeout(() => {
+            pending[send('Page.captureScreenshot', { format: 'jpeg', quality: 50 }, cdpSessionId)] = 'screenshot';
+          }, 500);
+        }
+      } else if (waitingFor === 'navigate') {
+        delete pending[msg.id];
+        const cdpSessionId = msg.sessionId;
+        // Give the target page a moment to render before capturing —
+        // mirrors agent-runtime-local's cdpNavigate → cdpScreenshot gap.
         setTimeout(() => {
           pending[send('Page.captureScreenshot', { format: 'jpeg', quality: 50 }, cdpSessionId)] = 'screenshot';
-        }, 500);
+        }, 1000);
       } else if (waitingFor === 'screenshot') {
         delete pending[msg.id];
         clearTimeout(timeout);
@@ -527,7 +547,7 @@ async function handleInvocation(req, res) {
     const url = targetUrl || 'https://www.google.com';
     emitText('Initializing browser session...');
     try {
-      const screenshot = await agentCoreScreenshot(sessionName);
+      const screenshot = await agentCoreScreenshot(sessionName, url);
       if (screenshot) emit({ screenshot: { data: screenshot } });
       // Report the AgentCore Browser sessionId back to the backend so it can
       // poll this exact session's screenshots (not an arbitrary READY
@@ -634,5 +654,6 @@ app.post('/kill', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Agent Runtime (OpenCode + AgentCore Browser) on port ${PORT}`);
   console.log(`Bedrock region: ${BEDROCK_REGION}`);
+  console.log(`Browser region: ${BROWSER_REGION}`);
   console.log(`Model: ${BEDROCK_MODEL}`);
 });

@@ -26,6 +26,22 @@ function getRuntimeArn() {
   return config.agentcoreRuntimeArn;
 }
 
+// AgentCore Runtime routes InvokeAgentRuntime calls with the same
+// runtimeSessionId to the same warm container instance; a different id can
+// land on a different (or freshly cold-started) container. agent-runtime-
+// agentcore/app/src/index.js's browserSessions map is in-memory per
+// container instance, so minting a fresh runtimeSessionId per call (as the
+// init call and every run_test call previously did via Date.now()) meant
+// every test invocation could provision a brand-new AgentCore Browser
+// session, abandoning the one the live-view poller was still attached to —
+// screenshots would freeze on a stale frame from the orphaned session while
+// the agent kept working in a new one. Generating this once per module at
+// connect time and reusing it for every run_test call for that module keeps
+// them pinned to the same container/browser session.
+export function makeRuntimeSessionId(sessionId) {
+  return `${sessionId.replace(/\s+/g, '_')}-${Date.now()}`.padEnd(33, '0');
+}
+
 // ─── Screen polling (local mode) ─────────────────────────────────────────────
 // Per-session poll interval handle for 2fps screenshot streaming
 const screenPollers = {};
@@ -66,6 +82,15 @@ export function startAgentcoreScreenPoller(sessionId) {
   if (agentcoreScreenPollers[sessionId]) return;
   agentcoreScreenPollers[sessionId] = setInterval(async () => {
     if (!sessions[sessionId]) { stopAgentcoreScreenPoller(sessionId); return; }
+    // Skip while a test is actually running (see services/runner.js, which
+    // sets .testRunning around invokeRuntime): chrome-devtools-mcp already
+    // holds the CDP WebSocket to this browser session for the live agent, and
+    // AgentCore Browser's automation-stream endpoint rejects a second
+    // concurrent CDP connection to the same session with a 429. The agent's
+    // own SSE stream already broadcasts screenshots live during a run (see
+    // runner.js's parseSSE/invokeLocalRuntime onLine callback), so this
+    // poller is redundant then anyway — only needed while idle/connecting.
+    if (sessions[sessionId]?.testRunning) return;
     await grabLatestScreenshot(sessionId, sessions[sessionId]?.browserSessionId);
   }, 2000);
 }
@@ -119,7 +144,10 @@ export async function ensureSession(sessionId) {
   if (sessions[sessionId]?.connected) return;
   console.log(`[session] init ${sessionId} (mode=${config.agentMode})`);
 
-  sessions[sessionId] = { connected: false, screenshot: null, action: 'Initializing...', browserSessionId: null };
+  // Pinned for this module's whole lifetime — see makeRuntimeSessionId's
+  // comment above for why every call for this module must reuse it.
+  const runtimeSessionId = makeRuntimeSessionId(sessionId);
+  sessions[sessionId] = { connected: false, screenshot: null, action: 'Initializing...', browserSessionId: null, runtimeSessionId };
   broadcast({ type: 'session_status', sessionId, connected: false, module: sessionId });
 
   const initPayload = {
@@ -133,10 +161,9 @@ export async function ensureSession(sessionId) {
     if (config.agentMode === 'local') {
       rawText = await invokeLocalRuntime(initPayload);
     } else {
-      const sessId = `init-${sessionId.replace(/\s+/g, '_')}-${Date.now()}`.padEnd(33, '0');
       const cmd = new InvokeAgentRuntimeCommand({
         agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT',
-        runtimeSessionId: sessId,
+        runtimeSessionId,
         contentType: 'application/json',
         payload: new TextEncoder().encode(JSON.stringify(initPayload)),
       });

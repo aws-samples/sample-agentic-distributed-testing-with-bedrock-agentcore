@@ -208,6 +208,7 @@ deploy_agentcore() {
   # them (see that file's comment).
   export BEDROCK_MODEL="$(grep -E '^BEDROCK_MODEL=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
   export BEDROCK_REGION="$(grep -E '^BEDROCK_REGION=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+  export BROWSER_REGION="$(grep -E '^BROWSER_REGION=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
 
   log "npm install (agent-runtime-agentcore/agentcore/cdk)"
   (cd "$agentcore_dir/cdk" && npm install)
