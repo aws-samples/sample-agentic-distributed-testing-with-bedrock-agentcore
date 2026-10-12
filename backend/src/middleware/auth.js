@@ -1,11 +1,9 @@
 /**
  * Cognito access-token verification for /api/* routes.
  *
- * Enabled only when COGNITO_USER_POOL_ID + COGNITO_CLIENT_ID are set (i.e.
- * when the deploying Terraform stack had enable_cognito_auth = true — see
- * terraform/testrunner/cognito.tf). Absent those env vars, requireAuth() is
- * a no-op passthrough, so local dev (docker-compose, no Cognito) is
- * unaffected.
+ * Optional: enabled only when COGNITO_USER_POOL_ID + COGNITO_CLIENT_ID are set
+ * (bring your own Cognito user pool). Absent those env vars, requireAuth() is
+ * a no-op passthrough, so the default single-EC2 / local setup is unaffected.
  *
  * Verification uses aws-jwt-verify (AWS's own maintained library): it
  * fetches the user pool's JWKS, caches it, and checks signature + issuer +
@@ -13,9 +11,9 @@
  * Cognito *access* token (not the ID token) as `Authorization: Bearer <jwt>`
  * on every API call; we verify that token type here to match.
  *
- * The ALB health check (GET /api/health) has no browser session and no
- * token — it's excluded from this middleware in index.js, not here, so this
- * file stays a single-purpose "verify or reject" gate.
+ * Health probes (GET /api/health) have no browser session and no token — it's
+ * excluded from this middleware in index.js, not here, so this file stays a
+ * single-purpose "verify or reject" gate.
  */
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 

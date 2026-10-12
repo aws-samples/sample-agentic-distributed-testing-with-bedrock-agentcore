@@ -13,12 +13,9 @@ WORKDIR /app/frontend
 
 # Vite inlines import.meta.env.VITE_* into the built JS bundle at build time
 # (not read at container runtime) — so Cognito config must be passed as
-# build args, not `environment` on the ECS task definition. All three are
+# build args, not runtime `environment`. All three are
 # optional; when unset, the frontend renders with auth disabled (see
 # frontend/src/context/AuthContext.jsx authRequired()). Values come from
-# `terraform output cognito_user_pool_id / cognito_client_id /
-# cognito_hosted_ui_domain` after `terraform apply` creates the pool — see
-# terraform/README.md for the full two-phase deploy flow.
 ARG VITE_COGNITO_DOMAIN=""
 ARG VITE_COGNITO_CLIENT_ID=""
 ARG VITE_COGNITO_USER_POOL_ID=""

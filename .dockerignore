@@ -4,8 +4,7 @@
 sample-app/
 agent-runtime-agentcore/
 agent-runtime-local/
-terraform/
-.deploy-dev-native-logs/
+.deploy-native-logs/
 *.db
 *.db-wal
 *.db-shm

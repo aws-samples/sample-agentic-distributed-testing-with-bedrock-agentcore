@@ -4,7 +4,7 @@ import { installAuthFetch, setAuthTokenGetter } from './authFetch'
 /**
  * Cognito Hosted UI login via Authorization Code + PKCE — no client secret
  * in the browser bundle, which is the correct flow for a public SPA client
- * (see terraform/testrunner/cognito.tf, generate_secret = false).
+ * (the Cognito app client must be created without a client secret).
  *
  * Wholly inert when VITE_COGNITO_* env vars are unset at build time (local
  * docker-compose dev, or any deployment with enable_cognito_auth = false):
