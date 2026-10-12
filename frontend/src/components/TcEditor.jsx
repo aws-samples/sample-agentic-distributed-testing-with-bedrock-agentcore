@@ -1,179 +1,238 @@
-import { useState, useEffect } from 'react'
-import jsyaml from 'js-yaml'
+import { useState, useEffect, useRef } from 'react'
 import styles from './TcEditor.module.css'
 import Btn from './Btn'
 import Icon from './Icon'
+import EnhanceModal from './EnhanceModal'
+import BddHelpModal from './BddHelpModal'
+import { useApi } from '../context/useApi'
+import { toGherkin, fromGherkin } from '../utils/gherkin'
 
-function toLines(v) {
-  if (!v) return ''
-  return Array.isArray(v) ? v.join('\n') : v
-}
+const SECTIONS = [
+  { key: 'given', label: 'Given', placeholder: "e.g. I'm a signed-in customer with a credit card account" },
+  { key: 'when', label: 'When', placeholder: 'e.g. I pay the full balance on my card' },
+  { key: 'then', label: 'Then', placeholder: 'e.g. I see a confirmation and the balance shows as zero' },
+]
 
-function fromLines(s) {
-  return (s || '').split('\n').map(l => l.trim()).filter(Boolean)
-}
+const toDraft = (tc) => ({
+  title: tc.title || '',
+  given: [...(tc.given || [])],
+  when: [...(tc.when || [])],
+  then: [...(tc.then || [])],
+})
+
+// Drop blank rows and trim — the draft keeps blanks so a freshly added row can be typed into.
+const clean = (d) => ({
+  title: d.title.trim(),
+  given: d.given.map(s => s.trim()).filter(Boolean),
+  when: d.when.map(s => s.trim()).filter(Boolean),
+  then: d.then.map(s => s.trim()).filter(Boolean),
+})
 
 export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
-  const [activeTab, setActiveTab] = useState('fields')
-  const [title, setTitle] = useState('')
-  const [preconditions, setPreconditions] = useState('')
-  const [steps, setSteps] = useState('')
-  const [expectedResult, setExpectedResult] = useState('')
-  const [yamlText, setYamlText] = useState('')
+  const [activeTab, setActiveTab] = useState('editor')   // 'editor' | 'gherkin'
+  const [draft, setDraft] = useState(() => (tc ? toDraft(tc) : { title: '', given: [], when: [], then: [] }))
+  const [gherkin, setGherkin] = useState(() => (tc ? toGherkin(tc) : ''))
+  const [enhanceOpen, setEnhanceOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [switchBlocked, setSwitchBlocked] = useState(false)
+  const api = useApi()
+  const focusNext = useRef(null)    // `${section}:${index}` to focus after the next render
+  const inputs = useRef({})
 
   useEffect(() => {
     if (!tc) return
-    setTitle(tc.title || '')
-    setPreconditions(toLines(tc.preconditions))
-    setSteps(toLines(tc.steps))
-    setExpectedResult(toLines(tc.expectedResult))
-    setYamlText(jsyaml.dump(tc, { lineWidth: 100, quotingType: '"' }))
-    setActiveTab('fields')
+    setDraft(toDraft(tc))
+    setGherkin(toGherkin(tc))
+    setActiveTab('editor')
+    setSwitchBlocked(false)
   }, [tc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!focusNext.current) return
+    inputs.current[focusNext.current]?.focus()
+    focusNext.current = null
+  })
 
   if (!tc) return null
 
-  const handleApplyFields = () => {
-    const updated = {
-      ...tc,
-      title: title.trim() || tc.title,
-      preconditions: fromLines(preconditions),
-      steps: fromLines(steps),
-      expectedResult: fromLines(expectedResult),
+  const parsed = fromGherkin(gherkin)
+  const onGherkin = activeTab === 'gherkin'
+  const gherkinOk = parsed.errors.length === 0
+
+  // The test case as the user currently sees it, from whichever tab is active.
+  const current = () => {
+    if (onGherkin) {
+      return { ...tc, title: parsed.title.trim() || tc.title, given: parsed.given, when: parsed.when, then: parsed.then }
     }
-    setYamlText(jsyaml.dump(updated, { lineWidth: 100, quotingType: '"' }))
+    const c = clean(draft)
+    return { ...tc, title: c.title || tc.title, given: c.given, when: c.when, then: c.then }
+  }
+  const canApply = !readOnly && (!onGherkin || gherkinOk)
+
+  const show = (updated) => {          // refresh both views from one test case
+    setDraft(toDraft(updated))
+    setGherkin(toGherkin(updated))
+  }
+
+  const handleApply = () => {
+    if (!canApply) return
+    const updated = current()
+    show(updated)
     onApply(updated)
+  }
+
+  const handleSaveEnhanced = (e) => {
+    const updated = { ...tc, title: e.title || tc.title, given: e.given, when: e.when, then: e.then }
+    show(updated)
+    onApply(updated)
+    setEnhanceOpen(false)
   }
 
   const handleSwitchTab = (tab) => {
     if (tab === activeTab) return
-    if (activeTab === 'fields') {
-      // Sync to yaml
-      const updated = {
-        ...tc,
-        title: title.trim() || tc.title,
-        preconditions: fromLines(preconditions),
-        steps: fromLines(steps),
-        expectedResult: fromLines(expectedResult),
-      }
-      setYamlText(jsyaml.dump(updated, { lineWidth: 100, quotingType: '"' }))
+    if (tab === 'gherkin') {
+      setGherkin(toGherkin({ ...tc, title: clean(draft).title || tc.title, ...clean(draft) }))
+    } else {
+      if (!gherkinOk) { setSwitchBlocked(true); return }   // don't throw away text that doesn't parse yet
+      setDraft({ title: parsed.title.trim() || tc.title, given: parsed.given, when: parsed.when, then: parsed.then })
     }
+    setSwitchBlocked(false)
     setActiveTab(tab)
   }
 
-  const handleApplyYaml = () => {
-    try {
-      const parsed = jsyaml.load(yamlText)
-      if (!parsed) return
-      const updated = {
-        ...tc,
-        title: parsed.title || tc.title,
-        preconditions: parsed.preconditions ?? tc.preconditions,
-        steps: Array.isArray(parsed.steps) ? parsed.steps : tc.steps,
-        expectedResult: parsed.expectedResult ?? tc.expectedResult,
-      }
-      setTitle(updated.title)
-      setPreconditions(toLines(updated.preconditions))
-      setSteps(toLines(updated.steps))
-      setExpectedResult(toLines(updated.expectedResult))
-      onApply(updated)
-      setActiveTab('fields')
-    } catch (e) {
-      alert('YAML parse error: ' + e.message)
+  // ── Editor-tab row helpers ──────────────────────────────────────────────
+  const setRow = (key, i, value) => setDraft(d => ({ ...d, [key]: d[key].map((s, j) => (j === i ? value : s)) }))
+  const addRow = (key, at) => {
+    setDraft(d => {
+      const rows = [...d[key]]
+      const idx = at === undefined ? rows.length : at
+      rows.splice(idx, 0, '')
+      focusNext.current = `${key}:${idx}`
+      return { ...d, [key]: rows }
+    })
+  }
+  const removeRow = (key, i) => setDraft(d => ({ ...d, [key]: d[key].filter((_, j) => j !== i) }))
+  const moveRow = (key, i, dir) => setDraft(d => {
+    const rows = [...d[key]]
+    const j = i + dir
+    if (j < 0 || j >= rows.length) return d
+    ;[rows[i], rows[j]] = [rows[j], rows[i]]
+    return { ...d, [key]: rows }
+  })
+  const onRowKey = (e, key, i) => {
+    if (e.key === 'Enter') { e.preventDefault(); addRow(key, i + 1) }
+    else if (e.key === 'Backspace' && draft[key][i] === '' && draft[key].length > 0) {
+      e.preventDefault()
+      removeRow(key, i)
+      if (i > 0) focusNext.current = `${key}:${i - 1}`
     }
   }
 
   return (
     <div className={styles.container}>
       <div className={styles.topActions}>
-        <Btn variant="primary" disabled={readOnly} onClick={activeTab === 'yaml' ? handleApplyYaml : handleApplyFields}>
+        <Btn variant="primary" disabled={!canApply} onClick={handleApply}>
           <Icon name="check" />Apply Changes
+        </Btn>
+        <Btn disabled={readOnly || !canApply} onClick={() => setEnhanceOpen(true)}
+          title={!canApply && !readOnly ? 'Fix the Gherkin errors first' : 'Rewrite this test case as AI-enhanced BDD and review the change'}>
+          <Icon name="auto_awesome" />Enhance by AI
         </Btn>
         <Btn variant="danger" disabled={readOnly} style={{ marginLeft: 'auto' }} onClick={onDelete}><Icon name="delete" />Delete TC</Btn>
       </div>
       <div className={styles.tabs}>
         <div
-          className={`${styles.tab}${activeTab === 'fields' ? ' ' + styles.tabActive : ''}`}
-          onClick={() => handleSwitchTab('fields')}
+          className={`${styles.tab}${activeTab === 'editor' ? ' ' + styles.tabActive : ''}`}
+          onClick={() => handleSwitchTab('editor')}
         >
-          Fields
+          Editor
         </div>
         <div
-          className={`${styles.tab}${activeTab === 'yaml' ? ' ' + styles.tabActive : ''}`}
-          onClick={() => handleSwitchTab('yaml')}
+          className={`${styles.tab}${activeTab === 'gherkin' ? ' ' + styles.tabActive : ''}`}
+          onClick={() => handleSwitchTab('gherkin')}
         >
-          YAML
+          Gherkin
         </div>
+        <button type="button" className={styles.infoBtn} title="How BDD works and the expected format" onClick={() => setHelpOpen(true)}>
+          <Icon name="info" size={16} />
+        </button>
       </div>
 
-      {activeTab === 'fields' ? (
-        <>
-          <div className={styles.fieldsPane}>
-            <div style={{ marginBottom: 14 }}>
-              <span className={styles.idBadge}>{tc.id}</span>
-            </div>
-            <div className={styles.fieldSection}>
-              <label className={styles.fieldLabel}>Title *</label>
-              <input
-                className={styles.fieldInput}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                disabled={readOnly}
-              />
-            </div>
-            <div className={styles.fieldSection}>
-              <label className={styles.fieldLabel}>Preconditions</label>
-              <textarea
-                className={`${styles.fieldInput} ${styles.fieldTextarea}`}
-                rows={3}
-                value={preconditions}
-                onChange={(e) => setPreconditions(e.target.value)}
-                placeholder="One condition per line"
-                disabled={readOnly}
-              />
-              <div className={styles.hint}>One condition per line</div>
-            </div>
-            <div className={styles.fieldSection}>
-              <label className={styles.fieldLabel}>Steps</label>
-              <textarea
-                className={`${styles.fieldInput} ${styles.fieldTextarea}`}
-                rows={7}
-                value={steps}
-                onChange={(e) => setSteps(e.target.value)}
-                disabled={readOnly}
-              />
-              <div className={styles.hint}>One step per line</div>
-            </div>
-            <div className={styles.fieldSection}>
-              <label className={styles.fieldLabel}>Expected Result</label>
-              <textarea
-                className={`${styles.fieldInput} ${styles.fieldTextarea}`}
-                rows={3}
-                value={expectedResult}
-                onChange={(e) => setExpectedResult(e.target.value)}
-                placeholder="One expected result per line"
-                disabled={readOnly}
-              />
-              <div className={styles.hint}>One expected result per line</div>
-            </div>
+      {activeTab === 'editor' ? (
+        <div className={styles.fieldsPane}>
+          <div style={{ marginBottom: 14 }}>
+            <span className={styles.idBadge}>{tc.id}</span>
           </div>
-        </>
+          <div className={styles.fieldSection}>
+            <label className={styles.fieldLabel}>Scenario *</label>
+            <input
+              className={styles.fieldInput}
+              value={draft.title}
+              onChange={(e) => setDraft(d => ({ ...d, title: e.target.value }))}
+              placeholder="What this test case proves, in one line"
+              disabled={readOnly}
+            />
+          </div>
+
+          {SECTIONS.map(({ key, label, placeholder }) => (
+            <div className={styles.stepGroup} key={key}>
+              {draft[key].map((text, i) => (
+                <div className={styles.stepRow} key={i}>
+                  <span className={styles.stepKw}>{i === 0 ? label : 'And'}</span>
+                  <input
+                    ref={(el) => { inputs.current[`${key}:${i}`] = el }}
+                    className={`${styles.fieldInput} ${styles.stepInput}`}
+                    value={text}
+                    onChange={(e) => setRow(key, i, e.target.value)}
+                    onKeyDown={(e) => onRowKey(e, key, i)}
+                    placeholder={i === 0 ? placeholder : ''}
+                    disabled={readOnly}
+                  />
+                  <button type="button" className={styles.iconBtn} title="Move up" disabled={readOnly || i === 0} onClick={() => moveRow(key, i, -1)}><Icon name="arrow_upward" size={14} /></button>
+                  <button type="button" className={styles.iconBtn} title="Move down" disabled={readOnly || i === draft[key].length - 1} onClick={() => moveRow(key, i, 1)}><Icon name="arrow_downward" size={14} /></button>
+                  <button type="button" className={styles.iconBtn} title="Remove" disabled={readOnly} onClick={() => removeRow(key, i)}><Icon name="close" size={14} /></button>
+                </div>
+              ))}
+              <button type="button" className={styles.addStep} disabled={readOnly} onClick={() => addRow(key)}>
+                <Icon name="add" size={14} />{draft[key].length ? 'Add And step' : `Add ${label} step`}
+              </button>
+            </div>
+          ))}
+          <div className={styles.hint}>Press Enter in a step to add the next one. Plain language is fine — the agent works out the exact UI steps.</div>
+        </div>
       ) : (
         <div className={styles.yamlPane}>
           <div className={styles.yamlToolbar}>
+            <span className={styles.idBadge} style={{ padding: '2px 8px', fontSize: 12 }}>{tc.id}</span>
             <span className={styles.yamlHint}>
-              Editing YAML for <strong style={{ color: 'var(--accent)' }}>{tc.id}</strong>
+              Raw Gherkin — one Scenario with Given / When / Then / And.
             </span>
           </div>
           <textarea
             className={styles.yamlEditor}
-            value={yamlText}
-            onChange={(e) => setYamlText(e.target.value)}
+            value={gherkin}
+            onChange={(e) => { setGherkin(e.target.value); setSwitchBlocked(false) }}
             spellCheck={false}
             disabled={readOnly}
+            placeholder={'Scenario: Customer pays the full card balance\n  Given I am a signed-in customer with a credit card account\n  When I pay the full balance\n  Then I see a confirmation\n  And the balance shows as zero'}
           />
+          {(parsed.errors.length > 0 || parsed.warnings.length > 0 || switchBlocked) && (
+            <div className={styles.gherkinMsgs}>
+              {switchBlocked && <div className={styles.gherkinErr}>Fix the errors below before switching to the Editor tab, so nothing you typed is lost.</div>}
+              {parsed.errors.map((m, i) => <div key={'e' + i} className={styles.gherkinErr}>{m}</div>)}
+              {parsed.warnings.map((m, i) => <div key={'w' + i} className={styles.gherkinWarn}>{m}</div>)}
+            </div>
+          )}
         </div>
       )}
+      <BddHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <EnhanceModal
+        open={enhanceOpen}
+        onClose={() => setEnhanceOpen(false)}
+        testCase={enhanceOpen ? current() : null}
+        api={api}
+        onSave={handleSaveEnhanced}
+      />
     </div>
   )
 }

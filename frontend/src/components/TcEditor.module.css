@@ -134,3 +134,33 @@
   padding: 14px 18px;
   min-height: 0;
 }
+
+.gherkinMsgs {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px 14px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.gherkinErr { color: var(--red); }
+.gherkinWarn { color: var(--text-muted); }
+
+/* Editor tab: one row per Given / When / Then step */
+.stepGroup { margin-bottom: 18px; }
+.stepRow { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.stepKw { width: 44px; flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--text-muted); text-align: right; font-family: 'Courier New', Courier, monospace; }
+.stepInput { flex: 1; min-width: 0; font-family: inherit; }
+.iconBtn { background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text-muted); cursor: pointer; padding: 3px; display: inline-flex; align-items: center; }
+.iconBtn:hover:not(:disabled) { color: var(--text); background: var(--surface2); border-color: var(--border); }
+.iconBtn:disabled { opacity: 0.3; cursor: default; }
+.addStep { margin-left: 50px; background: none; border: 1px dashed var(--border); border-radius: 5px; color: var(--text-muted); font-size: 12px; padding: 4px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.addStep:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.addStep:disabled { opacity: 0.4; cursor: default; }
+
+.infoBtn { margin-left: auto; align-self: center; margin-right: 10px; background: none; border: 1px solid transparent; border-radius: 50%; color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; }
+.infoBtn:hover { color: var(--accent); background: var(--surface); border-color: var(--border); }
