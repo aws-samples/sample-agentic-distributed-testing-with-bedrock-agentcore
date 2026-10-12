@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { testRuns, stopFlags, sessions, config, testCasesByModule, runLogs, activeRunPromises } from '../state/store.js';
+import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, activeRunPromises } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
-import { runModuleTests } from '../services/runner.js';
-import { saveRunRecord } from '../state/archive.js';
+import { runFeatureTests } from '../services/runner.js';
+import { upsertRunRecord } from '../state/archive.js';
 
 const router = Router();
 
@@ -14,56 +14,76 @@ router.post('/tests/run', (req, res) => {
   testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
   stopFlags[runId] = false;
 
-  const byModule = {};
+  const byFeature = {};
   for (const tc of testCases) {
-    if (!byModule[tc.module]) byModule[tc.module] = [];
-    byModule[tc.module].push(tc);
+    if (!byFeature[tc.feature]) byFeature[tc.feature] = [];
+    byFeature[tc.feature].push(tc);
   }
 
-  broadcast({ type: 'run_start', runId, modules: Object.keys(byModule) });
+  // Shared by the live progress snapshots (below, fired after every test
+  // case) and the final save — completedAt is the only thing that
+  // distinguishes an in-progress record from a finished one.
+  function buildRunRecord(completedAt) {
+    const run = testRuns[runId] || {};
+    const results = run.results || {};
+    const features = {};
+    let total = 0, pass = 0, fail = 0, pending = 0;
 
-  const runPromise = Promise.all(Object.entries(byModule).map(([mod, tcs]) => runModuleTests(mod, tcs, runId)))
+    for (const [feat, tcs] of Object.entries(byFeature)) {
+      const cases = tcs.map(tc => {
+        const r = results[tc.id] || {};
+        const rawStatus = r.status || 'PENDING';
+        // Once the run is actually finished nothing should still read as
+        // RUNNING (e.g. a case whose feature errored out before reaching
+        // it) — collapse those to PENDING. While still in progress, keep
+        // RUNNING as-is so Analysis reflects real-time status instead of a
+        // misleading PENDING.
+        const status = (completedAt && rawStatus === 'RUNNING') ? 'PENDING' : rawStatus;
+        total++;
+        if (status === 'PASS') pass++;
+        else if (status === 'FAIL') fail++;
+        else pending++; // covers RUNNING and PENDING alike in the summary badge
+
+        return {
+          id: tc.id,
+          title: tc.title || tc.id,
+          status,
+          reason: r.reason || '',
+          snapshots: r.snapshots || [],  // [{key, ts, action, seq}] uploaded to S3
+          logs: (runLogs[runId]?.[tc.id]) || [],
+        };
+      });
+      features[feat] = { cases };
+    }
+
+    return {
+      runId,
+      startedAt: run.startedAt || new Date().toISOString(),
+      completedAt,
+      stopped: !!stopFlags[runId],
+      targetUrl: config.targetUrl,
+      summary: { total, pass, fail, pending },
+      features,
+    };
+  }
+
+  // Persists the run's current state (still in progress — completedAt
+  // null) and tells any open Analysis page to refresh, so a run appears in
+  // history the moment it starts and updates as each test case finishes,
+  // instead of only after the whole run completes.
+  function persistProgress() {
+    upsertRunRecord(buildRunRecord(null));
+    broadcast({ type: 'run_archive_updated', runId });
+  }
+
+  persistProgress(); // visible in Analysis immediately, all cases PENDING
+
+  broadcast({ type: 'run_start', runId, features: Object.keys(byFeature) });
+
+  const runPromise = Promise.all(Object.entries(byFeature).map(([feat, tcs]) => runFeatureTests(feat, tcs, runId, persistProgress)))
     .then(() => {
-      const completedAt = new Date().toISOString();
-      const run = testRuns[runId] || {};
-      const results = run.results || {};
-
-      // Build per-module case list from byModule test case definitions
-      const modules = {};
-      let total = 0, pass = 0, fail = 0, pending = 0;
-
-      for (const [mod, tcs] of Object.entries(byModule)) {
-        const cases = tcs.map(tc => {
-          const r = results[tc.id] || {};
-          const status = r.status === 'RUNNING' ? 'PENDING' : (r.status || 'PENDING');
-          total++;
-          if (status === 'PASS') pass++;
-          else if (status === 'FAIL') fail++;
-          else pending++;
-
-          return {
-            id: tc.id,
-            title: tc.title || tc.id,
-            status,
-            reason: r.reason || '',
-            snapshots: r.snapshots || [],  // [{key, ts, action, seq}] uploaded to S3
-            logs: (runLogs[runId]?.[tc.id]) || [],
-          };
-        });
-        modules[mod] = { cases };
-      }
-
-      const record = {
-        runId,
-        startedAt: run.startedAt || new Date().toISOString(),
-        completedAt,
-        stopped: !!stopFlags[runId],
-        targetUrl: config.targetUrl,
-        summary: { total, pass, fail, pending },
-        modules,
-      };
-
-      saveRunRecord(record);
+      const record = buildRunRecord(new Date().toISOString());
+      upsertRunRecord(record);
       delete runLogs[runId]; // free memory after archiving
       broadcast({ type: 'run_complete', runId, stopped: record.stopped });
       broadcast({ type: 'run_archive_updated', runId });

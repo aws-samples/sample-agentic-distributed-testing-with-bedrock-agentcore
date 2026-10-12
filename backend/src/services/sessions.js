@@ -35,8 +35,8 @@ function getRuntimeArn() {
 // every test invocation could provision a brand-new AgentCore Browser
 // session, abandoning the one the live-view poller was still attached to —
 // screenshots would freeze on a stale frame from the orphaned session while
-// the agent kept working in a new one. Generating this once per module at
-// connect time and reusing it for every run_test call for that module keeps
+// the agent kept working in a new one. Generating this once per feature at
+// connect time and reusing it for every run_test call for that feature keeps
 // them pinned to the same container/browser session.
 export function makeRuntimeSessionId(sessionId) {
   return `${sessionId.replace(/\s+/g, '_')}-${Date.now()}`.padEnd(33, '0');
@@ -75,7 +75,7 @@ export function stopScreenPoller(sessionId) {
 // ─── Screen polling (agentcore mode) ─────────────────────────────────────────
 // grabLatestScreenshot opens a new signed WebSocket connection per call, so
 // this polls slower than local mode's 500ms to avoid 429s across parallel
-// modules.
+// features.
 const agentcoreScreenPollers = {};
 
 export function startAgentcoreScreenPoller(sessionId) {
@@ -144,11 +144,11 @@ export async function ensureSession(sessionId) {
   if (sessions[sessionId]?.connected) return;
   console.log(`[session] init ${sessionId} (mode=${config.agentMode})`);
 
-  // Pinned for this module's whole lifetime — see makeRuntimeSessionId's
-  // comment above for why every call for this module must reuse it.
+  // Pinned for this feature's whole lifetime — see makeRuntimeSessionId's
+  // comment above for why every call for this feature must reuse it.
   const runtimeSessionId = makeRuntimeSessionId(sessionId);
   sessions[sessionId] = { connected: false, screenshot: null, action: 'Initializing...', browserSessionId: null, runtimeSessionId };
-  broadcast({ type: 'session_status', sessionId, connected: false, module: sessionId });
+  broadcast({ type: 'session_status', sessionId, connected: false, feature: sessionId });
 
   const initPayload = {
     action: 'init',
@@ -200,7 +200,7 @@ export async function ensureSession(sessionId) {
     const ok = !!sessions[sessionId].screenshot;
     sessions[sessionId].connected = ok;
     sessions[sessionId].action = '';
-    broadcast({ type: 'session_status', sessionId, connected: ok, module: sessionId });
+    broadcast({ type: 'session_status', sessionId, connected: ok, feature: sessionId });
     if (!ok) {
       let runtimeError = null;
       for (const text of textDeltas) {
@@ -218,7 +218,7 @@ export async function ensureSession(sessionId) {
   } catch (e) {
     console.error(`[session] init failed for ${sessionId}:`, e.message);
     sessions[sessionId] = { ...sessions[sessionId], connected: false, action: '' };
-    broadcast({ type: 'session_status', sessionId, connected: false, module: sessionId });
+    broadcast({ type: 'session_status', sessionId, connected: false, feature: sessionId });
     throw e;
   }
 }
@@ -230,15 +230,15 @@ export async function killSession(sessionId) {
   if (!sess) return;
   try { if (sess.ws) sess.ws.close(); } catch { /* ignore */ }
   delete sessions[sessionId];
-  broadcast({ type: 'session_status', sessionId, connected: false, module: sessionId });
+  broadcast({ type: 'session_status', sessionId, connected: false, feature: sessionId });
 }
 
-export async function grabLatestScreenshot(moduleId, browserSessionId) {
+export async function grabLatestScreenshot(featureId, browserSessionId) {
   try {
-    // Must attach the specific session this module's browser is using — an
+    // Must attach the specific session this feature's browser is using — an
     // unscoped listSessions()[0] would grab an arbitrary READY session,
-    // liable to show one module's live view sourced from a completely
-    // different module's browser tab when several run in parallel.
+    // liable to show one feature's live view sourced from a completely
+    // different feature's browser tab when several run in parallel.
     if (!browserSessionId) return;
     const browser = new Browser({ region: config.browserRegion });
     browser.attachSession(browserSessionId);
@@ -283,8 +283,8 @@ export async function grabLatestScreenshot(moduleId, browserSessionId) {
           clearTimeout(timeout);
           ws.close();
           if (msg.result?.data) {
-            const sess = sessions[moduleId];
-            if (sess) { sess.screenshot = msg.result.data; broadcast({ type: 'screenshot', sessionId: moduleId, data: msg.result.data, action: sess.action || '' }); }
+            const sess = sessions[featureId];
+            if (sess) { sess.screenshot = msg.result.data; broadcast({ type: 'screenshot', sessionId: featureId, data: msg.result.data, action: sess.action || '' }); }
             resolve();
           } else {
             reject(new Error(`screenshot failed: ${JSON.stringify(msg.error || msg)}`));
@@ -293,5 +293,5 @@ export async function grabLatestScreenshot(moduleId, browserSessionId) {
       });
       ws.on('error', e => { clearTimeout(timeout); reject(e); });
     });
-  } catch (e) { console.error(`[screenshot] ${moduleId}:`, e.message); }
+  } catch (e) { console.error(`[screenshot] ${featureId}:`, e.message); }
 }

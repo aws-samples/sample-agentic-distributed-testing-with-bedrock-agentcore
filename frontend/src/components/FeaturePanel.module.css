@@ -64,7 +64,7 @@
 
 .chevron { font-size: 10px; flex-shrink: 0; color: var(--text-muted); width: 12px; }
 
-.moduleHeader {
+.featureHeader {
   padding: 5px 8px;
   color: var(--text-muted);
   font-size: 11px;
@@ -78,9 +78,9 @@
   border-radius: 4px;
   transition: background 0.1s;
 }
-.moduleHeader:hover { background: var(--surface2); }
-.moduleHeaderActive { color: var(--accent); background: rgba(88,166,255,0.08); }
-.moduleHeaderActive:hover { background: rgba(88,166,255,0.12); }
+.featureHeader:hover { background: var(--surface2); }
+.featureHeaderActive { color: var(--accent); background: rgba(88,166,255,0.08); }
+.featureHeaderActive:hover { background: rgba(88,166,255,0.12); }
 
 /* Session status dot */
 .indicator {
@@ -102,15 +102,8 @@
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.modIdBadge {
-  font-family: monospace;
-  font-size: 9px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  flex-shrink: 0;
-}
 
-.modName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.featName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .count {
   background: var(--surface2);
@@ -120,9 +113,9 @@
   flex-shrink: 0;
 }
 
-.moduleActions { margin-left: 2px; display: flex; gap: 4px; }
+.featureActions { margin-left: 2px; display: flex; gap: 4px; }
 
-.moduleDelBtn {
+.featureDelBtn {
   opacity: 0;
   padding: 2px 6px;
   font-size: 11px;
@@ -133,8 +126,8 @@
   cursor: pointer;
   transition: opacity 0.1s;
 }
-.moduleHeader:hover .moduleDelBtn { opacity: 1; }
-.moduleDelBtn:hover { background: rgba(248,81,73,0.1); }
+.featureHeader:hover .featureDelBtn { opacity: 1; }
+.featureDelBtn:hover { background: rgba(248,81,73,0.1); }
 
 /* TC rows */
 .tcGroup { margin-bottom: 4px; }
@@ -271,7 +264,7 @@
   line-height: 1.5;
 }
 
-/* Footer (editor: + Add Module) */
+/* Footer (editor: + Add Feature) */
 .footer {
   padding: 8px 10px;
   border-top: 1px solid var(--border);

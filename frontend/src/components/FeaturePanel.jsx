@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import styles from './ModulePanel.module.css'
+import styles from './FeaturePanel.module.css'
 import Icon from './Icon'
 
 function toArr(v) {
@@ -15,30 +15,30 @@ function toArr(v) {
  * showTcDetail           runner/focus: TC rows are expanders; clicking expands
  *                         a read-only detail pane inline. Includes Expand All /
  *                         Collapse All controls in the filter bar.
- * onModuleDelete         editor: ✕ delete on module header
- * onTcAdd                editor: + Add TC inside expanded module
+ * onFeatureDelete         editor: ✕ delete on feature header
+ * onTcAdd                editor: + Add TC inside expanded feature
  *
- * expandedModule         editor: controlled single-module expansion
+ * expandedFeature         editor: controlled single-feature expansion
  *                        runner/focus: ignored — panel manages its own Set
  */
-export default function ModulePanel({
+export default function FeaturePanel({
   style,
-  modules = [],
+  features = [],
   testCases = {},
   testResults = {},
   sessionStatus = {},
-  activeModules,
+  activeFeatures,
   // Editor-controlled expansion: single string OR Set of names
-  expandedModule,
-  expandedModules, // Set<string> — takes priority over expandedModule when provided
+  expandedFeature,
+  expandedFeatures, // Set<string> — takes priority over expandedFeature when provided
   selectedTcId: externalSelectedTcId,
   // Callbacks
-  onModuleClick,
+  onFeatureClick,
   onTcClick,
-  onModuleDelete,
+  onFeatureDelete,
   onTcAdd,
-  onExpandAll,   // editor: called to expand all modules
-  onCollapseAll, // editor: called to collapse all modules
+  onExpandAll,   // editor: called to expand all features
+  onCollapseAll, // editor: called to collapse all features
   // Modes
   showSessionIndicators = false,
   showStatusBadges = false,
@@ -53,9 +53,9 @@ export default function ModulePanel({
   footer,
 }) {
   // Self-managed expansion state (runner / focus modal)
-  // When a single module is pre-selected (e.g. FocusModal), start it expanded
-  const [expandedMods, setExpandedMods] = useState(
-    () => showTcDetail && expandedModule ? new Set([expandedModule]) : new Set()
+  // When a single feature is pre-selected (e.g. FocusModal), start it expanded
+  const [expandedFeats, setExpandedFeats] = useState(
+    () => showTcDetail && expandedFeature ? new Set([expandedFeature]) : new Set()
   )
   const [expandedTcs, setExpandedTcs] = useState(new Set())
 
@@ -68,26 +68,26 @@ export default function ModulePanel({
     return 'radio_button_unchecked'
   }
 
-  // Module expansion: if showTcDetail, use internal Set; else use prop (Set or string)
-  const isModExpanded = (mod) => showTcDetail
-    ? expandedMods.has(mod)
-    : expandedModules
-      ? expandedModules.has(mod)
-      : expandedModule === mod
+  // Feature expansion: if showTcDetail, use internal Set; else use prop (Set or string)
+  const isFeatExpanded = (feat) => showTcDetail
+    ? expandedFeats.has(feat)
+    : expandedFeatures
+      ? expandedFeatures.has(feat)
+      : expandedFeature === feat
 
-  const handleModuleClick = (mod) => {
+  const handleFeatureClick = (feat) => {
     if (showTcDetail) {
-      setExpandedMods(prev => {
+      setExpandedFeats(prev => {
         const next = new Set(prev)
-        next.has(mod) ? next.delete(mod) : next.add(mod)
+        next.has(feat) ? next.delete(feat) : next.add(feat)
         return next
       })
     }
-    onModuleClick?.(mod)
+    onFeatureClick?.(feat)
   }
 
   // TC expansion (only when showTcDetail)
-  const handleTcClick = (tcId, mod) => {
+  const handleTcClick = (tcId, feat) => {
     if (showTcDetail) {
       setExpandedTcs(prev => {
         const next = new Set(prev)
@@ -95,15 +95,15 @@ export default function ModulePanel({
         return next
       })
     }
-    onTcClick?.(tcId, mod)
+    onTcClick?.(tcId, feat)
   }
 
   const allTcIds = () => Object.values(testCases).flat().map(t => t.id)
 
-  // Runner: expand/collapse only modules (not TC detail panes)
+  // Runner: expand/collapse only features (not TC detail panes)
   const expandAll = () => {
     if (showTcDetail) {
-      setExpandedMods(new Set(modules))
+      setExpandedFeats(new Set(features))
       // Don't auto-expand TC detail panes — user opens those explicitly
     } else if (onExpandAll) {
       onExpandAll()
@@ -111,7 +111,7 @@ export default function ModulePanel({
   }
   const collapseAll = () => {
     if (showTcDetail) {
-      setExpandedMods(new Set())
+      setExpandedFeats(new Set())
       setExpandedTcs(new Set())
     } else if (onCollapseAll) {
       onCollapseAll()
@@ -135,20 +135,20 @@ export default function ModulePanel({
         />
         {(showTcDetail || showExpandControls) && (
           <div className={styles.expandBtns}>
-            <button className={styles.expandBtn} onClick={expandAll} title="Expand all modules">⊞</button>
+            <button className={styles.expandBtn} onClick={expandAll} title="Expand all features">⊞</button>
             <button className={styles.expandBtn} onClick={collapseAll} title="Collapse all">⊟</button>
           </div>
         )}
       </div>
 
       <div className={styles.list}>
-        {modules.length === 0 && <div className={styles.empty}>No modules</div>}
+        {features.length === 0 && <div className={styles.empty}>No features</div>}
 
-        {modules.map((mod, idx) => {
-          const tcs = testCases[mod] || []
-          const sess = sessionStatus[mod] || {}
-          const isRunning = activeModules?.has(mod)
-          const modExpanded = isModExpanded(mod)
+        {features.map((feat, idx) => {
+          const tcs = testCases[feat] || []
+          const sess = sessionStatus[feat] || {}
+          const isRunning = activeFeatures?.has(feat)
+          const featExpanded = isFeatExpanded(feat)
 
           let indClass = styles.indicator
           if (showSessionIndicators) {
@@ -164,30 +164,29 @@ export default function ModulePanel({
             : tcs
 
           return (
-            <div key={mod} className={styles.group}>
+            <div key={feat} className={styles.group}>
               <div
-                className={`${styles.moduleHeader}${modExpanded ? ' ' + styles.moduleHeaderActive : ''}`}
-                onClick={() => handleModuleClick(mod)}
+                className={`${styles.featureHeader}${featExpanded ? ' ' + styles.featureHeaderActive : ''}`}
+                onClick={() => handleFeatureClick(feat)}
               >
                 {showTcDetail && (
-                  <span className={styles.chevron}>{modExpanded ? '▾' : '▸'}</span>
+                  <span className={styles.chevron}>{featExpanded ? '▾' : '▸'}</span>
                 )}
                 {showSessionIndicators && <div className={indClass} />}
-                <span className={styles.modIdBadge}>MD-{String(idx + 1).padStart(3, '0')}</span>
-                <span className={styles.modName}>{mod}</span>
+                <span className={styles.featName}>{feat}</span>
                 <span className={styles.count}>{tcs.length}</span>
-                <div className={styles.moduleActions}>
-                  {onModuleDelete && (
+                <div className={styles.featureActions}>
+                  {onFeatureDelete && (
                     <button
-                      className={styles.moduleDelBtn}
-                      onClick={(e) => { e.stopPropagation(); onModuleDelete(mod) }}
-                      title="Delete module"
+                      className={styles.featureDelBtn}
+                      onClick={(e) => { e.stopPropagation(); onFeatureDelete(feat) }}
+                      title="Delete feature"
                     ><Icon name="close" size={13} /></button>
                   )}
                 </div>
               </div>
 
-              {modExpanded && (
+              {featExpanded && (
                 <>
                   {filteredTcs.map((tc) => {
                     const status = getStatus(tc.id)
@@ -199,7 +198,7 @@ export default function ModulePanel({
                       <div key={tc.id} className={styles.tcGroup}>
                         <div
                           className={`${styles.tcItem}${isSelected ? ' ' + styles.tcSelected : ''}${tcExpanded ? ' ' + styles.tcExpanded : ''}`}
-                          onClick={() => handleTcClick(tc.id, mod)}
+                          onClick={() => handleTcClick(tc.id, feat)}
                         >
                           {showTcDetail && (
                             <span className={styles.tcChevron}>{tcExpanded ? '▾' : '▸'}</span>
@@ -227,27 +226,27 @@ export default function ModulePanel({
                                 )}
                               </div>
                             )}
-                            {toArr(tc.preconditions).filter(Boolean).length > 0 && (
+                            {toArr(tc.given).filter(Boolean).length > 0 && (
                               <div className={styles.detSection}>
-                                <div className={styles.detLabel}>Preconditions</div>
+                                <div className={styles.detLabel}>Given</div>
                                 <div className={styles.detVal}>
-                                  {toArr(tc.preconditions).filter(Boolean).map((p, i) => <div key={i}>{i + 1}. {p}</div>)}
+                                  {toArr(tc.given).filter(Boolean).map((p, i) => <div key={i}>{i + 1}. {p}</div>)}
                                 </div>
                               </div>
                             )}
                             <div className={styles.detSection}>
-                              <div className={styles.detLabel}>Steps</div>
-                              {(tc.steps || []).map((s, i) => (
+                              <div className={styles.detLabel}>When</div>
+                              {(tc.when || []).map((s, i) => (
                                 <div key={i} className={styles.detStep}>
                                   <span className={styles.detStepNum}>{i + 1}.</span> {s}
                                 </div>
                               ))}
                             </div>
-                            {toArr(tc.expectedResult).filter(Boolean).length > 0 && (
+                            {toArr(tc.then).filter(Boolean).length > 0 && (
                               <div className={styles.detSection}>
-                                <div className={styles.detLabel}>Expected Result</div>
+                                <div className={styles.detLabel}>Then</div>
                                 <div className={styles.detVal}>
-                                  {toArr(tc.expectedResult).filter(Boolean).map((p, i) => <div key={i}>{i + 1}. {p}</div>)}
+                                  {toArr(tc.then).filter(Boolean).map((p, i) => <div key={i}>{i + 1}. {p}</div>)}
                                 </div>
                               </div>
                             )}
@@ -265,7 +264,7 @@ export default function ModulePanel({
 
                   {onTcAdd && (
                     <div style={{ padding: '4px 8px 6px' }}>
-                      <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => onTcAdd(mod)}>
+                      <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => onTcAdd(feat)}>
                         <Icon name="add" />Add Test Case
                       </button>
                     </div>

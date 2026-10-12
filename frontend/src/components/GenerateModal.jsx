@@ -7,10 +7,10 @@ import { useStickToBottom } from '../hooks/useStickToBottom'
 
 export default function GenerateModal({ open, onClose, onGenerated }) {
   const [spec, setSpec] = useState('')
-  const [moduleHints, setModuleHints] = useState('')
+  const [featureHints, setFeatureHints] = useState('')
   const [phase, setPhase] = useState('input') // 'input' | 'generating' | 'done' | 'error'
   const [progress, setProgress] = useState('')  // streamed text
-  const [statusLabel, setStatusLabel] = useState('') // agent phase label (planning, module N/M, ...)
+  const [statusLabel, setStatusLabel] = useState('') // agent phase label (planning, feature N/M, ...)
   const [errorMsg, setErrorMsg] = useState('')
   // Auto-scroll the streamed YAML preview — pauses when the user scrolls up
   const { ref: progressRef } = useStickToBottom([progress])
@@ -38,7 +38,7 @@ export default function GenerateModal({ open, onClose, onGenerated }) {
       const resp = await fetch('/api/generate/test-suite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec: spec.trim(), moduleHints: moduleHints.trim() }),
+        body: JSON.stringify({ spec: spec.trim(), featureHints: featureHints.trim() }),
       })
 
       if (!resp.ok) {
@@ -91,7 +91,7 @@ export default function GenerateModal({ open, onClose, onGenerated }) {
   const handleImport = () => {
     try {
       const parsed = jsyaml.load(progress)
-      if (!parsed?.modules) throw new Error('Expected { modules: [...] }')
+      if (!parsed?.features) throw new Error('Expected { features: [...] }')
       onGenerated(parsed)
       handleClose()
     } catch (e) {
@@ -130,14 +130,14 @@ export default function GenerateModal({ open, onClose, onGenerated }) {
             </div>
             <div className={styles.field}>
               <label className={styles.label}>
-                Module Hints <span className={styles.optional}>(optional)</span>
+                Feature Hints <span className={styles.optional}>(optional)</span>
               </label>
               <textarea
                 className={styles.textarea}
                 rows={4}
-                placeholder={`Describe the modules you want and their scope, e.g.:\n- Authentication: login, logout, password reset, MFA\n- Account Management: create, update, close accounts\n- Payments: card transactions, refunds, disputes`}
-                value={moduleHints}
-                onChange={e => setModuleHints(e.target.value)}
+                placeholder={`Describe the features you want and their scope, e.g.:\n- Authentication: login, logout, password reset, MFA\n- Account Management: create, update, close accounts\n- Payments: card transactions, refunds, disputes`}
+                value={featureHints}
+                onChange={e => setFeatureHints(e.target.value)}
               />
             </div>
             <div className={styles.footer}>

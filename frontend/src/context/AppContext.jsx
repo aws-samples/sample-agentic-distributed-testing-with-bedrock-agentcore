@@ -3,23 +3,23 @@ import React, { createContext, useContext, useReducer } from 'react'
 const AppContext = createContext(null)
 
 const initialState = {
-  modules: [],
-  testCases: {},        // module -> TestCase[]
+  features: [],
+  testCases: {},        // feature -> TestCase[]
   testResults: {},      // tcId -> { status, stepResults, reason }
-  sessionStatus: {},    // module -> { connected, connecting, screenshot, action }
-  activeModules: new Set(),
+  sessionStatus: {},    // feature -> { connected, connecting, screenshot, action }
+  activeFeatures: new Set(),
   currentRunId: null,
   stopping: false,
   targetUrl: '',
   model: '',
   agentMode: 'local',
-  sessionLogs: {},      // module -> [{ts, msg, type, kind}]
+  sessionLogs: {},      // feature -> [{ts, msg, type, kind}]
   analyses: {},         // tcId -> string
   loadingAnalysis: new Set(),
   expandedIds: new Set(),
   filterStatus: 'ALL',
   gridMode: '4',
-  focusedModule: null,
+  focusedFeature: null,
 }
 
 function reducer(state, action) {
@@ -30,46 +30,46 @@ function reducer(state, action) {
         targetUrl: action.targetUrl ?? state.targetUrl,
         model: action.model ?? state.model,
         agentMode: action.agentMode ?? state.agentMode,
-        modules: action.modules ?? state.modules,
+        features: action.features ?? state.features,
       }
-    case 'SET_MODULES':
-      return { ...state, modules: action.modules }
+    case 'SET_FEATURES':
+      return { ...state, features: action.features }
     case 'SET_CASES':
-      return { ...state, testCases: { ...state.testCases, [action.module]: action.cases } }
+      return { ...state, testCases: { ...state.testCases, [action.feature]: action.cases } }
     case 'SET_TEST_RESULT':
       return { ...state, testResults: { ...state.testResults, [action.tcId]: action.result } }
     case 'SET_SESSION_STATUS': {
-      const prev = state.sessionStatus[action.module] || {}
+      const prev = state.sessionStatus[action.feature] || {}
       return {
         ...state,
         sessionStatus: {
           ...state.sessionStatus,
-          [action.module]: { ...prev, ...action.status }
+          [action.feature]: { ...prev, ...action.status }
         }
       }
     }
-    case 'SET_ACTIVE_MODULE': {
-      const next = new Set(state.activeModules)
-      if (action.active) next.add(action.module)
-      else next.delete(action.module)
-      return { ...state, activeModules: next }
+    case 'SET_ACTIVE_FEATURE': {
+      const next = new Set(state.activeFeatures)
+      if (action.active) next.add(action.feature)
+      else next.delete(action.feature)
+      return { ...state, activeFeatures: next }
     }
-    case 'CLEAR_ACTIVE_MODULES':
-      return { ...state, activeModules: new Set() }
+    case 'CLEAR_ACTIVE_FEATURES':
+      return { ...state, activeFeatures: new Set() }
     case 'SET_CURRENT_RUN_ID':
       return { ...state, currentRunId: action.runId }
     case 'SET_STOPPING':
       return { ...state, stopping: action.stopping }
     case 'APPEND_SESSION_LOG': {
-      const prev = state.sessionLogs[action.module] || []
+      const prev = state.sessionLogs[action.feature] || []
       const next = [...prev, action.entry]
       return {
         ...state,
-        sessionLogs: { ...state.sessionLogs, [action.module]: next.slice(-500) }
+        sessionLogs: { ...state.sessionLogs, [action.feature]: next.slice(-500) }
       }
     }
     case 'CLEAR_SESSION_LOG':
-      return { ...state, sessionLogs: { ...state.sessionLogs, [action.module]: [] } }
+      return { ...state, sessionLogs: { ...state.sessionLogs, [action.feature]: [] } }
     case 'SET_ANALYSIS':
       return { ...state, analyses: { ...state.analyses, [action.tcId]: action.analysis } }
     case 'SET_LOADING_ANALYSIS': {
@@ -88,8 +88,8 @@ function reducer(state, action) {
       return { ...state, filterStatus: action.filter }
     case 'SET_GRID_MODE':
       return { ...state, gridMode: action.mode }
-    case 'SET_FOCUSED_MODULE':
-      return { ...state, focusedModule: action.module }
+    case 'SET_FOCUSED_FEATURE':
+      return { ...state, focusedFeature: action.feature }
     case 'RESET_ALL': {
       const clearedSessions = {}
       for (const k of Object.keys(state.sessionStatus)) {
@@ -104,12 +104,12 @@ function reducer(state, action) {
         testResults: {},
         analyses: {},
         loadingAnalysis: new Set(),
-        activeModules: new Set(),
+        activeFeatures: new Set(),
         currentRunId: null,
         stopping: false,
         sessionStatus: clearedSessions,
         sessionLogs: clearedLogs,
-        focusedModule: null,
+        focusedFeature: null,
       }
     }
     default:

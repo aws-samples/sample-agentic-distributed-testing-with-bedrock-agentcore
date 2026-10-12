@@ -1,13 +1,13 @@
 /**
  * Shared mutable state — single source of truth for all runtime data.
- * Exported as a plain object so every module mutates the same reference.
+ * Exported as a plain object so every feature mutates the same reference.
  */
 
 import fs   from 'fs';
 import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
-import { loadModulesAndCases } from './db.js';
+import { loadFeaturesAndCases, loadLegacyIdMap } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_FILE = path.join(__dirname, 'testResults.json');
@@ -97,19 +97,21 @@ export function saveConfig() {
 // Hydrated from SQLite (backend/src/state/data.db) on boot. index.js's
 // loadSeed() only populates the DB the very first time it's empty; after
 // that, edits made via the Editor persist here and survive restarts.
-const { modules: _seedModules, casesByModule: _seedCases } = loadModulesAndCases();
-export const moduleList = _seedModules;
+const { features: _seedFeatures, casesByFeature: _seedCases, descriptions: _seedDescriptions } = loadFeaturesAndCases();
+export const featureList = _seedFeatures;
+// Each Feature's Background (shared setup, applies to every scenario in it): { [featureName]: text }
+export const featureDescriptions = _seedDescriptions;
 
-export const testCasesByModule = _seedCases;
+export const testCasesByFeature = _seedCases;
 export const testRuns          = {};
 export const stopFlags         = {};
 // Per-run, per-TC log accumulator: runLogs[runId][tcId] = [{ts,msg,kind}]
 export const runLogs           = {};
-export const sessions          = {};           // moduleName → session object
+export const sessions          = {};           // featureName → session object
 export const activeAborts      = new Set();    // AbortControllers for in-flight fetches
-// Modules currently running a test — mirrors the frontend's activeModules set so
+// Features currently running a test — mirrors the frontend's activeFeatures set so
 // the WebSocket reconnect snapshot can restore the Stop-button state.
-export const activeModules     = new Set();   // moduleName
+export const activeFeatures     = new Set();   // featureName
 // Promise of each in-flight run; awaited by /sessions/reset to make sure all
 // pending results are archived before the reset returns.
 export const activeRunPromises = new Map();   // runId → Promise
@@ -119,10 +121,23 @@ export const activeRunPromises = new Map();   // runId → Promise
 // Loaded from disk on startup, written on every change, replayed to new WS clients.
 
 function loadResultsFromDisk() {
+  let results = {};
   try {
-    const raw = fs.readFileSync(RESULTS_FILE, 'utf8');
-    return JSON.parse(raw) || {};
+    results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf8')) || {};
   } catch { return {}; }
+  // Results saved before test case ids were renumbered (MD001-TC001 -> TC001)
+  // are keyed by the old id; carry them over so past statuses aren't lost.
+  const idMap = loadLegacyIdMap();
+  let moved = 0;
+  for (const [oldId, newId] of Object.entries(idMap)) {
+    if (results[oldId] && !results[newId]) { results[newId] = results[oldId]; moved++; }
+    delete results[oldId];
+  }
+  if (moved) {
+    try { fs.writeFileSync(RESULTS_FILE, JSON.stringify(results)); } catch { /* ignore */ }
+    console.log(`[results] re-keyed ${moved} saved results to the new test case ids`);
+  }
+  return results;
 }
 
 export const testResultsCache = loadResultsFromDisk();

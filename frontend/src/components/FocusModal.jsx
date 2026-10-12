@@ -1,10 +1,10 @@
 import styles from './FocusModal.module.css'
-import ModulePanel from './ModulePanel'
+import FeaturePanel from './FeaturePanel'
 import Icon from './Icon'
 import { useStickToBottom } from '../hooks/useStickToBottom'
 
-export default function FocusModal({ moduleName, testCases, testResults, sessionStatus, sessionLogs, onClose, onClearLog }) {
-  if (!moduleName) return null
+export default function FocusModal({ featureName, testCases, testResults, sessionStatus, sessionLogs, onClose, onClearLog }) {
+  if (!featureName) return null
 
   const sess = sessionStatus || {}
   const tcs = testCases || []
@@ -17,20 +17,20 @@ export default function FocusModal({ moduleName, testCases, testResults, session
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <span className={styles.title}>{moduleName}</span>
+          <span className={styles.title}>{featureName}</span>
           <button className="btn btn-sm" onClick={onClose}><Icon name="close" />Close</button>
         </div>
 
         <div className={styles.content}>
-          {/* Left: TC list + detail — same ModulePanel as runner, single module always expanded */}
-          <ModulePanel
+          {/* Left: TC list + detail — same FeaturePanel as runner, single feature always expanded */}
+          <FeaturePanel
             style={{ width: 320, borderRight: '1px solid var(--border)' }}
-            modules={[moduleName]}
-            testCases={{ [moduleName]: tcs }}
+            features={[featureName]}
+            testCases={{ [featureName]: tcs }}
             testResults={testResults}
             sessionStatus={sessionStatus}
-            expandedModule={moduleName}
-            onModuleClick={() => {}}
+            expandedFeature={featureName}
+            onFeatureClick={() => {}}
             showSessionIndicators={true}
             showStatusBadges={true}
             showTcDetail={true}

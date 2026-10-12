@@ -1,16 +1,16 @@
 targetUrl: http://localhost:8020
-modules:
+features:
   - name: Authentication and Sign-on
     testCases:
-      - id: MD001-TC001
+      - id: TC001
         title: Verify terminal-style sign-on screen loads correctly
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - No active session exists
-        steps:
+        when:
           - Open a browser and navigate to http://localhost:8020
           - Observe the page layout, colors, and content
-        expectedResult:
+        then:
           - Terminal-style sign-on screen loads with black background
           - Text is rendered in green/cyan monospace font
           - "Header displays Tran: CC00, Prog: COSGN00C, AWS Mainframe Modernization, SysID: AWSA"
@@ -18,399 +18,399 @@ modules:
           - "Yellow prompt reads: Type your User ID and Password, then press ENTER:"
           - User ID and Password input fields are present
           - ENTER=Sign-on button is visible
-      - id: MD001-TC002
+      - id: TC002
         title: Sign-on with both fields empty shows validation error
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Leave the User ID field empty
           - Leave the Password field empty
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - "Red alert message is displayed: ** Please enter both User ID and Password."
           - User remains on the sign-on screen
           - No session is created
-      - id: MD001-TC003
+      - id: TC003
         title: Sign-on with only User ID filled shows validation error
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Enter USER0001 in the User ID field
           - Leave the Password field empty
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - "Red alert message is displayed: ** Please enter both User ID and Password."
           - User remains on the sign-on screen
           - No session is created
-      - id: MD001-TC004
+      - id: TC004
         title: Sign-on with only Password filled shows validation error
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Leave the User ID field empty
           - Enter PASSWORD in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - "Red alert message is displayed: ** Please enter both User ID and Password."
           - User remains on the sign-on screen
           - No session is created
-      - id: MD001-TC005
+      - id: TC005
         title: Sign-on with invalid credentials shows authentication failure
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Enter BADUSER in the User ID field
           - Enter BADPASS in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - Red alert message is displayed indicating invalid credentials
           - User remains on the sign-on screen
           - No session is created
-      - id: MD001-TC006
+      - id: TC006
         title: Sign-on with valid regular user credentials redirects to Main Menu
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
           - User USER0001 with password PASSWORD exists in the system
-        steps:
+        when:
           - Enter USER0001 in the User ID field
           - Enter PASSWORD in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - User is redirected to the Main Menu page
           - "Terminal header shows Tran: CM00 and Prog: COMEN01C"
           - Live Date and Time values are displayed on the right of the header
           - Navigation bar shows Menu, Accounts, Cards, Transactions, Bill-Pay, Reports
           - Navigation bar does NOT show Users or Batch links
           - Footer shows ENTER=Continue  F3=Exit  F7=Backward  F8=Forward
-      - id: MD001-TC007
+      - id: TC007
         title: Regular user Main Menu displays correct numbered items without admin options
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Observe the Main Menu page content and numbered items
-        expectedResult:
+        then:
           - Page title Main Menu is displayed in white
           - Numbered menu items are listed vertically starting from 01. Account View through 10. Bill Payment
           - Admin menu items 11, 12, and 13 are NOT visible
           - "Yellow prompt reads: Please select an option : with a 2-character input field"
-      - id: MD001-TC008
+      - id: TC008
         title: Sign-on with valid admin credentials shows Admin Menu with elevated navigation
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
           - Admin user ADMIN001 with password PASSWORD exists in the system
-        steps:
+        when:
           - Enter ADMIN001 in the User ID field
           - Enter PASSWORD in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - User is redirected to the Main Menu page
           - Page title shows Admin Menu
           - "Extra menu items visible: 11. User List (Security), 12. User Add (Security), 13. Batch Operations"
           - Navigation bar includes Users and Batch links
           - User badge shows ADMIN in yellow
-      - id: MD001-TC009
+      - id: TC009
         title: Sign-off clears session and redirects to sign-on screen
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click F3=Signoff in the navigation bar
-        expectedResult:
+        then:
           - User is redirected to the sign-on screen
           - Session is cleared
           - Sign-on screen displays with all original terminal-style elements
-      - id: MD001-TC010
+      - id: TC010
         title: Accessing application URL after sign-off does not restore previous session
-        preconditions:
+        given:
           - User USER0001 was previously logged in and has signed off
           - User is on the sign-on screen
-        steps:
+        when:
           - Attempt to navigate directly to http://localhost:8020 or any internal page URL
-        expectedResult:
+        then:
           - User is presented with the sign-on screen
           - No authenticated session is restored
           - Protected pages are not accessible without re-authenticating
-      - id: MD001-TC011
+      - id: TC011
         title: Password field masks input characters
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Click on the Password input field
           - Type PASSWORD into the Password field
           - Observe the characters displayed in the field
-        expectedResult:
+        then:
           - Password characters are masked and not displayed in plain text
           - The field renders dots or asterisks instead of the actual characters
-      - id: MD001-TC012
+      - id: TC012
         title: Sign-on with correct User ID but wrong password is rejected
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
           - User USER0001 exists in the system
-        steps:
+        when:
           - Enter USER0001 in the User ID field
           - Enter WRONGPASS in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - Red alert message is displayed indicating invalid credentials
           - User remains on the sign-on screen
           - No session is created
-      - id: MD001-TC013
+      - id: TC013
         title: Sign-on with correct Password but wrong User ID is rejected
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Sign-on screen is displayed
-        steps:
+        when:
           - Enter NONEXISTENT in the User ID field
           - Enter PASSWORD in the Password field
           - Click the ENTER=Sign-on button
-        expectedResult:
+        then:
           - Red alert message is displayed indicating invalid credentials
           - User remains on the sign-on screen
           - No session is created
   - name: Main Menu Navigation
     testCases:
-      - id: MD002-TC001
+      - id: TC014
         title: Successful login redirects to Main Menu with correct header and footer
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Enter User ID = USER0001 and Password = PASSWORD
           - Click ENTER=Sign-on
-        expectedResult:
+        then:
           - Redirected to Main Menu page
           - "Terminal header shows Tran: CM00 and Prog: COMEN01C"
           - "Live Date: and Time: values are displayed on the right side of the header"
           - Footer shows ENTER=Continue  F3=Exit  F7=Backward  F8=Forward
-      - id: MD002-TC002
+      - id: TC015
         title: Main Menu displays correct title and numbered options for regular user
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Observe the Main Menu page content
-        expectedResult:
+        then:
           - Page title 'Main Menu' is displayed in white
           - Numbered menu items are listed vertically starting with 01. Account View
           - Menu items go up to 10. Bill Payment
           - Admin-only items 11, 12, and 13 are NOT visible
           - Yellow prompt 'Please select an option :' is shown with a 2-character input field
-      - id: MD002-TC003
+      - id: TC016
         title: Regular user navigation bar does not show admin links
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Observe the navigation bar
-        expectedResult:
+        then:
           - Navigation bar shows Menu, Accounts, Cards, Transactions, Bill-Pay, and Reports links
           - Users link is NOT present in the navigation bar
           - Batch link is NOT present in the navigation bar
-      - id: MD002-TC004
+      - id: TC017
         title: Selecting option 01 from Main Menu navigates to Accounts page
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Type 01 in the option input field
           - Press Enter or click ENTER=Continue
-        expectedResult:
+        then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS in white
           - Subtitle reads 'Search and view credit card accounts'
-      - id: MD002-TC005
+      - id: TC018
         title: Submitting empty option field shows validation error or no navigation
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Leave the option input field empty
           - Press Enter or click ENTER=Continue
-        expectedResult:
+        then:
           - User remains on the Main Menu page
           - An error or prompt is displayed indicating a valid option must be selected
-      - id: MD002-TC006
+      - id: TC019
         title: Entering an invalid option number shows an error
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Type 99 in the option input field
           - Press Enter or click ENTER=Continue
-        expectedResult:
+        then:
           - User remains on the Main Menu page
           - An error message is displayed indicating the option is invalid or not available
-      - id: MD002-TC007
+      - id: TC020
         title: Admin user sees Admin Menu title and extra menu items
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Admin user ADMIN001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Enter User ID = ADMIN001 and Password = PASSWORD
           - Click ENTER=Sign-on
           - Observe the Main Menu page
-        expectedResult:
+        then:
           - Page title shows 'Admin Menu'
           - Menu items 11. User List (Security), 12. User Add (Security), and 13. Batch Operations are visible
           - Navigation bar includes Users and Batch links
           - User badge shows ADMIN in yellow
-      - id: MD002-TC008
+      - id: TC021
         title: Clicking Accounts in the navigation bar navigates to Accounts page
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click the Accounts link in the navigation bar
-        expectedResult:
+        then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS
-      - id: MD002-TC009
+      - id: TC022
         title: Clicking Transactions in the navigation bar navigates to Transactions page
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click the Transactions link in the navigation bar
-        expectedResult:
+        then:
           - Navigated to the Transactions page
           - Page header shows TRANSACTIONS
-      - id: MD002-TC010
+      - id: TC023
         title: Clicking Bill-Pay in the navigation bar navigates to Bill Payment page
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click the Bill-Pay link in the navigation bar
-        expectedResult:
+        then:
           - Navigated to the Bill Payment page
           - Form shows Account ID input and Look Up button
-      - id: MD002-TC011
+      - id: TC024
         title: Clicking Reports in the navigation bar navigates to Reports page
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click the Reports link in the navigation bar
-        expectedResult:
+        then:
           - Navigated to the Reports page
           - Form shows Report Type dropdown, Start Date, and End Date fields
-      - id: MD002-TC012
+      - id: TC025
         title: Clicking Menu in the navigation bar returns to Main Menu
-        preconditions:
+        given:
           - User USER0001 is logged in
           - User has navigated away from Main Menu to the Accounts page
-        steps:
+        when:
           - Click the Menu link in the navigation bar
-        expectedResult:
+        then:
           - Navigated back to the Main Menu page
           - Numbered menu items and option input field are displayed
-      - id: MD002-TC013
+      - id: TC026
         title: F3=Signoff from Main Menu clears session and returns to sign-on screen
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Click F3=Signoff in the navigation bar
-        expectedResult:
+        then:
           - Redirected to the terminal-style sign-on screen at http://localhost:8020
           - Session is cleared — user is no longer authenticated
           - Sign-on screen shows the login prompt with User ID and Password fields
-      - id: MD002-TC014
+      - id: TC027
         title: Entering non-numeric characters in the option field is handled gracefully
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu page
-        steps:
+        when:
           - Type AB in the option input field
           - Press Enter or click ENTER=Continue
-        expectedResult:
+        then:
           - User remains on the Main Menu page
           - An error or no-navigation response is shown — non-numeric input is rejected or ignored
-      - id: MD002-TC015
+      - id: TC028
         title: Accessing Main Menu URL directly without login redirects to sign-on screen
-        preconditions:
+        given:
           - No active session exists
-        steps:
+        when:
           - Open a browser and navigate directly to the Main Menu URL without logging in
-        expectedResult:
+        then:
           - User is redirected to the sign-on screen
           - Main Menu content is not accessible without authentication
   - name: Account Search and Details
     testCases:
-      - id: MD003-TC001
+      - id: TC029
         title: Admin can search all accounts with empty Account ID field
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Seed data is present with multiple accounts
           - Admin user ADMIN001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as ADMIN001 / PASSWORD
           - Click Accounts in the navigation bar
           - Leave the Account ID field empty
           - Click Search
-        expectedResult:
+        then:
           - Full account list loads without error
           - "Table displays multiple accounts with columns: Account ID, Status, Current Balance, Credit Limit, Open Date"
           - All accounts in the system are visible to the admin
-      - id: MD003-TC002
+      - id: TC030
         title: Regular user receives error when searching with empty Account ID
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Type 01 in the main menu option field and press Enter
           - Leave the Account ID field empty
           - Click Search
-        expectedResult:
+        then:
           - An error message is displayed indicating that an Account ID is required
           - No account results are shown
           - User remains on the Accounts search page
-      - id: MD003-TC003
+      - id: TC031
         title: Search for a valid account by Account ID as regular user
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 0000000011 exists in seed data and is linked to USER0001
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Type 01 in the main menu option field and press Enter
           - Enter 0000000011 in the Account ID field
           - Click Search
-        expectedResult:
+        then:
           - Account table loads with one row showing Account ID 0000000011
           - Row displays Status badge (Active or Inactive), Current Balance, Credit Limit, and Open Date
           - Table text is rendered in terminal green with cyan column headers
-      - id: MD003-TC004
+      - id: TC032
         title: Search for a non-existent Account ID returns no results
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 9999999999 does not exist in the system
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Type 01 in the main menu option field and press Enter
           - Enter 9999999999 in the Account ID field
           - Click Search
-        expectedResult:
+        then:
           - No account rows are displayed in the results table
           - An appropriate message is shown indicating no accounts were found
           - No application error or crash occurs
-      - id: MD003-TC005
+      - id: TC033
         title: Navigate to Account Details page from search results
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 0000000011 exists in seed data
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Type 01 in the main menu option field and press Enter
           - Enter 0000000011 in the Account ID field and click Search
           - Click on the account row for 0000000011
-        expectedResult:
+        then:
           - Navigated to the Account Details page
           - "Account Information section displays: Account ID, Status, Open Date, Expiration Date, Reissue Date, Group ID"
           - >-
@@ -418,461 +418,461 @@ modules:
             Credit, Current Cycle Debit
           - "Customer Information section displays: Customer Name, FICO Score"
           - Labels are rendered in cyan with colon suffix; values are rendered in green
-      - id: MD003-TC006
+      - id: TC034
         title: Account Details page shows correct data for account 0000000011
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 0000000011 exists with known seed data values
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Navigate to Accounts and search for 0000000011
           - Click on the account row for 0000000011
           - Observe all three detail sections on the Account Details page
-        expectedResult:
+        then:
           - Account ID displayed matches 0000000011
           - Status value matches the seeded status (Active or Inactive)
           - Financial values (Current Balance, Credit Limit) match seeded data
           - Customer Name and FICO Score are populated with seeded values
           - No fields are blank or show placeholder text
-      - id: MD003-TC007
+      - id: TC035
         title: View Cards button navigates to filtered card list for the account
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 0000000011 has at least one associated card in seed data
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Navigate to Accounts, search for 0000000011, and click on the account row
           - On the Account Details page, click the View Cards button
-        expectedResult:
+        then:
           - Navigated to the Cards page filtered by Account ID 0000000011
           - >-
             Card table displays associated cards with columns: Card Number (masked in magenta), Account ID, Embossed
             Name, Expiration, Status
           - Only cards belonging to account 0000000011 are shown
-      - id: MD003-TC008
+      - id: TC036
         title: Accounts page is accessible via main menu option 01
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - On the Main Menu, type 01 in the option field
           - Press Enter
-        expectedResult:
+        then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS in white
           - Subtitle reads Search and view credit card accounts
           - Account ID search field and Search button are visible
-      - id: MD003-TC009
+      - id: TC037
         title: Accounts page is accessible via Accounts link in the navigation bar
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Click Accounts in the navigation bar
-        expectedResult:
+        then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS in white
           - Account ID search field and Search button are visible
-      - id: MD003-TC010
+      - id: TC038
         title: Regular user cannot access accounts belonging to other users
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - At least one account exists that is NOT linked to USER0001
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Navigate to Accounts
           - Enter an Account ID that belongs to a different user (not USER0001)
           - Click Search
-        expectedResult:
+        then:
           - Either no results are returned or an access-denied error is displayed
           - The account details of the other user's account are not accessible
           - No application error or crash occurs
-      - id: MD003-TC011
+      - id: TC039
         title: Admin can view account details and access Edit Account from details page
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Admin user ADMIN001 exists with password PASSWORD
           - Account 0000000011 exists in seed data
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as ADMIN001 / PASSWORD
           - Click Accounts in the navigation bar
           - Leave Account ID empty and click Search
           - Click on account row for 0000000011
-        expectedResult:
+        then:
           - >-
             Account Details page loads with all three sections: Account Information, Financial Information, Customer
             Information
           - Edit Account button is visible on the page
           - All field labels are in cyan and values are in green
-      - id: MD003-TC012
+      - id: TC040
         title: Back navigation from Account Details returns to account search results
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with password PASSWORD
           - Account 0000000011 exists in seed data
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Navigate to Accounts and search for 0000000011
           - Click on the account row to open Account Details
           - Click the Back button or browser back navigation
-        expectedResult:
+        then:
           - User is returned to the Accounts search/list page
           - Previous search results for 0000000011 are still displayed or the search form is accessible
-      - id: MD003-TC013
+      - id: TC041
         title: Account status badge displays correctly for active and inactive accounts
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Admin user ADMIN001 exists with password PASSWORD
           - Seed data contains at least one active and one inactive account
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as ADMIN001 / PASSWORD
           - Click Accounts in the navigation bar
           - Leave Account ID empty and click Search
           - Observe the Status column in the account results table
-        expectedResult:
+        then:
           - Active accounts display an Active status badge
           - Inactive accounts display an Inactive status badge
           - Status badges are visually distinct from each other
-      - id: MD003-TC014
+      - id: TC042
         title: Accounts page not accessible without authentication
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - No active session exists
-        steps:
+        when:
           - Open a browser and navigate directly to the Accounts page URL without logging in
-        expectedResult:
+        then:
           - User is redirected to the sign-on screen
           - Accounts page content is not displayed
           - Session is not established
   - name: Card View and Update
     testCases:
-      - id: MD004-TC001
+      - id: TC043
         title: Admin login and navigate to Cards page - full card list visible
-        preconditions:
+        given:
           - Seed data present
           - Admin user ADMIN001 exists with password PASSWORD
           - Account 0000000011 has at least one associated card
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Enter User ID = ADMIN001 and Password = PASSWORD
           - Click ENTER=Sign-on
           - Click Cards in the navigation bar
-        expectedResult:
+        then:
           - Login succeeds and Main Menu loads with Admin Menu title
           - Cards page loads showing all cards across all accounts
           - "Card table columns visible: Card Number (masked in magenta), Account ID, Embossed Name, Expiration, Status"
           - Navigation bar includes Users and Batch links confirming admin session
-      - id: MD004-TC002
+      - id: TC044
         title: Search cards by Account ID 0000000011 and verify results
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Cards page is loaded
           - Account 0000000011 has at least one card in seed data
-        steps:
+        when:
           - Enter 0000000011 in the Account ID search field
           - Click Search
-        expectedResult:
+        then:
           - Card table refreshes showing only cards associated with Account ID 0000000011
           - >-
             Each row displays masked Card Number in magenta (e.g., **** **** **** 1234), Account ID, Embossed Name,
             Expiration, and Status
           - No cards from other accounts are shown
-      - id: MD004-TC003
+      - id: TC045
         title: Navigate to Card Details page by clicking a card row
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Cards page is loaded with results for Account ID 0000000011
-        steps:
+        when:
           - Click on any card row in the card list
-        expectedResult:
+        then:
           - Card Details page loads
           - >-
             Card Information section displays: Card Number (masked), Account ID, Embossed Name, Expiration Date, Status,
             CVV shown as ***
           - "Account Information section displays: Customer Name, Account Status, Current Balance, Credit Limit"
           - Edit Card button is visible
-      - id: MD004-TC004
+      - id: TC046
         title: Open Card Update form and verify editable vs read-only fields
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card Details page is loaded for a card under Account 0000000011
-        steps:
+        when:
           - Note the current values for Embossed Name, Expiration Date, and Status
           - Click Edit Card
-        expectedResult:
+        then:
           - Card update form loads
           - Card Number is displayed as read-only (not editable)
           - "Editable fields present: Embossed Name, Expiration Month, Expiration Year, Active Status"
           - Current values are pre-populated in the editable fields
-      - id: MD004-TC005
+      - id: TC047
         title: Validation CRD-V02 - Embossed Name cannot be empty
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Clear the Embossed Name field leaving it blank
           - Click Update Card
-        expectedResult:
+        then:
           - "Red error message displayed: 'Name can NOT be empty'"
           - Card is not updated
           - Form remains open with other field values intact
-      - id: MD004-TC006
+      - id: TC048
         title: Validation CRD-V03 - Expiration Month above valid range (13)
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Enter Embossed Name = UPDATED NAME
           - Set Expiration Month to 13
           - Click Update Card
-        expectedResult:
+        then:
           - "Red error message displayed: 'Card expiry month must be between 1 and 12'"
           - Card is not updated
-      - id: MD004-TC007
+      - id: TC049
         title: Validation CRD-V03 - Expiration Month below valid range (0)
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Enter Embossed Name = UPDATED NAME
           - Set Expiration Month to 0
           - Click Update Card
-        expectedResult:
+        then:
           - "Red error message displayed: 'Card expiry month must be between 1 and 12'"
           - Card is not updated
-      - id: MD004-TC008
+      - id: TC050
         title: Validation CRD-V04 - Expiration Year below valid range (1949)
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Enter Embossed Name = UPDATED NAME
           - Set Expiration Month to 06
           - Set Expiration Year to 1949
           - Click Update Card
-        expectedResult:
+        then:
           - Red error message displayed indicating invalid card expiry year outside 1950-2099 range
           - Card is not updated
-      - id: MD004-TC009
+      - id: TC051
         title: Validation CRD-V04 - Expiration Year above valid range (2100)
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Enter Embossed Name = UPDATED NAME
           - Set Expiration Month to 06
           - Set Expiration Year to 2100
           - Click Update Card
-        expectedResult:
+        then:
           - Red error message displayed indicating invalid card expiry year outside 1950-2099 range
           - Card is not updated
-      - id: MD004-TC010
+      - id: TC052
         title: Validation CRD-V05 - Active Status must be YES or NO
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
           - Application allows manual entry or blank selection of Active Status field
-        steps:
+        when:
           - Enter Embossed Name = UPDATED NAME
           - Set Expiration Month to 06
           - Set Expiration Year to 2028
           - Set Active Status to a blank or invalid value if the field permits it
           - Click Update Card
-        expectedResult:
+        then:
           - "Red error message displayed: 'Card Status must be YES or NO'"
           - Card is not updated
-      - id: MD004-TC011
+      - id: TC053
         title: Validation CRD-V06 - No change detected when all values remain the same
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
           - Current card values are noted
-        steps:
+        when:
           - Leave all fields exactly as pre-populated (no changes made)
           - Click Update Card
-        expectedResult:
+        then:
           - "Error or info message displayed: 'No change detected with respect to values fetched'"
           - Card record is not modified
-      - id: MD004-TC012
+      - id: TC054
         title: Toggle card status from Active (Y) to Inactive (N) - CRD-01
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card that currently has Active Status = Y
-        steps:
+        when:
           - Ensure Embossed Name, Expiration Month, and Expiration Year are valid and unchanged
           - Set Active Status to N
           - Click Update Card
-        expectedResult:
+        then:
           - "Green alert displayed: card updated successfully"
           - Card Details page or updated form shows Status as Inactive
-      - id: MD004-TC013
+      - id: TC055
         title: Toggle card status from Inactive (N) back to Active (Y) - CRD-02
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - The card updated in MD004-TC012 now has Active Status = N
           - Card update form is open for that card
-        steps:
+        when:
           - Ensure Embossed Name, Expiration Month, and Expiration Year are valid and unchanged
           - Set Active Status to Y
           - Click Update Card
-        expectedResult:
+        then:
           - "Green alert displayed: card updated successfully"
           - Card Details page or updated form shows Status as Active
-      - id: MD004-TC014
+      - id: TC056
         title: Successful card update with valid Embossed Name and Expiration changes
-        preconditions:
+        given:
           - Admin ADMIN001 is logged in
           - Card update form is open for a card under Account 0000000011
-        steps:
+        when:
           - Set Embossed Name to JOHN DOE UPDATED
           - Set Expiration Month to 09
           - Set Expiration Year to 2029
           - Set Active Status to Y
           - Click Update Card
-        expectedResult:
+        then:
           - "Green alert displayed: card updated successfully"
           - Card Details page reflects updated Embossed Name as JOHN DOE UPDATED
           - Expiration Date reflects month 09 and year 2029
           - Status shows Active
-      - id: MD004-TC015
+      - id: TC057
         title: Regular user cannot access Edit Card functionality
-        preconditions:
+        given:
           - Regular user USER0001 exists with password PASSWORD
           - USER0001 is linked to Account 0000000011 which has at least one card
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Navigate to Cards page
           - Click on a card row associated with USER0001's account
           - Observe whether Edit Card button is present
-        expectedResult:
+        then:
           - Card Details page loads showing card information
           - Edit Card button is NOT visible or is disabled for regular users
           - Regular user cannot modify card data
   - name: Transaction List and Details
     testCases:
-      - id: MD005-TC001
+      - id: TC058
         title: Navigate to Transactions page via navigation bar
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 exists with PASSWORD
           - Seed transaction data is present
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Click Transactions in the navigation bar
-        expectedResult:
+        then:
           - Transactions page loads successfully
           - Page header displays TRANSACTIONS
           - Filter form is visible with Account ID and Card Number fields
           - Transaction table is populated with existing seeded transactions
           - "Table columns shown: Tran ID, Card, Type, Amount, Date, Description"
-      - id: MD005-TC002
+      - id: TC059
         title: Navigate to Transactions page via Main Menu option 07
-        preconditions:
+        given:
           - User USER0001 is logged in and on the Main Menu
-        steps:
+        when:
           - Type the transaction menu option number in the option field
           - Press Enter
-        expectedResult:
+        then:
           - Transactions page loads
           - Page header displays TRANSACTIONS
           - Transaction table is visible with seeded data
-      - id: MD005-TC003
+      - id: TC060
         title: Verify pagination controls appear when more than 10 transactions exist
-        preconditions:
+        given:
           - User USER0001 is logged in
           - More than 10 transactions exist in the seed data
-        steps:
+        when:
           - Navigate to the Transactions page
           - Observe the bottom of the transaction table
-        expectedResult:
+        then:
           - Pagination controls are displayed at the bottom of the table
           - Pagination shows F7=Backward, Page 1 of N, F8=Forward
           - F7=Backward is disabled or inactive on page 1
           - F8=Forward is active and clickable
-      - id: MD005-TC004
+      - id: TC061
         title: Navigate forward through transaction pages using F8=Forward
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is loaded on page 1
           - More than 10 transactions exist
-        steps:
+        when:
           - Click the F8=Forward button
-        expectedResult:
+        then:
           - Page advances to page 2
           - Pagination indicator updates to Page 2 of N
           - A different set of transactions is displayed
           - F7=Backward becomes active
-      - id: MD005-TC005
+      - id: TC062
         title: Navigate backward through transaction pages using F7=Backward
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is currently on page 2
-        steps:
+        when:
           - Click the F7=Backward button
-        expectedResult:
+        then:
           - Page returns to page 1
           - Pagination indicator updates to Page 1 of N
           - The original first-page transactions are displayed again
-      - id: MD005-TC006
+      - id: TC063
         title: Filter transactions by Account ID
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is loaded
           - Account 0000000011 has associated transactions
-        steps:
+        when:
           - Enter 0000000011 in the Account ID filter field
           - Click Search or press Enter
-        expectedResult:
+        then:
           - Transaction table refreshes
           - Only transactions associated with Account ID 0000000011 are displayed
           - All displayed rows correspond to the filtered account
-      - id: MD005-TC007
+      - id: TC064
         title: Filter transactions by a non-existent Account ID returns no results
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is loaded
-        steps:
+        when:
           - Enter 9999999999 in the Account ID filter field
           - Click Search or press Enter
-        expectedResult:
+        then:
           - Transaction table shows no results
           - An appropriate empty-state message or no-rows indicator is displayed
           - No error crash occurs
-      - id: MD005-TC008
+      - id: TC065
         title: Filter transactions by Card Number
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is loaded
           - A known valid card number from seed data is available
-        steps:
+        when:
           - Enter a valid card number from seed data in the Card Number filter field
           - Click Search or press Enter
-        expectedResult:
+        then:
           - Transaction table refreshes
           - Only transactions associated with the specified card number are displayed
-      - id: MD005-TC009
+      - id: TC066
         title: View transaction details by clicking a transaction row
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transactions page is loaded with at least one transaction
-        steps:
+        when:
           - Click on any transaction row in the table
-        expectedResult:
+        then:
           - Navigated to Transaction Details page
           - "Three sections are displayed: Transaction Information, Merchant Information, Timestamps"
           - >-
@@ -881,86 +881,86 @@ modules:
           - Amount is displayed in green for positive values and red for negative values
           - "Merchant Information shows: Merchant ID, Name, City, ZIP"
           - "Timestamps section shows: Original Date, Processing Date"
-      - id: MD005-TC010
+      - id: TC067
         title: Verify card number masking on Transaction Details page
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transaction Details page is open for a transaction
-        steps:
+        when:
           - Observe the Card Number field in the Transaction Information section
-        expectedResult:
+        then:
           - Card Number is displayed in magenta text
           - Card Number is masked, showing only the last 4 digits (e.g., **** **** **** 1234)
           - Full card number is not exposed
-      - id: MD005-TC011
+      - id: TC068
         title: Navigate back from Transaction Details to Transaction List
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Transaction Details page is open
-        steps:
+        when:
           - Click the Back button on the Transaction Details page
-        expectedResult:
+        then:
           - User is returned to the Transactions list page
           - Previous filter/search results are still displayed
           - No data loss or page error occurs
-      - id: MD005-TC012
+      - id: TC069
         title: Verify negative amount displayed in red on Transaction Details
-        preconditions:
+        given:
           - User USER0001 is logged in
           - At least one transaction with a negative amount (e.g., a credit/refund) exists in seed data
-        steps:
+        when:
           - Navigate to the Transactions page
           - Click on a transaction row that has a negative amount
-        expectedResult:
+        then:
           - Transaction Details page loads
           - The Amount value is displayed in red text to indicate a negative/credit amount
-      - id: MD005-TC013
+      - id: TC070
         title: Verify positive amount displayed in green on Transaction Details
-        preconditions:
+        given:
           - User USER0001 is logged in
           - At least one transaction with a positive amount exists in seed data
-        steps:
+        when:
           - Navigate to the Transactions page
           - Click on a transaction row that has a positive amount
-        expectedResult:
+        then:
           - Transaction Details page loads
           - The Amount value is displayed in green text to indicate a positive amount
-      - id: MD005-TC014
+      - id: TC071
         title: Regular user cannot view transactions belonging to other users' accounts
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Another account exists that is not linked to USER0001
-        steps:
+        when:
           - Navigate to the Transactions page
           - Enter an Account ID not belonging to USER0001 in the Account ID filter
           - Click Search or press Enter
-        expectedResult:
+        then:
           - No transactions are returned for the unrelated account
           - An error message or empty result is shown
           - USER0001 cannot access transaction data from accounts they do not own
-      - id: MD005-TC015
+      - id: TC072
         title: Transaction list displays correct terminal-style visual formatting
-        preconditions:
+        given:
           - User USER0001 is logged in
-        steps:
+        when:
           - Navigate to the Transactions page
           - Observe the visual styling of the page and table
-        expectedResult:
+        then:
           - Page background is black
           - Column headers are displayed in cyan
           - Transaction data rows are displayed in terminal green monospace text
           - Overall appearance matches the terminal/mainframe aesthetic of the application
   - name: Add Transaction Validation
     testCases:
-      - id: MD006-TC001
+      - id: TC073
         title: Both Account ID and Card Number empty — cross-reference required error
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 exists with associated accounts and cards
           - Account 0000000011 exists with at least one card in cross-reference
           - User is logged in as USER0001 / PASSWORD
           - Add Transaction form is open
-        steps:
+        when:
           - Leave Account ID field empty
           - Leave Card Number field empty
           - Enter Type Code = 01
@@ -975,18 +975,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - "Red error message is displayed: 'Account ID or Card Number is required' (TRN-03)"
           - Confirmation box does not appear
           - No transaction is created
-      - id: MD006-TC002
+      - id: TC074
         title: Non-existent Account ID with no Card Number — account not found error
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 9999999999 does not exist in the system
-        steps:
+        when:
           - Enter Account ID = 9999999999
           - Leave Card Number empty
           - Enter Type Code = 01
@@ -1001,18 +1001,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - "Red error message is displayed: 'Account ID NOT found' (TRN-06)"
           - Confirmation box does not appear
           - No transaction is created
-      - id: MD006-TC003
+      - id: TC075
         title: Non-existent Card Number with no Account ID — card not found error
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Card number 9999999999999999 does not exist in the system
-        steps:
+        when:
           - Leave Account ID empty
           - Enter Card Number = 9999999999999999
           - Enter Type Code = 01
@@ -1027,18 +1027,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - "Red error message is displayed: 'Card Number NOT found' (TRN-06)"
           - Confirmation box does not appear
           - No transaction is created
-      - id: MD006-TC004
+      - id: TC076
         title: Valid Account ID provided without Card Number — Card Number auto-resolved from cross-reference
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card in cross-reference
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Leave Card Number empty
           - Enter Type Code = 01
@@ -1053,18 +1053,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears with transaction summary (TRN-04)
           - The summary displays a resolved Card Number auto-populated from the cross-reference for Account 0000000011
           - No error messages are shown
-      - id: MD006-TC005
+      - id: TC077
         title: Valid Card Number provided without Account ID — Account ID auto-resolved from cross-reference
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - A valid card number from seed data is known and linked to Account 0000000011
-        steps:
+        when:
           - Leave Account ID empty
           - Enter a valid Card Number from seed data linked to Account 0000000011
           - Enter Type Code = 01
@@ -1079,18 +1079,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears with transaction summary (TRN-05)
           - The summary displays Account ID auto-resolved from the cross-reference as 0000000011
           - No error messages are shown
-      - id: MD006-TC006
+      - id: TC078
         title: Cancel confirmation and verify transaction is not persisted
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Leave Card Number empty
           - Enter Type Code = 01
@@ -1107,18 +1107,18 @@ modules:
           - Click Review Transaction
           - Verify confirmation box appears
           - Click No, Go Back
-        expectedResult:
+        then:
           - User is returned to the Add Transaction form
           - All previously entered values are preserved in the form fields
           - No transaction is created in the system
-      - id: MD006-TC007
+      - id: TC079
         title: Submit transaction after confirmation — transaction created with auto-generated ID
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Leave Card Number empty
           - Enter Type Code = 01
@@ -1135,31 +1135,31 @@ modules:
           - Click Review Transaction
           - Verify confirmation box appears with correct summary
           - Click Yes, Submit
-        expectedResult:
+        then:
           - "Green alert is displayed: 'Transaction created. ID: <new-tran-id>' (TRN-01)"
           - The new Transaction ID is auto-generated
           - The form is cleared to empty state
-      - id: MD006-TC008
+      - id: TC080
         title: Newly submitted transaction appears in transaction list
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - A transaction with Description 'Submit Test' and Amount 200.00 was just created in MD006-TC007
-        steps:
+        when:
           - Click Transactions in the navigation bar
           - Search or browse the transaction list for the newly created transaction
-        expectedResult:
+        then:
           - The transaction list loads successfully
           - The newly created transaction appears with Amount $200.00 and Description 'Submit Test'
           - The Transaction ID matches the one returned in the success alert
-      - id: MD006-TC009
+      - id: TC081
         title: Duplicate transaction submission — unique ID or duplicate detection
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Leave Card Number empty
           - Enter Type Code = 01
@@ -1177,18 +1177,18 @@ modules:
           - Navigate back to Add Transaction
           - Re-enter the identical data as above
           - Click Review Transaction and then Yes, Submit
-        expectedResult:
+        then:
           - Either a second transaction is created with a new unique auto-generated Transaction ID (TRN-01/TRN-02)
           - "Or if duplicate detection is implemented, a red error is displayed: 'Tran ID already exist' (TRN-02)"
           - No system crash or unhandled error occurs
-      - id: MD006-TC010
+      - id: TC082
         title: Both Account ID and Card Number provided — transaction resolves correctly
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists with a known card number in cross-reference
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Enter the valid Card Number associated with Account 0000000011 from seed data
           - Enter Type Code = 01
@@ -1203,18 +1203,18 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears with transaction summary
           - Both Account ID and Card Number are shown correctly in the summary
           - No cross-reference error is displayed
-      - id: MD006-TC011
+      - id: TC083
         title: Account ID provided but mismatched Card Number — cross-reference mismatch error
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
           - Add Transaction form is open
           - Account 0000000011 exists; a card number belonging to a different account is known
-        steps:
+        when:
           - Enter Account ID = 0000000011
           - Enter a Card Number that belongs to a different account (not linked to 0000000011)
           - Enter Type Code = 01
@@ -1229,30 +1229,30 @@ modules:
           - Enter Original Date = today's date
           - Enter Processing Date = today's date
           - Click Review Transaction
-        expectedResult:
+        then:
           - Red error message is displayed indicating the Card Number does not match the provided Account ID
           - Confirmation box does not appear
           - No transaction is created
-      - id: MD006-TC012
+      - id: TC084
         title: Negative test — navigate to Add Transaction as regular user and verify access is permitted
-        preconditions:
+        given:
           - Seed data present
           - User USER0001 is logged in
-        steps:
+        when:
           - From the Main Menu, type 08 in the option field and press Enter
-        expectedResult:
+        then:
           - Add Transaction page loads successfully for the regular user
           - Header displays 'ADD TRANSACTION'
           - All form fields are accessible and editable
   - name: Add Transaction Confirmation Flow
     testCases:
-      - id: MD007-TC001
+      - id: TC085
         title: Valid data triggers confirmation box with full transaction summary
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - Seed data present; account 0000000011 exists with at least one associated card
           - User USER0001 exists with password PASSWORD
-        steps:
+        when:
           - Navigate to http://localhost:8020 and log in as USER0001 / PASSWORD
           - Navigate to Add Transaction via Main Menu option 08 or nav link
           - >-
@@ -1260,7 +1260,7 @@ modules:
             Purchase, Amount = 125.50, Merchant ID = 1234567890, Merchant Name = Test Store, Merchant City = New York,
             Merchant ZIP = 10001, Original Date = today, Processing Date = today
           - Click Review Transaction
-        expectedResult:
+        then:
           - A confirmation box appears with a yellow border
           - Header reads CONFIRM TRANSACTION
           - >-
@@ -1268,13 +1268,13 @@ modules:
             Source, Description, Amount ($125.50), Merchant ID, Merchant Name, Merchant City, Merchant ZIP, Original
             Date, Processing Date
           - "Two buttons are visible: Yes, Submit and No, Go Back"
-      - id: MD007-TC002
+      - id: TC086
         title: Clicking No, Go Back returns to form with all values preserved
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is filled with valid data and confirmation box is displayed
-        steps:
+        when:
           - >-
             Navigate to Add Transaction and fill all fields with valid data (Account ID = 0000000011, Type Code = 01,
             Category Code = 5411, Source = ONLINE, Description = Test Purchase, Amount = 125.50, Merchant ID =
@@ -1282,36 +1282,36 @@ modules:
             today, Processing Date = today)
           - Click Review Transaction to display the confirmation box
           - Click No, Go Back
-        expectedResult:
+        then:
           - Confirmation box disappears
           - User is returned to the Add Transaction form
           - >-
             All previously entered field values are preserved: Account ID, Type Code, Category Code, Source,
             Description, Amount, Merchant ID, Merchant Name, Merchant City, Merchant ZIP, Original Date, Processing Date
           - No transaction is created
-      - id: MD007-TC003
+      - id: TC087
         title: Transaction does not exist in list after clicking No, Go Back
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - A unique Description (e.g., NoSubmitTest_<timestamp>) is used to identify the transaction
-        steps:
+        when:
           - Navigate to Add Transaction
           - Fill all fields with valid data using a unique Description = NoSubmitTest_<timestamp>
           - Click Review Transaction
           - Click No, Go Back on the confirmation box
           - Navigate to Transactions via the navigation bar
           - Search or scroll for a transaction with Description = NoSubmitTest_<timestamp>
-        expectedResult:
+        then:
           - No transaction with Description NoSubmitTest_<timestamp> appears in the transaction list
           - The transaction was not persisted to the system
-      - id: MD007-TC004
+      - id: TC088
         title: Clicking Yes, Submit creates the transaction and shows success alert
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is accessible
-        steps:
+        when:
           - Navigate to Add Transaction
           - >-
             Fill in Account ID = 0000000011, Type Code = 01, Category Code = 5411, Source = ONLINE, Description =
@@ -1320,44 +1320,44 @@ modules:
           - Click Review Transaction
           - Verify confirmation box is displayed
           - Click Yes, Submit
-        expectedResult:
+        then:
           - "A green alert is displayed: >> Transaction created. ID: <new-tran-id>"
           - The new Transaction ID is shown in the alert
           - The Add Transaction form clears to an empty state
-      - id: MD007-TC005
+      - id: TC089
         title: Newly submitted transaction appears in the transaction list
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - A transaction with Description = ConfirmSubmitTest and Amount = 125.50 was just successfully submitted
-        steps:
+        when:
           - Click Transactions in the navigation bar
           - Search or scroll through the transaction list for the transaction with Description = ConfirmSubmitTest
-        expectedResult:
+        then:
           - The transaction with Description ConfirmSubmitTest appears in the transaction list
           - Amount is displayed as $125.50
           - The Transaction ID matches the one shown in the success alert
-      - id: MD007-TC006
+      - id: TC090
         title: Confirmation box does not appear without clicking Review Transaction
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is loaded
-        steps:
+        when:
           - Navigate to Add Transaction
           - Fill in all valid fields but do not click Review Transaction
           - Observe the page
-        expectedResult:
+        then:
           - No confirmation box is displayed
           - The form remains in its editable state
           - No transaction is created
-      - id: MD007-TC007
+      - id: TC091
         title: Multiple No, Go Back cycles followed by Yes, Submit creates exactly one transaction
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is accessible
-        steps:
+        when:
           - Navigate to Add Transaction
           - Fill all fields with valid data using a unique Description = MultiCycleTest_<timestamp>
           - Click Review Transaction
@@ -1367,85 +1367,85 @@ modules:
           - Click Review Transaction a third time
           - Click Yes, Submit
           - Navigate to Transactions and search for Description = MultiCycleTest_<timestamp>
-        expectedResult:
+        then:
           - Exactly one transaction with Description MultiCycleTest_<timestamp> appears in the transaction list
           - No duplicate transactions are created from the prior cancelled confirmations
           - Green success alert was shown with a single Transaction ID upon final submission
-      - id: MD007-TC008
+      - id: TC092
         title: Confirmation summary shows auto-resolved Card Number when only Account ID is provided
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Account 0000000011 has at least one card in the cross-reference table
-        steps:
+        when:
           - Navigate to Add Transaction
           - Enter Account ID = 0000000011 and leave Card Number empty
           - Fill all other required fields with valid data
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears
           - >-
             The summary displays a resolved Card Number (auto-populated from cross-reference) associated with account
             0000000011
           - Card Number field in the summary is not blank
-      - id: MD007-TC009
+      - id: TC093
         title: Confirmation summary shows auto-resolved Account ID when only Card Number is provided
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - A valid Card Number from seed data exists in the cross-reference table
-        steps:
+        when:
           - Navigate to Add Transaction
           - Leave Account ID empty
           - Enter a valid Card Number from seed data
           - Fill all other required fields with valid data
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears
           - >-
             The summary displays a resolved Account ID (auto-populated from cross-reference) corresponding to the
             entered Card Number
           - Account ID field in the summary is not blank
-      - id: MD007-TC010
+      - id: TC094
         title: Amount displayed with dollar formatting in confirmation summary
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is accessible
-        steps:
+        when:
           - Navigate to Add Transaction
           - Fill all valid fields with Amount = 1250.75
           - Click Review Transaction
-        expectedResult:
+        then:
           - Confirmation box appears
           - Amount is displayed as $1,250.75 in the summary (formatted with dollar sign and comma separator)
-      - id: MD007-TC011
+      - id: TC095
         title: Negative test — form submission without Review Transaction step does not create transaction
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - Add Transaction form is accessible
-        steps:
+        when:
           - Navigate to Add Transaction
           - Fill all fields with valid data
           - >-
             Attempt to submit the form directly without clicking Review Transaction (e.g., press Enter or manipulate
             form)
           - Navigate to Transactions and search for the entered Description
-        expectedResult:
+        then:
           - No transaction is created without going through the Review Transaction confirmation step
           - The transaction does not appear in the transaction list
-      - id: MD007-TC012
+      - id: TC096
         title: Transaction detail view shows correct data after confirmation and submission
-        preconditions:
+        given:
           - Application is running at http://localhost:8020
           - User USER0001 is logged in
           - A transaction has been successfully submitted via the confirmation flow
-        steps:
+        when:
           - Navigate to Transactions in the navigation bar
           - Locate the newly created transaction (Description = ConfirmSubmitTest, Amount = $125.50)
           - Click on the transaction row
-        expectedResult:
+        then:
           - Transaction Details page loads
           - >-
             Transaction Information section shows the correct Type Code, Category Code, Source, Description, and Amount
@@ -1456,212 +1456,212 @@ modules:
           - Timestamps section shows the correct Original Date and Processing Date
   - name: Reports and Bill Payment
     testCases:
-      - id: MD008-TC001
+      - id: TC097
         title: Navigate to Reports page from navigation bar
-        preconditions:
+        given:
           - User USER0001 exists with PASSWORD
           - Application is running at http://localhost:8020
           - Seed transaction data is present
-        steps:
+        when:
           - Navigate to http://localhost:8020
           - Log in as USER0001 / PASSWORD
           - Click Reports in the navigation bar
-        expectedResult:
+        then:
           - Reports page loads successfully
           - Page header displays REPORTS
           - Form shows Report Type dropdown with options Monthly, Yearly, Custom
           - Start Date and End Date fields are pre-filled for the current month
-      - id: MD008-TC002
+      - id: TC098
         title: Generate Monthly report with default date range
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
           - At least one transaction exists within the current month
-        steps:
+        when:
           - Leave Report Type as Monthly
           - Leave Start Date and End Date as pre-filled values
           - Click Generate Report
-        expectedResult:
+        then:
           - Confirmation box appears
           - "Confirmation message reads: Generate a Monthly report from <start> to <end>?"
           - "Two buttons are displayed: Yes, Generate and No, Cancel"
-      - id: MD008-TC003
+      - id: TC099
         title: Confirm Monthly report generation and verify results
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open with Monthly type and current month dates
           - At least one transaction exists within the current month
-        steps:
+        when:
           - Leave Report Type as Monthly
           - Leave Start Date and End Date as pre-filled values
           - Click Generate Report
           - Click Yes, Generate in the confirmation box
-        expectedResult:
+        then:
           - "Report table appears with columns: Tran ID, Card, Type, Category, Amount, Date, Merchant"
           - Transactions within the current month are listed
           - "A yellow total row appears at the bottom showing Total Amount: $X,XXX.XX"
           - Amounts are formatted as currency
-      - id: MD008-TC004
+      - id: TC100
         title: Cancel report generation from confirmation box
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
-        steps:
+        when:
           - Leave Report Type as Monthly
           - Click Generate Report
           - Click No, Cancel in the confirmation box
-        expectedResult:
+        then:
           - Confirmation box disappears
           - No report table is rendered
           - User remains on the Reports page with the form intact
-      - id: MD008-TC005
+      - id: TC101
         title: Generate Yearly report
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
           - At least one transaction exists within the current year
-        steps:
+        when:
           - Select Yearly from the Report Type dropdown
           - Verify Start Date and End Date update to cover the full current year
           - Click Generate Report
           - Click Yes, Generate in the confirmation box
-        expectedResult:
+        then:
           - Report table appears with transactions spanning the full current year
           - Yellow total row at bottom shows the summed Total Amount for the year
           - Confirmation message prior to generation referenced Yearly report type
-      - id: MD008-TC006
+      - id: TC102
         title: Generate Custom report with a valid custom date range
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
           - Transactions exist within the chosen custom date range
-        steps:
+        when:
           - Select Custom from the Report Type dropdown
           - Enter a valid Start Date (e.g., first day of previous month)
           - Enter a valid End Date (e.g., last day of previous month)
           - Click Generate Report
           - Click Yes, Generate in the confirmation box
-        expectedResult:
+        then:
           - Report table appears showing only transactions within the specified custom date range
           - Yellow total row at bottom shows the correct Total Amount for the range
-      - id: MD008-TC007
+      - id: TC103
         title: Generate report with End Date earlier than Start Date
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
-        steps:
+        when:
           - Select Custom from the Report Type dropdown
           - Enter Start Date = today
           - Enter End Date = one month before today
           - Click Generate Report
-        expectedResult:
+        then:
           - Red error message is displayed indicating the date range is invalid
           - No confirmation box appears
           - No report table is rendered
-      - id: MD008-TC008
+      - id: TC104
         title: Generate report with no transactions in the selected date range
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Reports page is open
           - No transactions exist in the far-future date range
-        steps:
+        when:
           - Select Custom from the Report Type dropdown
           - Enter Start Date = 2099-01-01
           - Enter End Date = 2099-01-31
           - Click Generate Report
           - Click Yes, Generate in the confirmation box
-        expectedResult:
+        then:
           - Report table appears with no transaction rows, or an informational message indicating no transactions found
           - Total Amount row shows $0.00 or is absent
-      - id: MD008-TC009
+      - id: TC105
         title: Navigate to Bill Payment page from navigation bar
-        preconditions:
+        given:
           - User USER0001 is logged in
-        steps:
+        when:
           - Click Bill-Pay in the navigation bar
-        expectedResult:
+        then:
           - Bill Payment page loads successfully
           - Form shows an Account ID input field and a Look Up button
           - No account information is displayed until a lookup is performed
-      - id: MD008-TC010
+      - id: TC106
         title: Look up a valid account with a positive balance
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
           - Account 0000000011 exists with a balance greater than $0.00
-        steps:
+        when:
           - Enter 0000000011 in the Account ID field
           - Click Look Up
-        expectedResult:
+        then:
           - Account Information section appears showing Account ID 0000000011 and Current Balance
           - Pay Full Balance button is displayed with the payment amount shown
           - Balance is greater than $0.00
-      - id: MD008-TC011
+      - id: TC107
         title: Pay full balance and verify success
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
           - Account 0000000011 has a balance greater than $0.00
-        steps:
+        when:
           - Enter 0000000011 in the Account ID field
           - Click Look Up
           - Click Pay Full Balance
           - Verify confirmation box appears
           - Click Yes, Pay Now
-        expectedResult:
+        then:
           - "Confirmation box reads: Are you sure you want to pay $X,XXX.XX for account 0000000011?"
           - >-
             After clicking Yes, Pay Now, green alert appears: >> Payment successful. Transaction ID: <id>. Amount:
             $X,XXX.XX
           - Account information section clears after successful payment
-      - id: MD008-TC012
+      - id: TC108
         title: Cancel bill payment from confirmation box
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
           - Account 0000000011 has a balance greater than $0.00
-        steps:
+        when:
           - Enter 0000000011 in the Account ID field
           - Click Look Up
           - Click Pay Full Balance
           - Click No, Cancel in the confirmation box
-        expectedResult:
+        then:
           - Confirmation box disappears
           - Payment is NOT processed
           - Account Information section still shows the original balance
-      - id: MD008-TC013
+      - id: TC109
         title: Look up account with zero balance
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
           - Account 0000000011 has been paid down to $0.00 balance
-        steps:
+        when:
           - Enter 0000000011 in the Account ID field
           - Click Look Up
-        expectedResult:
+        then:
           - Account Information section appears showing Current Balance as $0.00
           - Pay Full Balance button is NOT displayed
           - "Info message shown: You have nothing to pay. Your current balance is $0.00."
-      - id: MD008-TC014
+      - id: TC110
         title: Look up a non-existent account in Bill Payment
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
-        steps:
+        when:
           - Enter 9999999999 in the Account ID field
           - Click Look Up
-        expectedResult:
+        then:
           - Red error message is displayed indicating the account was not found
           - No Account Information section or Pay Full Balance button is shown
-      - id: MD008-TC015
+      - id: TC111
         title: Submit Bill Payment with empty Account ID field
-        preconditions:
+        given:
           - User USER0001 is logged in
           - Bill Payment page is open
-        steps:
+        when:
           - Leave the Account ID field empty
           - Click Look Up
-        expectedResult:
+        then:
           - Red error message is displayed indicating Account ID is required
           - No account information is displayed
           - No Pay Full Balance button appears

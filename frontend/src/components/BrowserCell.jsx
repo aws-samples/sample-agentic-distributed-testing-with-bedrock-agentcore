@@ -1,10 +1,10 @@
 import styles from './BrowserCell.module.css'
-import { moduleColor } from '../data/seedTestCases'
+import { featureColor } from '../data/seedTestCases'
 
-export default function BrowserCell({ moduleName, sessionStatus, activeModules, onFocus }) {
+export default function BrowserCell({ featureName, sessionStatus, activeFeatures, onFocus }) {
   const sess = sessionStatus || {}
-  const isRunning = activeModules?.has(moduleName)
-  const color = moduleColor(moduleName)
+  const isRunning = activeFeatures?.has(featureName)
+  const color = featureColor(featureName)
 
   let connClass = styles.conn + ' ' + styles.connDisconnected
   if (isRunning) connClass = styles.conn + ' ' + styles.connRunning
@@ -12,10 +12,10 @@ export default function BrowserCell({ moduleName, sessionStatus, activeModules, 
   else if (sess.connected) connClass = styles.conn + ' ' + styles.connConnected
 
   return (
-    <div className={`${styles.cell}${isRunning ? ' ' + styles.activeModule : ''}`}>
+    <div className={`${styles.cell}${isRunning ? ' ' + styles.activeFeature : ''}`}>
       <div className={styles.header} onClick={onFocus}>
         <div className={connClass} />
-        <span className={styles.title} style={{ color }}>{moduleName}</span>
+        <span className={styles.title} style={{ color }}>{featureName}</span>
       </div>
       <div className={styles.screenshot}>
         {sess.connecting && !sess.screenshot && (

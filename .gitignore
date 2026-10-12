@@ -28,3 +28,6 @@ backend/src/state/testResults.json
 
 # Local editor/agent tool config (personal, not part of the sample)
 .claude/
+
+# Safety copies made by the modules->features DB migration
+backend/src/state/*.pre-feature-rename-*.db

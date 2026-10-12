@@ -8,12 +8,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { initWebSocket } from './services/websocket.js';
-import { config, moduleList, testCasesByModule, initEc2Region } from './state/store.js';
-import { nextTcId, normArray } from './services/tcIds.js';
-import { replaceAllModulesAndCases } from './state/db.js';
+import { config, featureList, testCasesByFeature, featureDescriptions, initEc2Region } from './state/store.js';
+import { assignTcIds, bddFields } from './services/tcIds.js';
+import { replaceAllFeaturesAndCases } from './state/db.js';
 import { requireAuth, authEnabled } from './middleware/auth.js';
 import configRoutes   from './routes/config.js';
-import moduleRoutes   from './routes/modules.js';
+import featureRoutes   from './routes/features.js';
 import sessionRoutes  from './routes/sessions.js';
 import testRoutes     from './routes/tests.js';
 import yamlRoutes     from './routes/yaml.js';
@@ -24,12 +24,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadSeed() {
   // Only seed when there is truly no data yet — respects user deletions/imports
-  if (moduleList.length > 0) return;
+  if (featureList.length > 0) return;
   const seedPath = path.join(__dirname, 'state', 'seed.yaml');
   try {
     const raw = fs.readFileSync(seedPath, 'utf8');
     const doc = yaml.load(raw);
-    if (!doc?.modules) return;
+    if (!doc?.features && Array.isArray(doc?.modules)) doc.features = doc.modules;
+    if (!doc?.features) return;
+    assignTcIds(doc.features);
     // Seed the targetUrl too, but only if nothing else has already set it
     // (env var TARGET_URL or persisted config.json both take precedence).
     if (doc.targetUrl && !process.env.TARGET_URL) {
@@ -39,25 +41,24 @@ function loadSeed() {
         config.targetUrl = doc.targetUrl;
       }
     }
-    for (const modDef of doc.modules) {
-      const name = (modDef.name || '').trim();
+    for (const featDef of doc.features) {
+      const name = (featDef.name || '').trim();
       if (!name) continue;
-      if (!moduleList.includes(name)) moduleList.push(name);
-      if (Array.isArray(modDef.testCases)) {
-        if (!testCasesByModule[name]) testCasesByModule[name] = [];
-        for (const tc of modDef.testCases) {
+      if (!featureList.includes(name)) featureList.push(name);
+      featureDescriptions[name] = String(featDef.description || '').trim();
+      if (Array.isArray(featDef.testCases)) {
+        if (!testCasesByFeature[name]) testCasesByFeature[name] = [];
+        for (const tc of featDef.testCases) {
           if (!tc.title) continue;
-          testCasesByModule[name].push({
-            id: tc.id || nextTcId(name), module: name, title: tc.title, status: 'PENDING',
-            preconditions: normArray(tc.preconditions),
-            steps: Array.isArray(tc.steps) ? tc.steps : [tc.steps || ''],
-            expectedResult: normArray(tc.expectedResult),
+          testCasesByFeature[name].push({
+            id: tc.id, feature: name, title: tc.title, status: 'PENDING',
+            ...bddFields(tc),
           });
         }
       }
     }
-    replaceAllModulesAndCases(moduleList, testCasesByModule);
-    console.log('Seed loaded:', moduleList.map(m => `${m}(${(testCasesByModule[m]||[]).length})`).join(', '));
+    replaceAllFeaturesAndCases(featureList, testCasesByFeature, featureDescriptions);
+    console.log('Seed loaded:', featureList.map(m => `${m}(${(testCasesByFeature[m]||[]).length})`).join(', '));
   } catch (e) {
     console.warn('Seed load skipped:', e.message);
   }
@@ -76,14 +77,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/import', express.text({ type: 'text/yaml', limit: '10mb' }));
 
 // Cognito auth gate — no-op when COGNITO_USER_POOL_ID/COGNITO_CLIENT_ID are
-// unset (local dev). /api/health is excluded: the ALB health checker has no
-// browser session and no token, and would otherwise never see a 200,
-// permanently stuck at 0 healthy targets. See middleware/auth.js.
+// unset (local dev). /api/health is excluded so health probes without a
+// browser session or token still get a 200. See middleware/auth.js.
 if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
 app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
 
 app.use('/api', configRoutes);
-app.use('/api', moduleRoutes);
+app.use('/api', featureRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', testRoutes);
 app.use('/api', yamlRoutes);
@@ -97,5 +97,5 @@ server.listen(PORT, () => {
   console.log(`Agentic Test Runner backend  port=${PORT}`);
   console.log(`Mode: ${config.agentMode}  Model: ${config.bedrockModel}`);
   console.log(`Target: ${config.targetUrl}`);
-  console.log(`Modules: ${moduleList.join(', ')}`);
+  console.log(`Features: ${featureList.join(', ')}`);
 });

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import jsyaml from 'js-yaml'
 import NavBar from '../components/NavBar'
-import ModulePanel from '../components/ModulePanel'
-import ModuleModal from '../components/ModuleModal'
+import FeaturePanel from '../components/FeaturePanel'
+import FeatureModal from '../components/FeatureModal'
 import TcEditor from '../components/TcEditor'
 import GenerateModal from '../components/GenerateModal'
 import Btn from '../components/Btn'
@@ -10,42 +10,40 @@ import Icon from '../components/Icon'
 import { buildAuthedWsUrl } from '../context/authFetch'
 import styles from './EditorPage.module.css'
 
-function modId(i) { return 'MD' + String(i + 1).padStart(3, '0') }
-
-function nextTcId(mod, allModules) {
-  const mi = allModules.findIndex(m => m.name === mod.name)
-  const prefix = modId(mi)
-  const nums = (mod.testCases || []).map(t => {
-    const m = t.id?.match(/TC(\d+)$/)
-    return m ? parseInt(m[1], 10) : 0
-  })
-  const next = nums.length ? Math.max(...nums) + 1 : 1
-  return `${prefix}-TC${String(next).padStart(3, '0')}`
+// Test case ids are suite-wide (TC001, TC002, ...), not tied to a feature.
+function nextTcId(allFeatures) {
+  let max = 0
+  for (const f of allFeatures) for (const t of f.testCases || []) {
+    const m = /^TC(\d+)$/.exec(t.id || '')
+    if (m) max = Math.max(max, parseInt(m[1], 10))
+  }
+  return `TC${String(max + 1).padStart(3, '0')}`
 }
 
 function docForExport(doc) {
   return {
     ...doc,
-    modules: doc.modules.map(m => ({
+    features: doc.features.map(m => ({
       name: m.name,
+      ...(m.description ? { description: m.description } : {}),
       testCases: (m.testCases || []).map(tc => ({
         id: tc.id, title: tc.title,
-        preconditions: tc.preconditions, steps: tc.steps, expectedResult: tc.expectedResult,
+        given: tc.given, when: tc.when, then: tc.then,
       })),
     })),
   }
 }
 
 export default function EditorPage() {
-  const [doc, setDoc] = useState({ modules: [] })
-  const [selectedModIdx, setSelectedModIdx] = useState(null)
+  const [doc, setDoc] = useState({ features: [] })
+  const [selectedFeatIdx, setSelectedFeatIdx] = useState(null)
   const [selectedTcId, setSelectedTcId] = useState(null)
-  const [expandedModNames, setExpandedModNames] = useState(new Set()) // tree expansion (independent of editing selection)
+  const [expandedFeatNames, setExpandedFeatNames] = useState(new Set()) // tree expansion (independent of editing selection)
   const [searchQuery, setSearchQuery] = useState('')
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState({ msg: '', kind: '' })
-  const [modModalOpen, setModModalOpen] = useState(false)
-  const [editingModIdx, setEditingModIdx] = useState(null)
+  const [featModalOpen, setFeatModalOpen] = useState(false)
+  const [editingFeatIdx, setEditingFeatIdx] = useState(null)
   const [generateModalOpen, setGenerateModalOpen] = useState(false)
   const [targetUrl, setTargetUrl] = useState('')
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
@@ -56,9 +54,9 @@ export default function EditorPage() {
   const [authDirty, setAuthDirty] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   // Read-only mode while a test run is in progress
-  const [activeModules, setActiveModules] = useState(new Set())
+  const [activeFeatures, setActiveFeatures] = useState(new Set())
   const [anyRunningFromSnapshot, setAnyRunningFromSnapshot] = useState(false)
-  const readOnly = activeModules.size > 0 || anyRunningFromSnapshot
+  const readOnly = activeFeatures.size > 0 || anyRunningFromSnapshot
   const initialLoadDoneRef = useRef(false)
   const saveTimerRef = useRef(null)
   let statusTimer = null
@@ -137,16 +135,16 @@ export default function EditorPage() {
     try {
       const res = await fetch('/api/export')
       const text = await res.text()
-      const parsed = jsyaml.load(text) || { modules: [] }
+      const parsed = jsyaml.load(text) || { features: [] }
       const loaded = parsed
-      if (!loaded.modules) loaded.modules = []
+      if (!loaded.features) loaded.features = []
       setDoc(loaded)
       setDirty(false)
-      // Pre-select the first module and its first test case (if any exist)
+      // Pre-select the first feature and its first test case (if any exist)
       // so reloading the page doesn't land on an empty right panel.
-      const firstMod = loaded.modules[0]
-      const firstTc = firstMod?.testCases?.[0]
-      setSelectedModIdx(firstMod ? 0 : null)
+      const firstFeat = loaded.features[0]
+      const firstTc = firstFeat?.testCases?.[0]
+      setSelectedFeatIdx(firstFeat ? 0 : null)
       setSelectedTcId(firstTc ? firstTc.id : null)
       setStatusMsg('Loaded', 'ok')
       // Mark initial load complete so the auto-save effect doesn't fire on this setDoc.
@@ -187,10 +185,10 @@ export default function EditorPage() {
 
   // Called when generation completes — ask user to export first if there's existing data
   const handleGenerated = (generatedDoc) => {
-    const hasExisting = doc.modules.length > 0
+    const hasExisting = doc.features.length > 0
     if (hasExisting) {
       const confirmed = window.confirm(
-        `This will replace your current ${doc.modules.length} module(s) and all their test cases.\n\n` +
+        `This will replace your current ${doc.features.length} feature(s) and all their test cases.\n\n` +
         `Click OK to replace, or Cancel to keep your current test suite.\n\n` +
         `Tip: Export your current suite first (Export button) to save a backup.`
       )
@@ -198,10 +196,10 @@ export default function EditorPage() {
     }
     setDoc(generatedDoc)
     setDirty(true)
-    setSelectedModIdx(null)
+    setSelectedFeatIdx(null)
     setSelectedTcId(null)
-    setExpandedModNames(new Set())
-    setStatusMsg(`Generated ${generatedDoc.modules.length} modules with ${generatedDoc.modules.reduce((s, m) => s + (m.testCases?.length || 0), 0)} test cases`, 'ok')
+    setExpandedFeatNames(new Set())
+    setStatusMsg(`Generated ${generatedDoc.features.length} features with ${generatedDoc.features.reduce((s, m) => s + (m.testCases?.length || 0), 0)} test cases`, 'ok')
   }
 
   const importYamlFile = (e) => {
@@ -210,11 +208,21 @@ export default function EditorPage() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const parsed = jsyaml.load(ev.target.result) || { modules: [] }
-        if (!parsed.modules) throw new Error('Expected { modules: [...] }')
+        const parsed = jsyaml.load(ev.target.result) || { features: [] }
+        if (!parsed.features && Array.isArray(parsed.modules)) parsed.features = parsed.modules   // pre-rename files
+        if (!parsed.features) throw new Error('Expected { features: [...] }')
+        // Accept YAML exported before the AI-enhanced BDD rename
+        for (const m of parsed.features) {
+          for (const tc of m.testCases || []) {
+            if (tc.given === undefined && tc.preconditions !== undefined) tc.given = tc.preconditions
+            if (tc.when === undefined && tc.steps !== undefined) tc.when = tc.steps
+            if (tc.then === undefined && tc.expectedResult !== undefined) tc.then = tc.expectedResult
+            delete tc.preconditions; delete tc.steps; delete tc.expectedResult
+          }
+        }
         setDoc(parsed)
         setDirty(true)
-        setSelectedModIdx(null)
+        setSelectedFeatIdx(null)
         setSelectedTcId(null)
         setStatusMsg('Imported ' + file.name, 'ok')
       } catch (err) {
@@ -270,7 +278,7 @@ export default function EditorPage() {
         switch (msg.type) {
           case 'test_start':
             if (msg.sessionId) {
-              setActiveModules(prev => {
+              setActiveFeatures(prev => {
                 if (prev.has(msg.sessionId)) return prev
                 const next = new Set(prev)
                 next.add(msg.sessionId)
@@ -278,18 +286,18 @@ export default function EditorPage() {
               })
             }
             break
-          case 'module_complete':
-            if (msg.module) {
-              setActiveModules(prev => {
-                if (!prev.has(msg.module)) return prev
+          case 'feature_complete':
+            if (msg.feature) {
+              setActiveFeatures(prev => {
+                if (!prev.has(msg.feature)) return prev
                 const next = new Set(prev)
-                next.delete(msg.module)
+                next.delete(msg.feature)
                 return next
               })
             }
             break
           case 'run_complete':
-            setActiveModules(new Set())
+            setActiveFeatures(new Set())
             setAnyRunningFromSnapshot(false)
             break
           case 'test_results_snapshot':
@@ -316,107 +324,107 @@ export default function EditorPage() {
     }
   }, [])
 
-  const selectedMod = selectedModIdx != null ? doc.modules[selectedModIdx] : null
-  const selectedTc = selectedMod ? (selectedMod.testCases || []).find(t => t.id === selectedTcId) : null
+  const selectedFeat = selectedFeatIdx != null ? doc.features[selectedFeatIdx] : null
+  const selectedTc = selectedFeat ? (selectedFeat.testCases || []).find(t => t.id === selectedTcId) : null
 
-  const handleModuleClick = (modName) => {
-    const idx = doc.modules.findIndex(m => m.name === modName)
+  const handleFeatureClick = (featName) => {
+    const idx = doc.features.findIndex(m => m.name === featName)
     if (idx === -1) return
     // Toggle tree expansion
-    setExpandedModNames(prev => {
+    setExpandedFeatNames(prev => {
       const next = new Set(prev)
-      next.has(modName) ? next.delete(modName) : next.add(modName)
+      next.has(featName) ? next.delete(featName) : next.add(featName)
       return next
     })
     // Select for editing
-    setSelectedModIdx(idx === selectedModIdx ? null : idx)
+    setSelectedFeatIdx(idx === selectedFeatIdx ? null : idx)
     setSelectedTcId(null)
   }
 
-  const handleTcClick = (tcId, modName) => {
-    const idx = doc.modules.findIndex(m => m.name === modName)
-    if (idx !== -1) setSelectedModIdx(idx)
-    setSelectedTcId(prev => (prev === tcId && selectedModIdx === idx) ? null : tcId)
+  const handleTcClick = (tcId, featName) => {
+    const idx = doc.features.findIndex(m => m.name === featName)
+    if (idx !== -1) setSelectedFeatIdx(idx)
+    setSelectedTcId(prev => (prev === tcId && selectedFeatIdx === idx) ? null : tcId)
   }
 
-  const handleDeleteMod = (modName) => {
-    const idx = doc.modules.findIndex(m => m.name === modName)
+  const handleDeleteFeat = (featName) => {
+    const idx = doc.features.findIndex(m => m.name === featName)
     if (idx === -1) return
-    const mod = doc.modules[idx]
-    if (!confirm(`Delete module "${mod.name}" and all ${(mod.testCases || []).length} test cases?`)) return
+    const feat = doc.features[idx]
+    if (!confirm(`Delete feature "${feat.name}" and all ${(feat.testCases || []).length} test cases?`)) return
     setDoc(prev => {
-      const mods = [...prev.modules]
-      mods.splice(idx, 1)
-      return { ...prev, modules: mods }
+      const feats = [...prev.features]
+      feats.splice(idx, 1)
+      return { ...prev, features: feats }
     })
-    if (selectedModIdx === idx) { setSelectedModIdx(null); setSelectedTcId(null) }
-    else if (selectedModIdx > idx) setSelectedModIdx(prev => prev - 1)
+    if (selectedFeatIdx === idx) { setSelectedFeatIdx(null); setSelectedTcId(null) }
+    else if (selectedFeatIdx > idx) setSelectedFeatIdx(prev => prev - 1)
     setDirty(true)
   }
 
-  const handleOpenAddMod = () => {
-    setEditingModIdx(null)
-    setModModalOpen(true)
+  const handleOpenAddFeat = () => {
+    setEditingFeatIdx(null)
+    setFeatModalOpen(true)
   }
 
-  const handleOpenEditMod = (idx) => {
-    setEditingModIdx(idx)
-    setModModalOpen(true)
+  const handleOpenEditFeat = (idx) => {
+    setEditingFeatIdx(idx)
+    setFeatModalOpen(true)
   }
 
-  const handleConfirmMod = ({ name, description }) => {
-    if (editingModIdx != null) {
+  const handleConfirmFeat = ({ name, description }) => {
+    if (editingFeatIdx != null) {
       setDoc(prev => {
-        const mods = [...prev.modules]
-        mods[editingModIdx] = { ...mods[editingModIdx], name, description: description || undefined }
-        return { ...prev, modules: mods }
+        const feats = [...prev.features]
+        feats[editingFeatIdx] = { ...feats[editingFeatIdx], name, description: description || undefined }
+        return { ...prev, features: feats }
       })
-      setStatusMsg('Module updated', 'ok')
+      setStatusMsg('Feature updated', 'ok')
     } else {
-      if (doc.modules.find(m => m.name === name)) { setStatusMsg('Module already exists', 'err'); return }
+      if (doc.features.find(m => m.name === name)) { setStatusMsg('Feature already exists', 'err'); return }
       setDoc(prev => {
-        const mods = [...prev.modules, { name, description, testCases: [] }]
-        setSelectedModIdx(mods.length - 1)
+        const feats = [...prev.features, { name, description, testCases: [] }]
+        setSelectedFeatIdx(feats.length - 1)
         setSelectedTcId(null)
-        return { ...prev, modules: mods }
+        return { ...prev, features: feats }
       })
-      setStatusMsg('Module added: ' + name, 'ok')
+      setStatusMsg('Feature added: ' + name, 'ok')
     }
     setDirty(true)
-    setModModalOpen(false)
+    setFeatModalOpen(false)
   }
 
-  const handleAddTc = (modIdx) => {
+  const handleAddTc = (featIdx) => {
     setDoc(prev => {
-      const mods = [...prev.modules]
-      const mod = { ...mods[modIdx] }
-      if (!mod.testCases) mod.testCases = []
+      const feats = [...prev.features]
+      const feat = { ...feats[featIdx] }
+      if (!feat.testCases) feat.testCases = []
       const newTc = {
-        id: nextTcId(mod, prev.modules),
+        id: nextTcId(prev.features),
         title: 'New test case',
-        preconditions: ['None'],
-        steps: ['Step 1'],
-        expectedResult: ['Expected result'],
+        given: ['I am on the home page'],
+        when: ['I do something'],
+        then: ['I see the expected outcome'],
       }
-      mod.testCases = [...mod.testCases, newTc]
-      mods[modIdx] = mod
-      setSelectedModIdx(modIdx)
+      feat.testCases = [...feat.testCases, newTc]
+      feats[featIdx] = feat
+      setSelectedFeatIdx(featIdx)
       setSelectedTcId(newTc.id)
-      return { ...prev, modules: mods }
+      return { ...prev, features: feats }
     })
     setDirty(true)
   }
 
   const handleApplyTc = (updated) => {
     setDoc(prev => {
-      const mods = prev.modules.map((m, i) => {
-        if (i !== selectedModIdx) return m
+      const feats = prev.features.map((m, i) => {
+        if (i !== selectedFeatIdx) return m
         return {
           ...m,
           testCases: (m.testCases || []).map(t => t.id === updated.id ? updated : t),
         }
       })
-      return { ...prev, modules: mods }
+      return { ...prev, features: feats }
     })
     setDirty(true)
     setStatusMsg('Changes applied', 'ok')
@@ -426,26 +434,26 @@ export default function EditorPage() {
     if (!selectedTcId) return
     if (!confirm(`Delete ${selectedTcId}?`)) return
     setDoc(prev => {
-      const mods = prev.modules.map((m, i) => {
-        if (i !== selectedModIdx) return m
+      const feats = prev.features.map((m, i) => {
+        if (i !== selectedFeatIdx) return m
         return { ...m, testCases: (m.testCases || []).filter(t => t.id !== selectedTcId) }
       })
-      return { ...prev, modules: mods }
+      return { ...prev, features: feats }
     })
     setSelectedTcId(null)
     setDirty(true)
   }
 
-  // Build module data for panel
-  const modulesForPanel = doc.modules.map(m => m.name)
+  // Build feature data for panel
+  const featuresForPanel = doc.features.map(m => m.name)
   const testCasesForPanel = {}
-  doc.modules.forEach(m => { testCasesForPanel[m.name] = m.testCases || [] })
+  doc.features.forEach(m => { testCasesForPanel[m.name] = m.testCases || [] })
 
-  const expandedModule = selectedModIdx != null ? doc.modules[selectedModIdx]?.name : null
-  // Keep expandedModNames in sync when selected module changes
-  // (selecting a module auto-expands it)
-  if (expandedModule && !expandedModNames.has(expandedModule)) {
-    expandedModNames.add(expandedModule)
+  const expandedFeature = selectedFeatIdx != null ? doc.features[selectedFeatIdx]?.name : null
+  // Keep expandedFeatNames in sync when selected feature changes
+  // (selecting a feature auto-expands it)
+  if (expandedFeature && !expandedFeatNames.has(expandedFeature)) {
+    expandedFeatNames.add(expandedFeature)
   }
 
   // Nav right content
@@ -467,8 +475,8 @@ export default function EditorPage() {
   // file operations grouped on the right
   const leftToolbar = (
     <>
-      <Btn variant="primary" onClick={handleOpenAddMod} disabled={readOnly}>
-        <Icon name="add" />Add Module
+      <Btn variant="primary" onClick={handleOpenAddFeat} disabled={readOnly}>
+        <Icon name="add" />Add Feature
       </Btn>
       <Btn onClick={() => setGenerateModalOpen(true)} disabled={readOnly}>
         <Icon name="auto_awesome" />Generate from Spec
@@ -501,8 +509,7 @@ export default function EditorPage() {
       return (
         <>
           <div className={styles.rightHeader}>
-            <span className={styles.rightHeaderId}>{selectedMod ? modId(selectedModIdx) : ''}</span>
-            <span className={styles.rightHeaderTitle}>{selectedMod?.name}</span>
+                        <span className={styles.rightHeaderTitle}>{selectedFeat?.name}</span>
             <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>›</span>
             <span className={styles.rightHeaderId} style={{ color: 'var(--accent)' }}>{selectedTc.id}</span>
             <span className={styles.rightHeaderSub}>{selectedTc.title}</span>
@@ -517,26 +524,28 @@ export default function EditorPage() {
       )
     }
 
-    if (selectedMod) {
-      const tcs = selectedMod.testCases || []
+    if (selectedFeat) {
+      const tcs = selectedFeat.testCases || []
       return (
         <>
           <div className={styles.rightHeader}>
-            <span className={styles.rightHeaderId}>{modId(selectedModIdx)}</span>
-            <span className={styles.rightHeaderTitle}>{selectedMod.name}</span>
-            {selectedMod.description && (
-              <span className={styles.rightHeaderSub}>— {selectedMod.description}</span>
-            )}
+            <span className={styles.rightHeaderTitle}>{selectedFeat.name}</span>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {tcs.length} test case{tcs.length !== 1 ? 's' : ''}
             </span>
-            <Btn size="sm" onClick={() => handleOpenEditMod(selectedModIdx)} disabled={readOnly}><Icon name="edit" />Edit Module</Btn>
+            <Btn size="sm" onClick={() => handleOpenEditFeat(selectedFeatIdx)} disabled={readOnly}><Icon name="edit" />Edit Feature</Btn>
+          </div>
+          <div className={styles.background}>
+            <div className={styles.backgroundLabel}>Background <span>— shared setup, runs before every scenario in this feature</span></div>
+            {selectedFeat.description
+              ? <div className={styles.backgroundText}>{selectedFeat.description}</div>
+              : <div className={styles.backgroundEmpty}>None yet. Click <strong>Edit Feature</strong> to add the setup every scenario here starts from, e.g. “Given the app is running and I am signed in”.</div>}
           </div>
           <div style={{ padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>
             Select a test case from the left panel to edit it, or click{' '}
             <strong>Add Test Case</strong>.
             <br /><br />
-            <Btn variant="primary" onClick={() => handleAddTc(selectedModIdx)} disabled={readOnly}><Icon name="add" />Add Test Case</Btn>
+            <Btn variant="primary" onClick={() => handleAddTc(selectedFeatIdx)} disabled={readOnly}><Icon name="add" />Add Test Case</Btn>
           </div>
         </>
       )
@@ -550,8 +559,8 @@ export default function EditorPage() {
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
         </svg>
-        <div style={{ fontSize: 14 }}>Select a module or test case to edit</div>
-        <div style={{ fontSize: 12 }}>Or click <strong>+ Add Module</strong> to create one</div>
+        <div style={{ fontSize: 14 }}>Select a feature or test case to edit</div>
+        <div style={{ fontSize: 12 }}>Or click <strong>+ Add Feature</strong> to create one</div>
       </div>
     )
   }
@@ -660,20 +669,20 @@ export default function EditorPage() {
       </div>
 
       <div className={styles.main}>
-        <ModulePanel
-          modules={modulesForPanel}
+        <FeaturePanel
+          features={featuresForPanel}
           testCases={testCasesForPanel}
-          expandedModules={expandedModNames}
+          expandedFeatures={expandedFeatNames}
           selectedTcId={selectedTcId}
-          onModuleClick={handleModuleClick}
+          onFeatureClick={handleFeatureClick}
           onTcClick={handleTcClick}
-          onModuleDelete={readOnly ? null : handleDeleteMod}
-          onTcAdd={readOnly ? null : (modName) => {
-            const idx = doc.modules.findIndex(m => m.name === modName)
+          onFeatureDelete={readOnly ? null : handleDeleteFeat}
+          onTcAdd={readOnly ? null : (featName) => {
+            const idx = doc.features.findIndex(m => m.name === featName)
             if (idx !== -1) handleAddTc(idx)
           }}
-          onExpandAll={() => setExpandedModNames(new Set(doc.modules.map(m => m.name)))}
-          onCollapseAll={() => setExpandedModNames(new Set())}
+          onExpandAll={() => setExpandedFeatNames(new Set(doc.features.map(m => m.name)))}
+          onCollapseAll={() => setExpandedFeatNames(new Set())}
           showExpandControls={true}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -686,11 +695,11 @@ export default function EditorPage() {
         </div>
       </div>
 
-      <ModuleModal
-        open={modModalOpen}
-        onClose={() => setModModalOpen(false)}
-        onConfirm={handleConfirmMod}
-        editModule={editingModIdx != null ? doc.modules[editingModIdx] : null}
+      <FeatureModal
+        open={featModalOpen}
+        onClose={() => setFeatModalOpen(false)}
+        onConfirm={handleConfirmFeat}
+        editFeature={editingFeatIdx != null ? doc.features[editingFeatIdx] : null}
       />
 
       <GenerateModal

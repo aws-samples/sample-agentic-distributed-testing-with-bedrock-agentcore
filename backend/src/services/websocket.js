@@ -1,5 +1,5 @@
 import { WebSocketServer } from 'ws';
-import { config, moduleList, sessions, testResultsCache, testRuns, stopFlags, activeModules } from '../state/store.js';
+import { config, featureList, sessions, testResultsCache, testRuns, stopFlags, activeFeatures } from '../state/store.js';
 import { authEnabled, verifyWsToken } from '../middleware/auth.js';
 
 let wss;
@@ -42,7 +42,7 @@ export function initWebSocket(server) {
     ws.send(JSON.stringify({
       type: 'config',
       targetUrl: config.targetUrl,
-      modules: moduleList,
+      features: featureList,
       model: config.bedrockModel,
       agentMode: config.agentMode,
     }));
@@ -52,12 +52,12 @@ export function initWebSocket(server) {
       if (sess.screenshot) {
         ws.send(JSON.stringify({ type: 'screenshot', sessionId: sid, data: sess.screenshot, action: sess.action || '' }));
       }
-      ws.send(JSON.stringify({ type: 'session_status', sessionId: sid, connected: sess.connected, module: sid }));
+      ws.send(JSON.stringify({ type: 'session_status', sessionId: sid, connected: sess.connected, feature: sid }));
     }
 
     // 3. Replay persisted test results so the UI restores status on reconnect.
     // Merge in any RUNNING TCs from in-flight runs — including ones already
-    // stopping (stopFlags set but modules still finishing their current test
+    // stopping (stopFlags set but features still finishing their current test
     // case) — so the Stop/Stopping state reappears correctly after a page
     // refresh instead of silently reverting to idle.
     const snapshot = { ...testResultsCache };
@@ -73,12 +73,12 @@ export function initWebSocket(server) {
       }
     }
 
-    const activeMods = Array.from(activeModules);
-    if (Object.keys(snapshot).length > 0 || activeMods.length > 0) {
+    const activeFeats = Array.from(activeFeatures);
+    if (Object.keys(snapshot).length > 0 || activeFeats.length > 0) {
       ws.send(JSON.stringify({
         type: 'test_results_snapshot',
         results: snapshot,
-        activeModules: activeMods,
+        activeFeatures: activeFeats,
         currentRunId: activeRunId,
         stopping: activeRunStopping,
       }));

@@ -32,7 +32,7 @@ router.get('/analysis/snapshot-url', async (req, res) => {
   if (!key || !key.startsWith('runs/')) return res.status(400).json({ error: 'invalid key' });
   // Only honour keys that actually belong to a run in our archive — prevents
   // this endpoint from being used to mint URLs for arbitrary keys
-  const known = runArchive.some(r => Object.values(r.modules || {}).some(m =>
+  const known = runArchive.some(r => Object.values(r.features || {}).some(m =>
     (m.cases || []).some(c => (c.snapshots || []).some(s => s.key === key))));
   if (!known) return res.status(404).json({ error: 'snapshot not found in any archived run' });
   try {

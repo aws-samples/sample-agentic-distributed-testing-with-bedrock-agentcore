@@ -1,19 +1,51 @@
-import { moduleList, testCasesByModule } from '../state/store.js';
+import { testCasesByFeature } from '../state/store.js';
 
-export function modulePrefix(mod) {
-  const idx = moduleList.indexOf(mod);
-  const n = idx >= 0 ? idx + 1 : moduleList.length + 1;
-  return `MD${String(n).padStart(3, '0')}`;
+const TC_NUM = /^TC(\d+)$/;
+
+/** True for ids in the current format (TC001). Anything else (e.g. MD001-TC001) is legacy. */
+export function isCurrentTcId(id) { return typeof id === 'string' && TC_NUM.test(id); }
+
+export function formatTcId(n) { return 'TC' + String(n).padStart(3, '0'); }
+
+function highestTcNumber(cases) {
+  let max = 0;
+  for (const tc of cases) {
+    const m = TC_NUM.exec(tc.id || '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return max;
 }
 
-export function nextTcId(mod) {
-  const existing = testCasesByModule[mod] || [];
-  const prefix = modulePrefix(mod);
-  const nums = existing
-    .map(t => { const m = t.id?.match(/TC(\d+)$/); return m ? parseInt(m[1], 10) : 0; })
-    .filter(Boolean);
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return `${prefix}-TC${String(next).padStart(3, '0')}`;
+/** Next free id across the whole suite — ids are global, not per feature. */
+export function nextTcId() {
+  return formatTcId(highestTcNumber(Object.values(testCasesByFeature).flat()) + 1);
+}
+
+/**
+ * For import / seed: give every case without a current-format id one, numbered
+ * after the highest id in the document. Explicit TC### ids are kept as they are.
+ */
+export function assignTcIds(featureDefs) {
+  const all = featureDefs.flatMap(f => (Array.isArray(f.testCases) ? f.testCases : []));
+  let n = highestTcNumber(all);
+  const seen = new Set();
+  for (const tc of all) {
+    if (isCurrentTcId(tc.id) && !seen.has(tc.id)) { seen.add(tc.id); continue; }
+    do { tc.id = formatTcId(++n); } while (seen.has(tc.id));
+    seen.add(tc.id);
+  }
+}
+
+// AI-enhanced BDD fields: given / when / then. The legacy names (preconditions /
+// steps / expectedResult) are still accepted on import so older exported YAML
+// files keep working; everything stored and served uses the new names.
+export function bddFields(tc) {
+  const when = tc.when ?? tc.steps;
+  return {
+    given: normArray(tc.given ?? tc.preconditions),
+    when: Array.isArray(when) ? when : [when || ''],
+    then: normArray(tc.then ?? tc.expectedResult),
+  };
 }
 
 export function normArray(val) {

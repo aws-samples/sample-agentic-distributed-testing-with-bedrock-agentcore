@@ -77,7 +77,7 @@
   min-height: 0;
 }
 
-/* Left column: module+TC list */
+/* Left column: feature+TC list */
 .tcListCol {
   width: 280px;
   flex-shrink: 0;
@@ -132,22 +132,22 @@
   min-height: 0;
 }
 
-.noModules {
+.noFeatures {
   padding: 20px 14px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
-/* Module list inside run detail */
-.moduleList {
+/* Feature list inside run detail */
+.featureList {
   padding: 6px;
 }
 
-.modGroup {
+.featGroup {
   margin-bottom: 2px;
 }
 
-.modHeader {
+.featHeader {
   padding: 5px 8px;
   display: flex;
   align-items: center;
@@ -156,16 +156,16 @@
   border-radius: 4px;
   user-select: none;
 }
-.modHeader:hover { background: var(--surface2); }
+.featHeader:hover { background: var(--surface2); }
 
-.modChevron {
+.featChevron {
   font-size: 10px;
   color: var(--text-muted);
   width: 12px;
   flex-shrink: 0;
 }
 
-.modName {
+.featName {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -177,7 +177,7 @@
   white-space: nowrap;
 }
 
-.modCount {
+.featCount {
   background: var(--surface2);
   padding: 1px 5px;
   border-radius: 8px;
@@ -186,7 +186,7 @@
   flex-shrink: 0;
 }
 
-.modBadge {
+.featBadge {
   font-size: 10px !important;
   padding: 1px 5px !important;
   flex-shrink: 0;

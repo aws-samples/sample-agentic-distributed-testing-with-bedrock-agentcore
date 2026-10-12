@@ -1,5 +1,5 @@
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
-import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeModules } from '../state/store.js';
+import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeFeatures, featureDescriptions } from '../state/store.js';
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
@@ -83,7 +83,9 @@ function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
 export async function invokeRuntime(tc, runId, sessionId) {
   const payload = {
     action: 'run_test',
-    testCase: tc,
+    // The Feature's Background (its description) is shared setup that applies
+    // before every scenario in the Feature; the runtime puts it in the prompt.
+    testCase: { ...tc, background: featureDescriptions[tc.feature] || '' },
     targetUrl: config.targetUrl,
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
@@ -126,7 +128,7 @@ export async function invokeRuntime(tc, runId, sessionId) {
     } else {
       // Reuse the same runtimeSessionId minted at connect time (see
       // makeRuntimeSessionId in services/sessions.js) so every test case in
-      // this module keeps landing on the same warm container — and thus the
+      // this feature keeps landing on the same warm container — and thus the
       // same in-memory AgentCore Browser session — instead of each getting
       // its own container with its own abandoned browser session.
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
@@ -142,9 +144,9 @@ export async function invokeRuntime(tc, runId, sessionId) {
   }
 }
 
-export async function runModuleTests(module, testCases, runId) {
-  const sessionId = module;
-  activeModules.add(module);
+export async function runFeatureTests(feature, testCases, runId, onProgress) {
+  const sessionId = feature;
+  activeFeatures.add(feature);
   try {
     await ensureSession(sessionId);
   } catch (e) {
@@ -154,7 +156,8 @@ export async function runModuleTests(module, testCases, runId) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message };
       saveTestResult(tc.id, 'FAIL', failReason);
     }
-    activeModules.delete(module);
+    onProgress?.();
+    activeFeatures.delete(feature);
     return;
   }
 
@@ -173,7 +176,7 @@ export async function runModuleTests(module, testCases, runId) {
     if (sess) sess.action = `[${tc.id}] Running on ${label}...`;
     broadcast({ type: 'action', sessionId, text: `[${tc.id}] Invoking ${label}...`, testId: tc.id });
 
-    // Pause the agentcore-mode screenshot poller for this module while the
+    // Pause the agentcore-mode screenshot poller for this feature while the
     // agent's own CDP connection is live — see the comment in
     // startAgentcoreScreenPoller (services/sessions.js) for why a second
     // concurrent connection to the same AgentCore Browser session 429s.
@@ -187,7 +190,7 @@ export async function runModuleTests(module, testCases, runId) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status, reason: result.reason, snapshots };
       broadcast({ type: 'test_result', testId: tc.id, sessionId, status, reason: result.reason, runId });
       saveTestResult(tc.id, status, result.reason || '');
-      console.log(`[${module}] ${tc.id}: ${status} — ${(result.reason || '').slice(0, 80)} (${snapshots.length} snapshots)`);
+      console.log(`[${feature}] ${tc.id}: ${status} — ${(result.reason || '').slice(0, 80)} (${snapshots.length} snapshots)`);
     } catch (e) {
       const snapshots = await flushTcSnapshots(runId, tc.id);
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message, snapshots };
@@ -195,8 +198,9 @@ export async function runModuleTests(module, testCases, runId) {
       saveTestResult(tc.id, 'FAIL', e.message);
     }
     if (sess) { sess.testRunning = false; sess.action = ''; }
+    onProgress?.();
   }
 
-  activeModules.delete(module);
-  broadcast({ type: 'module_complete', module: sessionId, runId });
+  activeFeatures.delete(feature);
+  broadcast({ type: 'feature_complete', feature: sessionId, runId });
 }

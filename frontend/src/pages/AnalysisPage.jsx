@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import NavBar from '../components/NavBar'
 import RunHistoryList from '../components/RunHistoryList'
 import TcEvidencePanel from '../components/TcEvidencePanel'
 import Icon from '../components/Icon'
+import { useWebSocket } from '../context/useWebSocket'
 import styles from './AnalysisPage.module.css'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -16,28 +17,28 @@ function statusIconName(status) {
   }
 }
 
-// ── Module TC list (left column inside run detail) ─────────────────────────────
+// ── Feature TC list (left column inside run detail) ─────────────────────────────
 
-function RunModuleList({ run, selectedTcId, onTcClick }) {
-  const [expandedModules, setExpandedModules] = useState(new Set())
-  const modules = run?.modules || {}
-  const moduleNames = Object.keys(modules)
+function RunFeatureList({ run, selectedTcId, onTcClick }) {
+  const [expandedFeatures, setExpandedFeatures] = useState(new Set())
+  const features = run?.features || {}
+  const featureNames = Object.keys(features)
 
   // Auto-expand all on first load
   useEffect(() => {
-    if (moduleNames.length > 0) {
-      setExpandedModules(new Set(moduleNames))
+    if (featureNames.length > 0) {
+      setExpandedFeatures(new Set(featureNames))
     }
   }, [run?.runId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (moduleNames.length === 0) {
+  if (featureNames.length === 0) {
     return (
-      <div className={styles.noModules}>No modules in this run.</div>
+      <div className={styles.noFeatures}>No features in this run.</div>
     )
   }
 
-  const toggleModule = (name) => {
-    setExpandedModules(prev => {
+  const toggleFeature = (name) => {
+    setExpandedFeatures(prev => {
       const next = new Set(prev)
       if (next.has(name)) next.delete(name)
       else next.add(name)
@@ -46,29 +47,29 @@ function RunModuleList({ run, selectedTcId, onTcClick }) {
   }
 
   return (
-    <div className={styles.moduleList}>
-      {moduleNames.map(modName => {
-        const cases = modules[modName]?.cases || []
+    <div className={styles.featureList}>
+      {featureNames.map(featName => {
+        const cases = features[featName]?.cases || []
         const passCount = cases.filter(c => c.status === 'PASS').length
         const failCount = cases.filter(c => c.status === 'FAIL').length
-        const isExpanded = expandedModules.has(modName)
+        const isExpanded = expandedFeatures.has(featName)
 
         return (
-          <div key={modName} className={styles.modGroup}>
+          <div key={featName} className={styles.featGroup}>
             <div
-              className={styles.modHeader}
-              onClick={() => toggleModule(modName)}
+              className={styles.featHeader}
+              onClick={() => toggleFeature(featName)}
             >
-              <span className={styles.modChevron}>{isExpanded ? '▾' : '▸'}</span>
-              <span className={styles.modName}>{modName}</span>
-              <span className={styles.modCount}>{cases.length}</span>
+              <span className={styles.featChevron}>{isExpanded ? '▾' : '▸'}</span>
+              <span className={styles.featName}>{featName}</span>
+              <span className={styles.featCount}>{cases.length}</span>
               {failCount > 0 && (
-                <span className={`status-badge status-FAIL ${styles.modBadge}`}>
+                <span className={`status-badge status-FAIL ${styles.featBadge}`}>
                   {failCount}<Icon name="cancel" />
                 </span>
               )}
               {passCount > 0 && (
-                <span className={`status-badge status-PASS ${styles.modBadge}`}>
+                <span className={`status-badge status-PASS ${styles.featBadge}`}>
                   {passCount}<Icon name="check_circle" />
                 </span>
               )}
@@ -119,8 +120,8 @@ function RunDetail({ run }) {
 
   // Flatten all TCs for evidence lookup
   const allTcs = []
-  for (const modName of Object.keys(run.modules || {})) {
-    for (const tc of (run.modules[modName]?.cases || [])) {
+  for (const featName of Object.keys(run.features || {})) {
+    for (const tc of (run.features[featName]?.cases || [])) {
       allTcs.push(tc)
     }
   }
@@ -128,7 +129,7 @@ function RunDetail({ run }) {
 
   return (
     <div className={styles.runDetail}>
-      {/* Left column: module+TC list */}
+      {/* Left column: feature+TC list */}
       <div className={styles.tcListCol}>
         <div className={styles.tcListHeader}>
           <span className={styles.runDetailTitle}>
@@ -140,7 +141,7 @@ function RunDetail({ run }) {
           {run.stopped && <span className={styles.stoppedBadge}>stopped</span>}
         </div>
         <div className={styles.tcListBody}>
-          <RunModuleList run={run} selectedTcId={selectedTcId} onTcClick={setSelectedTcId} />
+          <RunFeatureList run={run} selectedTcId={selectedTcId} onTcClick={setSelectedTcId} />
         </div>
       </div>
 
@@ -192,9 +193,41 @@ export default function AnalysisPage() {
     }
   }, [])
 
+  // Same fetch, but swaps the data in place with no loading spinner / blank
+  // gap — used for live updates while a run is in progress, where a full
+  // fetchRunDetail (which nulls selectedRun first) would flicker the panel
+  // on every test case completion.
+  const refreshRunDetail = useCallback(async (runId) => {
+    try {
+      const res = await fetch(`/api/analysis/runs/${encodeURIComponent(runId)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setSelectedRun(data)
+    } catch { /* ignore — next update will retry */ }
+  }, [])
+
+  useWebSocket()
+
   useEffect(() => {
     fetchRuns()
   }, [fetchRuns])
+
+  // Backend now upserts the run archive as soon as a run starts and again
+  // after every test case completes (not just once at the end), broadcasting
+  // run_archive_updated each time — refresh the list live, and the open
+  // detail view too if it's the run that just changed.
+  const selectedRunIdRef = useRef(selectedRunId)
+  selectedRunIdRef.current = selectedRunId
+  useEffect(() => {
+    const handler = (e) => {
+      fetchRuns()
+      if (e.detail?.runId && e.detail.runId === selectedRunIdRef.current) {
+        refreshRunDetail(e.detail.runId)
+      }
+    }
+    window.addEventListener('run_archive_updated', handler)
+    return () => window.removeEventListener('run_archive_updated', handler)
+  }, [fetchRuns, refreshRunDetail])
 
   const handleSelectRun = (runId) => {
     if (runId === selectedRunId) return

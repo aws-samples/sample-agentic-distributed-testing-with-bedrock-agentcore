@@ -1,20 +1,21 @@
 import { Router } from 'express';
 import yaml from 'js-yaml';
-import { config, moduleList, testCasesByModule } from '../state/store.js';
+import { config, featureList, testCasesByFeature, featureDescriptions } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
-import { nextTcId, normArray } from '../services/tcIds.js';
-import { replaceAllModulesAndCases } from '../state/db.js';
+import { assignTcIds, bddFields } from '../services/tcIds.js';
+import { replaceAllFeaturesAndCases } from '../state/db.js';
 
 const router = Router();
 
 router.get('/export', (req, res) => {
   const doc = {
     targetUrl: config.targetUrl,
-    modules: moduleList.map(mod => ({
-      name: mod,
-      testCases: (testCasesByModule[mod] || []).map(tc => ({
+    features: featureList.map(feat => ({
+      name: feat,
+      ...(featureDescriptions[feat] ? { description: featureDescriptions[feat] } : {}),
+      testCases: (testCasesByFeature[feat] || []).map(tc => ({
         id: tc.id, title: tc.title,
-        preconditions: tc.preconditions, steps: tc.steps, expectedResult: tc.expectedResult,
+        given: tc.given, when: tc.when, then: tc.then,
       })),
     })),
   };
@@ -32,43 +33,46 @@ router.post('/import', (req, res) => {
   } catch (e) {
     return res.status(400).json({ error: `YAML parse error: ${e.message}` });
   }
-  if (!doc || !Array.isArray(doc.modules)) return res.status(400).json({ error: 'Expected { modules: [...] }' });
+  // Files exported before the Module -> Feature rename use `modules:`.
+  if (doc && !Array.isArray(doc.features) && Array.isArray(doc.modules)) doc.features = doc.modules;
+  if (!doc || !Array.isArray(doc.features)) return res.status(400).json({ error: 'Expected { features: [...] }' });
+  assignTcIds(doc.features);   // old MD001-TC001 ids (and missing ids) become TC001, TC002, ...
 
-  const summary = { modulesAdded: 0, modulesUpdated: 0, casesImported: 0, modulesRemoved: 0 };
-  const incomingNames = doc.modules.map(m => (m.name || '').trim()).filter(Boolean);
+  const summary = { featuresAdded: 0, featuresUpdated: 0, casesImported: 0, featuresRemoved: 0 };
+  const incomingNames = doc.features.map(m => (m.name || '').trim()).filter(Boolean);
 
-  // Remove modules not present in the imported doc (honour deletions)
-  const toRemove = moduleList.filter(m => !incomingNames.includes(m));
+  // Remove features not present in the imported doc (honour deletions)
+  const toRemove = featureList.filter(m => !incomingNames.includes(m));
   for (const name of toRemove) {
-    moduleList.splice(moduleList.indexOf(name), 1);
-    delete testCasesByModule[name];
-    summary.modulesRemoved++;
+    featureList.splice(featureList.indexOf(name), 1);
+    delete testCasesByFeature[name];
+    delete featureDescriptions[name];
+    summary.featuresRemoved++;
   }
 
-  for (const modDef of doc.modules) {
-    const name = (modDef.name || '').trim();
+  for (const featDef of doc.features) {
+    const name = (featDef.name || '').trim();
     if (!name) continue;
-    if (!moduleList.includes(name)) { moduleList.push(name); summary.modulesAdded++; }
-    else summary.modulesUpdated++;
-    if (Array.isArray(modDef.testCases)) {
-      // Full replace of TCs for this module on import
-      testCasesByModule[name] = [];
-      for (const tc of modDef.testCases) {
+    if (!featureList.includes(name)) { featureList.push(name); summary.featuresAdded++; }
+    else summary.featuresUpdated++;
+    featureDescriptions[name] = String(featDef.description || '').trim();
+    if (Array.isArray(featDef.testCases)) {
+      // Full replace of TCs for this feature on import
+      testCasesByFeature[name] = [];
+      for (const tc of featDef.testCases) {
         if (!tc.title) continue;
-        testCasesByModule[name].push({
-          id: tc.id || nextTcId(name), module: name, title: tc.title, status: 'PENDING',
-          preconditions: normArray(tc.preconditions),
-          steps: Array.isArray(tc.steps) ? tc.steps : [tc.steps || ''],
-          expectedResult: normArray(tc.expectedResult),
+        testCasesByFeature[name].push({
+          id: tc.id, feature: name, title: tc.title, status: 'PENDING',
+          ...bddFields(tc),
         });
         summary.casesImported++;
       }
     }
   }
   if (doc.targetUrl) { try { new URL(doc.targetUrl); config.targetUrl = doc.targetUrl; } catch { /* ignore */ } }
-  replaceAllModulesAndCases(moduleList, testCasesByModule);
-  broadcast({ type: 'config', targetUrl: config.targetUrl, modules: moduleList });
-  broadcast({ type: 'cases_updated', module: null });
+  replaceAllFeaturesAndCases(featureList, testCasesByFeature, featureDescriptions);
+  broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList });
+  broadcast({ type: 'cases_updated', feature: null });
   res.json({ ok: true, summary });
 });
 

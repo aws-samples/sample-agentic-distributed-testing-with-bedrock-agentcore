@@ -49,7 +49,7 @@ app.use(express.json({ limit: '10mb' }));
 // One managed browser session per sessionName, lazily provisioned. A Browser
 // instance tracks exactly one active session internally (startSession throws
 // "Session already active" on a second call) — so each sessionName gets its
-// own Browser instance, not a shared one, to support several modules running
+// own Browser instance, not a shared one, to support several features running
 // in parallel.
 //
 // startSession() only returns { sessionName, sessionId, createdAt } — no
@@ -274,23 +274,26 @@ async function getAwsCredentials() {
 // ─── Config & prompt builders ─────────────────────────────────────────────────
 
 function buildSystemPrompt(tc, targetUrl, auth) {
-  const steps = (tc.steps || []).map((s, i) => `  ${i + 1}. ${s}`).join('\n');
-  const expectedLines = (Array.isArray(tc.expectedResult) ? tc.expectedResult : [tc.expectedResult])
-    .filter(Boolean).map((e, i) => `  ${i + 1}. ${e}`).join('\n');
+  const numbered = (v) => (Array.isArray(v) ? v : [v])
+    .filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join('\n');
+  const backgroundText = (tc.background || '').trim();
+  const givenLines = numbered(tc.given);
+  const whenLines = numbered(tc.when);
+  const thenLines = numbered(tc.then);
   const authSection = (auth && auth.username) ? `
 
 AUTHENTICATION CREDENTIALS:
 This application requires authentication. Use these credentials whenever a login form, sign-in prompt, or authentication challenge appears — even if the test case does not explicitly mention them:
 - Username: ${auth.username}
 - Password: ${auth.password}
-If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test steps.` : '';
+If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test case.` : '';
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
-IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test steps — use ONLY ${targetUrl} as the starting point.${authSection}
+IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${authSection}
 
 RULES:
-1. Navigate to ${targetUrl} first, then follow the test steps
+1. Navigate to ${targetUrl} first, then carry out the When steps
 2. Use browser tools to interact with the page (click, type, scroll, read)
 3. Do NOT open new tabs or windows
 4. EVIDENCE SCREENSHOTS — these are required so reviewers can audit your verdict:
@@ -302,14 +305,25 @@ RULES:
 6. Call assert_pass or assert_fail EXACTLY ONCE when done, then stop
 7. If a step says "navigate to <url>", treat it as navigating to ${targetUrl}
 
+HOW TO READ THIS TEST CASE (AI-enhanced BDD):
+This test case is written as Given / When / Then in plain language. It is intentionally not a precise script, so:
+- Background (if present) is shared setup for every scenario in this Feature. Treat it as additional Given context and make sure it holds before you start; don't re-verify it as an outcome.
+- Given is the starting context. Get into that state yourself if the app is not already there (for example, sign in if it says you are a signed-in user).
+- When describes what to do, often as a goal. Work out the concrete clicks, fields and values from what is actually on screen. Do not require exact button labels or element names; pick the closest sensible match.
+- Then describes what should be true afterwards. Judge by meaning, not exact wording: a message that clearly says the same thing counts. Exact text only matters when the outcome quotes it specifically.
+- When something is genuinely ambiguous, choose the most reasonable interpretation, carry on, and say which interpretation you used in your assert_pass / assert_fail reason.
+- Do NOT pass just because the page looks fine, and do NOT fail only because the wording or layout differs from what you pictured. Fail when the outcome actually does not occur, or when you cannot reasonably complete the When steps because the app does not support them.
+
 Test Case:
 - ID: ${tc.id || ''}
-- Module: ${tc.module || ''}
-- Title: ${tc.title || ''}
-- Steps:
-${steps}
-- Expected Result:
-${expectedLines}`;
+- Feature: ${tc.feature || ''}
+${backgroundText ? `- Background (applies to every scenario in this Feature):\n  ${backgroundText.replace(/\n/g, '\n  ')}\n` : ''}- Scenario: ${tc.title || ''}
+- Given:
+${givenLines}
+- When:
+${whenLines}
+- Then:
+${thenLines}`;
 }
 
 function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders) {
@@ -552,8 +566,8 @@ async function handleInvocation(req, res) {
       // Report the AgentCore Browser sessionId back to the backend so it can
       // poll this exact session's screenshots (not an arbitrary READY
       // session — see backend/src/services/sessions.js's grabLatestScreenshot,
-      // which previously used listSessions()[0], liable to show one module's
-      // live view from a completely different module's browser session).
+      // which previously used listSessions()[0], liable to show one feature's
+      // live view from a completely different feature's browser session).
       emitText(JSON.stringify({ status: screenshot ? 'connected' : 'no_screenshot', browserSessionId: sess.sessionId }));
     } catch (e) {
       console.warn(`[init] screenshot failed: ${e.message}`);

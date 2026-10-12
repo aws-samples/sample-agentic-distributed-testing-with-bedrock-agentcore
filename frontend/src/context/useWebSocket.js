@@ -7,11 +7,11 @@ export function useWebSocket(onLog) {
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
 
-  const addSessionLog = useCallback((module, msg, type, kind) => {
+  const addSessionLog = useCallback((feature, msg, type, kind) => {
     const ts = new Date().toLocaleTimeString()
     dispatch({
       type: 'APPEND_SESSION_LOG',
-      module,
+      feature,
       entry: { ts, msg, type: type || '', kind: kind || '' },
     })
   }, [dispatch])
@@ -44,7 +44,7 @@ export function useWebSocket(onLog) {
           dispatch({
             type: 'SET_CONFIG',
             targetUrl: msg.targetUrl,
-            modules: msg.modules,
+            features: msg.features,
             model: msg.model,
             agentMode: msg.agentMode,
           })
@@ -54,7 +54,7 @@ export function useWebSocket(onLog) {
           if (msg.sessionId) {
             dispatch({
               type: 'SET_SESSION_STATUS',
-              module: msg.sessionId,
+              feature: msg.sessionId,
               status: { screenshot: msg.data, action: msg.action || '' },
             })
           }
@@ -64,7 +64,7 @@ export function useWebSocket(onLog) {
           if (msg.sessionId) {
             dispatch({
               type: 'SET_SESSION_STATUS',
-              module: msg.sessionId,
+              feature: msg.sessionId,
               status: { connected: msg.connected },
             })
             addSessionLog(
@@ -79,7 +79,7 @@ export function useWebSocket(onLog) {
         case 'test_start':
           dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'RUNNING' } })
           if (msg.sessionId) {
-            dispatch({ type: 'SET_ACTIVE_MODULE', module: msg.sessionId, active: true })
+            dispatch({ type: 'SET_ACTIVE_FEATURE', feature: msg.sessionId, active: true })
             addSessionLog(msg.sessionId, `▶ ${msg.testId}`, 'info', 'tool')
           }
           break
@@ -110,7 +110,7 @@ export function useWebSocket(onLog) {
           if (msg.sessionId) {
             dispatch({
               type: 'SET_SESSION_STATUS',
-              module: msg.sessionId,
+              feature: msg.sessionId,
               status: { action: msg.text || '' },
             })
             addSessionLog(msg.sessionId, msg.text || '', 'info', 'tool')
@@ -124,26 +124,26 @@ export function useWebSocket(onLog) {
             if (kind === 'tool') {
               dispatch({
                 type: 'SET_SESSION_STATUS',
-                module: msg.sessionId,
+                feature: msg.sessionId,
                 status: { action: msg.action },
               })
             }
           }
           break
 
-        case 'module_complete':
-          dispatch({ type: 'SET_ACTIVE_MODULE', module: msg.module, active: false })
-          onLog?.(`Module complete: ${msg.module}`, 'pass')
+        case 'feature_complete':
+          dispatch({ type: 'SET_ACTIVE_FEATURE', feature: msg.feature, active: false })
+          onLog?.(`Feature complete: ${msg.feature}`, 'pass')
           break
 
         case 'run_start':
-          onLog?.(`Run started: ${msg.modules.length} modules in parallel`, 'info')
+          onLog?.(`Run started: ${msg.features.length} features in parallel`, 'info')
           break
 
         case 'run_complete':
-          dispatch({ type: 'CLEAR_ACTIVE_MODULES' })
+          dispatch({ type: 'CLEAR_ACTIVE_FEATURES' })
           onLog?.(
-            msg.stopped ? 'Run stopped by user' : 'All modules complete',
+            msg.stopped ? 'Run stopped by user' : 'All features complete',
             msg.stopped ? 'warn' : 'pass'
           )
           dispatch({ type: 'SET_CURRENT_RUN_ID', runId: null })
@@ -158,16 +158,16 @@ export function useWebSocket(onLog) {
         case 'test_results_snapshot':
           // Bulk-restore persisted results on reconnect / page refresh.
           // Includes RUNNING entries from in-flight runs (even ones already
-          // stopping) and the set of modules currently active, so Stop /
+          // stopping) and the set of features currently active, so Stop /
           // Stopping state reappears correctly after a page refresh.
           if (msg.results) {
             for (const [tcId, result] of Object.entries(msg.results)) {
               dispatch({ type: 'SET_TEST_RESULT', tcId, result })
             }
           }
-          if (Array.isArray(msg.activeModules)) {
-            for (const mod of msg.activeModules) {
-              dispatch({ type: 'SET_ACTIVE_MODULE', module: mod, active: true })
+          if (Array.isArray(msg.activeFeatures)) {
+            for (const feat of msg.activeFeatures) {
+              dispatch({ type: 'SET_ACTIVE_FEATURE', feature: feat, active: true })
             }
           }
           if (msg.currentRunId) {
@@ -176,18 +176,27 @@ export function useWebSocket(onLog) {
           dispatch({ type: 'SET_STOPPING', stopping: !!msg.stopping })
           break
 
-        case 'module_added':
-          if (msg.modules) dispatch({ type: 'SET_MODULES', modules: msg.modules })
+        case 'feature_added':
+          if (msg.features) dispatch({ type: 'SET_FEATURES', features: msg.features })
           break
 
-        case 'module_removed':
-          if (msg.modules) dispatch({ type: 'SET_MODULES', modules: msg.modules })
+        case 'feature_removed':
+          if (msg.features) dispatch({ type: 'SET_FEATURES', features: msg.features })
           break
 
         case 'cases_updated':
           // Signal handled by page via a custom event
-          if (msg.module) {
-            window.dispatchEvent(new CustomEvent('cases_updated', { detail: { module: msg.module } }))
+          if (msg.feature) {
+            window.dispatchEvent(new CustomEvent('cases_updated', { detail: { feature: msg.feature } }))
+          }
+          break
+
+        case 'run_archive_updated':
+          // Fired as soon as a run starts and again after every test case
+          // completes (see backend/src/routes/tests.js's persistProgress),
+          // not just once at the very end — lets Analysis show a run live.
+          if (msg.runId) {
+            window.dispatchEvent(new CustomEvent('run_archive_updated', { detail: { runId: msg.runId } }))
           }
           break
       }

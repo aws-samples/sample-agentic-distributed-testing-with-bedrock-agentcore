@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { moduleList, sessions, stopFlags, activeAborts, activeRunPromises, activeModules } from '../state/store.js';
+import { featureList, sessions, stopFlags, activeAborts, activeRunPromises, activeFeatures } from '../state/store.js';
 import { config, abortAllActive, clearTestResults } from '../state/store.js';
 import { ensureSession, killSession } from '../services/sessions.js';
 import { broadcast } from '../services/websocket.js';
@@ -8,18 +8,18 @@ const router = Router();
 const LOCAL_URL = process.env.LOCAL_RUNTIME_URL || 'http://localhost:4020';
 
 router.post('/sessions/connect', async (req, res) => {
-  const targets = req.body.modules || moduleList;
+  const targets = req.body.features || featureList;
   const results = {};
   const BATCH = 2;
   for (let i = 0; i < targets.length; i += BATCH) {
     const batch = targets.slice(i, i + BATCH);
     const batchResults = await Promise.all(
-      batch.map(async (mod) => {
-        try { await ensureSession(mod); return [mod, { connected: true }]; }
-        catch (e) { return [mod, { connected: false, error: e.message }]; }
+      batch.map(async (feat) => {
+        try { await ensureSession(feat); return [feat, { connected: true }]; }
+        catch (e) { return [feat, { connected: false, error: e.message }]; }
       })
     );
-    for (const [mod, r] of batchResults) results[mod] = r;
+    for (const [feat, r] of batchResults) results[feat] = r;
   }
   res.json(results);
 });
@@ -35,16 +35,16 @@ router.post('/sessions/reset', async (req, res) => {
   if (config.agentMode === 'local') fetch(`${LOCAL_URL}/kill`, { method: 'POST' }).catch(() => {});
 
   // 3. Wait for any in-flight run promises to finish — this ensures the
-  // post-run archive (saveRunRecord) completes before /reset returns,
+  // post-run archive (upsertRunRecord) completes before /reset returns,
   // so partial results aren't lost when the user clicks Reset mid-run.
   const pending = Array.from(activeRunPromises.values());
   if (pending.length > 0) {
     await Promise.allSettled(pending);
   }
 
-  // 4. Clear cached results and active module set after everything is archived.
+  // 4. Clear cached results and active feature set after everything is archived.
   clearTestResults();
-  activeModules.clear();
+  activeFeatures.clear();
   broadcast({ type: 'run_stopped' });
   res.json({ ok: true, killed });
 });
