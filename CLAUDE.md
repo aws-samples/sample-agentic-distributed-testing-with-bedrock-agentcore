@@ -5,26 +5,30 @@
 Source repo for the **Agentic Test Runner** — an AI-powered parallel browser testing tool. The core focus is **AWS AgentCore Runtime + AgentCore Browser** orchestration using OpenCode as the agent framework.
 
 Structure:
-- `/package.json` — npm workspace root; `backend/` and `frontend/` share one `node_modules`. `npm run dev` (or `dev:backend` / `dev:frontend` separately) runs the testrunner for local iteration — see Mode 1 in the root README
+- `/package.json` — npm workspace root; `backend/` and `frontend/` share one `node_modules`. `npm run dev` (or `dev:backend` / `dev:frontend` separately) runs the testrunner for local iteration — see Deployment in the root README
 - `backend/` — Node.js + Express orchestrator (port 4010); routes test execution to the appropriate agent runtime, streams screenshots via SSE, pushes results to frontend via WebSocket, uploads evidence snapshots to S3
 - `frontend/` — React + Vite UI (dev: `npm run dev`, Vite dev server on :5173; prod build served by nginx on :5175); three pages — Editor (author/generate test cases), Runner (execute + watch live), Analysis (past runs + evidence screenshots)
 - `agent-runtime-local/` — Agent runtime for local mode: OpenCode + chrome-devtools-mcp + local Chromium (port 4020)
 - `agent-runtime-agentcore/` — Agent runtime for agentcore mode: OpenCode + chrome-devtools-mcp + AgentCore Browser; deployable code lives in `app/` (Dockerfile + package.json + src/), deployed to AWS via CDK in `agentcore/` (kept separate from `app/` — the `agentcore` CLI zips `codeLocation` as a raw, unfiltered asset, so CDK tooling can never share a directory with it)
 - `sample-app/` — CardDemo banking app (Spring Boot + React); the application under test, not part of the test runner stack
-- `docker-compose.yml` — Runs backend + frontend + agent-runtime-local (profile: local)
-- `terraform/` — Mode 2 (prod) deployment: EKS (Fargate) + ALB + CloudFront + ECR for the testrunner and sample-app stacks; see `terraform/README.md`
-- `deploy-dev.sh` / `deploy-prod.sh` — automate Mode 1 (dev, local Docker Compose) and Mode 2 (prod, Terraform/EKS) respectively; see the root `README.md`'s Deployment Modes section
+- `docker-compose.yml` — Runs backend + frontend + agent-runtime-local
+- `init-sample-app.sh` / `init-local-runtime.sh` / `init-agentcore-runtime.sh` — independent setup scripts for the sample app, `agent-runtime-local` (Docker), and the AgentCore Runtime deploy to AWS. Each supports `--destroy`; the Docker ones also `--down`. `init-agentcore-runtime.sh` prompts for the AWS region (default us-east-1) and writes region + runtime ARN to both `.env` and `backend/src/state/config.json` (the latter overrides `.env`, so both must be updated)
+- No dev/prod split: `npm run dev` for local iteration, `npm run build` (`docker compose up -d --build`) to run in Docker on the machine; the platform runs on a single EC2 instance (no EKS/ALB/CloudFront/Terraform) — see the root `README.md`'s Deployment section
 
 The frontend, backend, and sample-app are **intentionally simple Docker deployments**. The architectural interest is in the agent runtime layer.
 
+## Test case model
+
+Features contain test cases (Gherkin scenarios: `given` / `when` / `then`). A Feature's `description` is its Background — shared setup sent to the agent with every scenario in it. Test case ids are global and sequential (`TC001`, …); never derive an id from a feature. The word "module" was retired in favour of "feature" everywhere (DB, API `/api/features`, YAML `features:`, UI); `db.js` migrates old databases on start-up.
+
 ## Agent Modes
 
-Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
+The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
 
 - `AGENT_MODE=local` → `agent-runtime-local/`: OpenCode + local Chromium managed via CDP
 - `AGENT_MODE=agentcore` → AWS AgentCore Runtime running `agent-runtime-agentcore/`: OpenCode + AgentCore Browser (managed Chrome)
 
-Both the Bedrock model and the two AWS regions (Bedrock inference region, AgentCore Runtime/Browser region) are runtime-configurable from the frontend's Settings modal — see `backend/src/state/store.js` for the full config surface and `README.md` for the environment variable defaults.
+Agent Mode, the Bedrock model and the Bedrock inference region are runtime-configurable from the frontend's Settings modal. The AgentCore Runtime/Browser region is fixed at deploy time by `init-agentcore-runtime.sh` and shown read-only in Settings. Connect never deploys the runtime — it must already exist. See `backend/src/state/store.js` for the full config surface and `README.md` for the environment variable defaults.
 
 ## Safety
 
