@@ -9,15 +9,21 @@ import Icon from './Icon'
 const MODEL_GROUPS = [
   { label: 'Anthropic Claude', models: [
     'global.anthropic.claude-opus-5',
+    'global.anthropic.claude-sonnet-5-5',
     'global.anthropic.claude-sonnet-5',
+    'global.anthropic.claude-haiku-5-5',
     'global.anthropic.claude-opus-4-8',
     'global.anthropic.claude-opus-4-7',
+  ]},
+  { label: 'xAI Grok', models: [
+    'global.xai.grok-4.7',
   ]},
   { label: 'OpenAI GPT-OSS', models: [
     'openai.gpt-oss-120b-1:0',
     'openai.gpt-oss-safeguard-120b',
   ]},
   { label: 'Moonshot Kimi', models: [
+    'global.moonshotai.kimi-k3',
     'moonshot.kimi-k2-thinking',
     'moonshotai.kimi-k2.5',
   ]},
@@ -29,7 +35,8 @@ const MODEL_GROUPS = [
     'qwen.qwen3-next-80b-a3b',
   ]},
   { label: 'Z.ai GLM', models: [
-    'zai.glm-5'
+    'global.zai.glm-5.3',
+    'zai.glm-5',
   ]},
 ]
 const KNOWN_MODELS = MODEL_GROUPS.flatMap(g => g.models)
@@ -50,6 +57,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
     'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-south-1',
   ])
   const [regionDirty, setRegionDirty] = useState(false)
+  const [mode, setMode] = useState(currentMode || 'local')
 
   useEffect(() => {
     if (!open) return
@@ -65,6 +73,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
     }
     setHealthStatus('')
     setRegionDirty(false)
+    setMode(currentMode || 'local')
     // Hydrate region inputs from the backend's live config — these may have
     // been changed in a previous session and persisted in config.json.
     api.getConfig().then(cfg => {
@@ -89,7 +98,6 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const effectiveBedrockRegion = bedrockRegion === '__custom__' ? bedrockRegionCustom.trim() : bedrockRegion
-  const effectiveBrowserRegion = browserRegion === '__custom__' ? browserRegionCustom.trim() : browserRegion
 
   const effectiveModel = modelSelect === '__custom__' ? modelCustom.trim() : modelSelect
 
@@ -127,13 +135,21 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       try {
         await api.updateRegions({
           bedrockRegion: effectiveBedrockRegion,
-          browserRegion: effectiveBrowserRegion,
         })
       } catch (e) {
         console.error('Failed to save regions:', e)
       }
     }
-    await onSave({ model })
+    let savedMode = currentMode
+    if (mode !== currentMode) {
+      try {
+        await api.updateMode(mode)
+        savedMode = mode
+      } catch (e) {
+        console.error('Failed to switch agent mode:', e)
+      }
+    }
+    await onSave({ model, mode: savedMode })
     onClose()
   }
 
@@ -176,15 +192,16 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         </button>
       </div>
 
-      {/* Agent Mode — read-only. Set via AGENT_MODE in .env (deploy-time,
-          an engineer's call) — see .env.example and deploy-dev.sh. */}
+      {/* Agent Mode — which runtime drives the browser agents. Switching
+          closes any open sessions (handled by PATCH /api/config/mode). */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>Agent Mode</label>
-        <div style={{ fontSize: 12, padding: '7px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
-          {currentMode === 'agentcore' ? 'AgentCore Runtime' : 'Local'}
-        </div>
+        <select className="form-input" value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="agentcore">AgentCore Runtime</option>
+          <option value="local">Local Runtime</option>
+        </select>
         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-          Set via <code>AGENT_MODE</code> at deploy time, not changeable from here.
+          Switching modes closes any open browser sessions.
         </div>
       </div>
 
@@ -252,33 +269,19 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         </div>
       </div>
 
-      {/* AgentCore region — Runtime + Browser. Hidden unless this deployment
-          is currently running in agentcore mode — meaningless otherwise. */}
-      {currentMode === 'agentcore' && (
+      {/* AgentCore region — read-only. The Runtime is deployed to one region
+          (see init-agentcore-runtime.sh) and Browser sessions must match it,
+          so changing it here would only break a working setup. */}
+      {mode === 'agentcore' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           AgentCore Region <span style={{ fontWeight: 400, textTransform: 'none' }}>(Runtime + Browser)</span>
         </label>
-        <select
-          className="form-input"
-          value={browserRegion}
-          onChange={(e) => { setBrowserRegion(e.target.value); setRegionDirty(true) }}
-        >
-          {knownRegions.map(r => <option key={r} value={r}>{r}</option>)}
-          <option value="__custom__">Custom region…</option>
-        </select>
-        {browserRegion === '__custom__' && (
-          <input
-            type="text"
-            className="form-input"
-            value={browserRegionCustom}
-            onChange={(e) => { setBrowserRegionCustom(e.target.value); setRegionDirty(true) }}
-            placeholder="e.g. ap-southeast-1"
-            style={{ marginTop: 5 }}
-          />
-        )}
+        <div style={{ fontSize: 12, padding: '7px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          {browserRegion === '__custom__' ? browserRegionCustom : browserRegion}
+        </div>
         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-          Where AgentCore Runtime and AgentCore Browser sessions live. Defaults to the same region as the EC2 host.
+          Set when the runtime is deployed (<code>./init-agentcore-runtime.sh</code>); not changeable from here.
         </div>
       </div>
       )}

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
-import { config, moduleList, sessions, saveConfig } from '../state/store.js';
+import { BedrockAgentCoreControlClient, GetAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore-control';
+import { config, featureList, sessions, saveConfig } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
 
@@ -27,7 +28,7 @@ router.get('/health', (req, res) => {
     agentMode:        config.agentMode,
     bedrockRegion:    config.bedrockRegion,
     browserRegion:    config.browserRegion,
-    modules:          moduleList,
+    features:          featureList,
     runtime:          config.agentMode === 'local' ? 'opencode-local' : 'agentcore-runtime',
     runtimeArn:       config.agentMode === 'agentcore' ? config.agentcoreRuntimeArn : null,
     localRuntimeUrl:  config.agentMode === 'local' ? LOCAL_URL : null,
@@ -44,7 +45,7 @@ router.get('/config', (req, res) => {
   };
   res.json({
     targetUrl:        config.targetUrl,
-    modules:          moduleList,
+    features:          featureList,
     model:            config.bedrockModel,
     agentMode:        config.agentMode,
     bedrockRegion:    config.bedrockRegion,
@@ -58,7 +59,7 @@ router.patch('/config/model', (req, res) => {
   if (!model || typeof model !== 'string') return res.status(400).json({ error: 'model required' });
   config.bedrockModel = model.trim();
   saveConfig();
-  broadcast({ type: 'config', targetUrl: config.targetUrl, modules: moduleList, model: config.bedrockModel });
+  broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList, model: config.bedrockModel });
   res.json({ model: config.bedrockModel });
 });
 
@@ -90,7 +91,7 @@ router.patch('/config/target-url', (req, res) => {
   try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
   config.targetUrl = url;
   saveConfig();
-  broadcast({ type: 'config', targetUrl: config.targetUrl, modules: moduleList });
+  broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList });
   res.json({ targetUrl: config.targetUrl });
 });
 
@@ -124,10 +125,59 @@ router.patch('/config/mode', async (req, res) => {
   for (const sid of Object.keys(sessions)) {
     try { if (sessions[sid]?.ws) sessions[sid].ws.close(); } catch { /* ignore */ }
     delete sessions[sid];
-    broadcast({ type: 'session_status', sessionId: sid, connected: false, module: sid });
+    broadcast({ type: 'session_status', sessionId: sid, connected: false, feature: sid });
   }
-  broadcast({ type: 'config', targetUrl: config.targetUrl, modules: moduleList, model: config.bedrockModel, agentMode: config.agentMode });
+  broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList, model: config.bedrockModel, agentMode: config.agentMode });
   res.json({ agentMode: config.agentMode });
+});
+
+// ─── Runtime detection ────────────────────────────────────────────────────────
+// Does the platform see a usable agent runtime for the selected mode? Read-only calls.
+
+async function checkLocalRuntime() {
+  const url = process.env.LOCAL_RUNTIME_URL || 'http://localhost:4020';
+  try {
+    const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2500) });
+    if (!r.ok) return { ok: false, detail: `${url} answered HTTP ${r.status}` };
+    const d = await r.json().catch(() => ({}));
+    return { ok: true, detail: `Reachable at ${url}${d.model ? ` (model ${d.model})` : ''}` };
+  } catch {
+    return { ok: false, detail: `Nothing listening at ${url} — run ./init-local-runtime.sh` };
+  }
+}
+
+async function checkAgentcoreRuntime() {
+  const arn = config.agentcoreRuntimeArn;
+  if (!arn) return { ok: false, detail: 'No runtime ARN configured — run ./init-agentcore-runtime.sh and restart the backend' };
+  // arn:aws:bedrock-agentcore:<region>:<acct>:runtime/<id> — use the ARN's own
+  // region, which is authoritative for where the runtime lives.
+  const [, , , region, , resource] = arn.split(':');
+  const runtimeId = resource?.split('/')[1];
+  if (!region || !runtimeId) return { ok: false, detail: `Malformed runtime ARN: ${arn}` };
+  const note = region !== config.browserRegion ? ` (note: AgentCore region setting is ${config.browserRegion}, runtime is in ${region})` : '';
+  try {
+    const client = new BedrockAgentCoreControlClient({ region });
+    const out = await client.send(new GetAgentRuntimeCommand({ agentRuntimeId: runtimeId }), { abortSignal: AbortSignal.timeout(5000) });
+    const ok = out.status === 'READY';
+    return { ok, detail: `${out.agentRuntimeName || runtimeId} is ${out.status} in ${region}${note}` };
+  } catch (e) {
+    const denied = /AccessDenied|not authorized/i.test(e.name + e.message);
+    const missing = e.name === 'ResourceNotFoundException';
+    return {
+      ok: false,
+      detail: missing ? `Runtime ${runtimeId} not found in ${region} — it may have been destroyed; re-run ./init-agentcore-runtime.sh`
+        : denied ? `Not allowed to read the runtime (needs bedrock-agentcore:GetAgentRuntime): ${e.message}`
+        : `Could not check runtime in ${region}: ${e.message}`,
+    };
+  }
+}
+
+// Only the selected runtime is checked: ?mode=local|agentcore (defaults to the
+// backend's current agentMode).
+router.get('/runtime-health', async (req, res) => {
+  const mode = ['local', 'agentcore'].includes(req.query.mode) ? req.query.mode : config.agentMode;
+  const result = mode === 'local' ? await checkLocalRuntime() : await checkAgentcoreRuntime();
+  res.json({ mode, ...result });
 });
 
 router.post('/model/health-check', async (req, res) => {
