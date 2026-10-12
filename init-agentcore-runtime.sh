@@ -1,58 +1,27 @@
 #!/usr/bin/env bash
 #
-# Automates the infra half of Mode 1 (dev) from the README: sample-app
-# (Docker — Spring Boot + Maven) and, by default, a one-time deploy of
-# agent-runtime-agentcore to AWS AgentCore Runtime (real AWS resources,
-# costs money while the Runtime exists) — pass --local to skip AWS entirely.
-#
-# This does NOT run the testrunner itself (backend/frontend) — run those
-# yourself with `npm run dev:backend` / `npm run dev:frontend` from the repo
-# root (see /package.json) in your own terminal(s). Running them directly
-# rather than backgrounded by this script means editor tooling (e.g. VS
-# Code's port auto-forwarding, which watches a terminal's own output for the
-# "Local: http://..." line) picks them up correctly.
-#
-# This is NOT the Mode 2 (prod) flow — for EKS + ALB + CloudFront, see
-# deploy-prod.sh instead. This script only touches sample-app's Docker
-# state, plus (by default) the one-time AgentCore Runtime deploy above.
-#
-# Whether this script touches AWS is controlled by --local alone — pass it
-# to skip the AgentCore deploy entirely and stay local-only.
+# One-time deploy of agent-runtime-agentcore to AWS AgentCore Runtime (real AWS
+# resources, costs money while it exists). Writes the resulting runtime ARN into
+# .env as AGENTCORE_RUNTIME_ARN. Re-run it after changing agent-runtime-agentcore/app/
+# (e.g. the tracing setup) to roll out a new image. Which runtime the platform
+# actually uses is chosen in its Settings modal. Prompts for the AWS region
+# (default us-east-1; or set AGENTCORE_REGION to skip the prompt).
 #
 # Usage:
-#   ./deploy-dev.sh              # sample-app + AgentCore Runtime deploy (default)
-#   ./deploy-dev.sh --local      # sample-app + agent-runtime-local (Docker), no AWS calls
-#   ./deploy-dev.sh --down       # stop sample-app + agent-runtime-local (leaves any
-#                                 # deployed AgentCore Runtime running in AWS)
-#   ./deploy-dev.sh --destroy    # --down, plus tear down the AgentCore Runtime
-#                                 # in AWS if one was deployed (the Mode 1
-#                                 # counterpart to deploy-prod.sh <target> --destroy)
-#
+#   ./init-agentcore-runtime.sh            # deploy (or redeploy)
+#   ./init-agentcore-runtime.sh --destroy  # tear the runtime down in AWS
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DO_AGENTCORE=1
-DO_DOWN=0
-DO_DESTROY=0
-
-log()  { printf '\033[1;36m[deploy-dev]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[deploy-dev]\033[0m %s\n' "$*" >&2; }
-err()  { printf '\033[1;31m[deploy-dev]\033[0m %s\n' "$*" >&2; }
+log()  { printf '\033[1;36m[init-agentcore-runtime]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[init-agentcore-runtime]\033[0m %s\n' "$*" >&2; }
+err()  { printf '\033[1;31m[init-agentcore-runtime]\033[0m %s\n' "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
-for arg in "$@"; do
-  case "$arg" in
-    --local)          DO_AGENTCORE=0 ;;
-    --down)           DO_DOWN=1 ;;
-    --destroy)        DO_DOWN=1; DO_DESTROY=1 ;;
-    -h|--help)
-      sed -n '2,29p' "$0" | sed 's/^#//'
-      exit 0
-      ;;
-    *) die "Unknown flag: $arg (see --help)" ;;
-  esac
+for cmd in npm npx agentcore python3 aws; do
+  command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required (agentcore CLI: npm install -g @aws/agentcore)"
 done
 
 ensure_env() {
@@ -64,9 +33,9 @@ ensure_env() {
 }
 
 # set_env_var NAME VALUE — updates NAME=VALUE in .env in place, or appends it
-# if the key isn't present yet. Used to auto-fill AGENTCORE_RUNTIME_ARN (and
-# flip AGENT_MODE) after a successful agentcore deploy, so you never have to
-# copy an ARN out of terminal output by hand.
+# if the key isn't present yet. Used to auto-fill AGENTCORE_RUNTIME_ARN after
+# a successful agentcore deploy, so you never have to copy an ARN out of
+# terminal output by hand.
 set_env_var() {
   local name="$1" value="$2"
   if grep -q "^${name}=" .env; then
@@ -114,54 +83,6 @@ if changed or not os.path.exists(p):
 "
 }
 
-check_prereqs() {
-  local missing=()
-  command -v docker >/dev/null 2>&1 || missing+=("docker")
-  if [ ${#missing[@]} -gt 0 ]; then
-    die "Missing required tools: ${missing[*]}"
-  fi
-  if [ "$DO_AGENTCORE" = "1" ] || [ "$DO_DESTROY" = "1" ]; then
-    command -v npm       >/dev/null 2>&1 || die "npm is required for agentcore mode (or pass --local)"
-    command -v npx       >/dev/null 2>&1 || die "npx is required for agentcore mode (or pass --local)"
-    command -v agentcore >/dev/null 2>&1 || die "agentcore CLI not found on PATH (npm install -g @aws/agentcore) — required for agentcore mode (or pass --local)"
-    command -v python3   >/dev/null 2>&1 || die "python3 is required for agentcore mode (parses the deployed runtime ARN)"
-    command -v aws        >/dev/null 2>&1 || die "aws CLI is required for agentcore mode (resolves your account ID for aws-targets.json)"
-  fi
-}
-
-down_sample_app() {
-  log "Stopping sample-app"
-  (cd sample-app && docker compose down)
-}
-
-up_sample_app() {
-  log "═══ Sample app (CardDemo) ═══"
-  (cd sample-app && docker compose up --build -d)
-  log "Sample app: http://localhost:8020 (frontend)  http://localhost:8021 (backend API)"
-}
-
-# agent-runtime-local (OpenCode + chrome-devtools-mcp + local Chromium) is
-# behind docker-compose.yml's "local" profile — plain `docker compose up`
-# never starts it, so --local drives it explicitly here. Also flips
-# AGENT_MODE=local into .env, mirroring what deploy_agentcore does for the
-# agentcore case, so .env and the running mode actually agree.
-up_local_runtime() {
-  log "═══ agent-runtime-local (Docker) ═══"
-  docker compose --profile local up --build -d agent-runtime-local
-  log "agent-runtime-local: http://localhost:4020"
-  ensure_env
-  set_env_var AGENT_MODE local
-  log "Wired AGENT_MODE=local into .env"
-}
-
-# Counterpart to up_local_runtime — a no-op if it was never started (the
-# "local" profile scopes this to just that one container, and docker
-# compose down on an absent container warns but exits 0).
-down_local_runtime() {
-  log "Stopping agent-runtime-local"
-  docker compose --profile local down agent-runtime-local
-}
-
 # Runs `npx agentcore deploy [args...]` from $1 (the agentcore project root)
 # and verifies it actually succeeded by reading the per-run log it just
 # wrote under .cli/logs/deploy/, rather than trusting its process exit code.
@@ -191,7 +112,7 @@ run_agentcore_deploy_verified() {
 }
 
 # Deploys agent-runtime-agentcore to AWS AgentCore Runtime and writes the
-# resulting ARN + AGENT_MODE=agentcore into .env — matches the manual flow
+# resulting ARN into .env — matches the manual flow
 # documented under "AgentCore Deployment" in the root README, just automated
 # end-to-end. This is the only part of this script that touches real AWS
 # infrastructure.
@@ -251,8 +172,8 @@ print(runtimes[name]['runtimeArn'])
   log "Deployed AgentCore Runtime: $arn"
   ensure_env
   set_env_var AGENTCORE_RUNTIME_ARN "$arn"
-  set_env_var AGENT_MODE agentcore
-  log "Wired AGENTCORE_RUNTIME_ARN and AGENT_MODE=agentcore into .env"
+  sync_platform_config agentcoreRuntimeArn "$arn"
+  log "Wired AGENTCORE_RUNTIME_ARN into .env and the platform's config.json"
 }
 
 # Tears down the AgentCore Runtime deployed by deploy_agentcore, if any —
@@ -261,7 +182,7 @@ print(runtimes[name]['runtimeArn'])
 # AGENTS.md): removing the runtime from agentcore.json and re-running
 # `agentcore deploy` destroys the underlying CDK stack. agentcore.json is
 # checked into git, so this restores it afterward — otherwise the working
-# tree would end up dirty, and a future deploy-dev.sh run would have
+# tree would end up dirty, and a future init-agentcore-runtime.sh run would have
 # nothing left to redeploy.
 destroy_agentcore() {
   local agentcore_dir="$SCRIPT_DIR/agent-runtime-agentcore/agentcore"
@@ -313,24 +234,59 @@ sys.exit(0 if d.get('targets') else 1)
   cp "$backup" "$agentcore_dir/agentcore.json"
   rm -f "$backup"
   log "AgentCore Runtime destroyed; agentcore.json restored for future deploys."
+  set_env_var AGENTCORE_RUNTIME_ARN ""
+  sync_platform_config agentcoreRuntimeArn ""
+  log "Cleared AGENTCORE_RUNTIME_ARN from .env and the platform's config.json"
 }
 
-check_prereqs
+# The orchestration platform reads .env (backend/src/loadEnv.js) but its saved
+# settings in backend/src/state/config.json take priority over it, so updating
+# .env alone would leave the app on the old region/ARN. Keep both in sync.
+# sync_platform_config KEY VALUE — VALUE "" clears the key (stored as null).
+sync_platform_config() {
+  local file="$SCRIPT_DIR/backend/src/state/config.json"
+  mkdir -p "$(dirname "$file")"
+  python3 - "$file" "$1" "$2" <<'PY'
+import json, os, sys
+path, key, value = sys.argv[1:4]
+d = json.load(open(path)) if os.path.exists(path) else {}
+d[key] = value or None
+json.dump(d, open(path, "w"), indent=2)
+PY
+}
 
-if [ "$DO_DOWN" = "1" ]; then
-  down_sample_app
-  down_local_runtime
-  [ "$DO_DESTROY" = "1" ] && destroy_agentcore
-  log "Done."
-  exit 0
-fi
+# Reminder: the backend only reads .env/config.json at start-up.
+remind_restart() {
+  if curl -fs -m 2 http://localhost:4010/api/health >/dev/null 2>&1; then
+    warn "The orchestration backend is running — restart it (Ctrl-C, then npm run dev) so it picks up the change."
+  fi
+}
 
-up_sample_app
-if [ "$DO_AGENTCORE" = "1" ]; then
-  deploy_agentcore
-else
-  up_local_runtime
-fi
+# Asks which AWS region hosts the AgentCore Runtime + Browser (default
+# us-east-1) and records it as BROWSER_REGION in .env — the single source the
+# rest of this script (aws-targets.json, container env) and the platform read.
+# Pre-set AGENTCORE_REGION to skip the prompt (e.g. in CI).
+prompt_region() {
+  local default="us-east-1" region="${AGENTCORE_REGION:-}"
+  if [ -z "$region" ]; then
+    if [ -t 0 ]; then
+      read -r -p "AWS region for the AgentCore Runtime [${default}]: " region
+    fi
+    region="${region:-$default}"
+  fi
+  region="$(printf '%s' "$region" | tr -d '[:space:]')"
+  [[ "$region" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]+$ ]] || die "'$region' doesn't look like an AWS region id (e.g. us-east-1)"
+  ensure_env
+  set_env_var BROWSER_REGION "$region"
+  sync_platform_config browserRegion "$region"
+  log "Using region: $region (saved to .env and the platform's config.json)"
+}
+
+case "${1:-}" in
+  "")        prompt_region; deploy_agentcore; remind_restart ;;
+  --destroy) prompt_region; destroy_agentcore; remind_restart ;;
+  -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *)         die "Unknown flag: $1 (see --help)" ;;
+esac
 
 log "Done."
-log "Now run the testrunner yourself: npm run dev:backend / npm run dev:frontend (from the repo root)"

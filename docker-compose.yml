@@ -17,8 +17,8 @@ services:
       # agent-runtime-agentcore (see agent-runtime-agentcore/agentcore/) to the
       # ARN of your deployed AgentCore Runtime. Not needed for local mode.
       AGENTCORE_RUNTIME_ARN: "${AGENTCORE_RUNTIME_ARN:-}"
-      # 'agentcore' routes to AgentCore Runtime (default)
-      # 'local' routes test execution to agent-runtime container (OpenCode + chrome-devtools-mcp)
+      # Initial default only — selectable in the Settings modal.
+      # 'agentcore' routes to AgentCore Runtime; 'local' to agent-runtime-local
       AGENT_MODE: "${AGENT_MODE:-agentcore}"
       LOCAL_RUNTIME_URL: "http://localhost:4020"
       # S3 bucket for evidence snapshots shown in Analysis page. Leave unset
@@ -32,13 +32,11 @@ services:
     restart: unless-stopped
 
   # Local agent runtime — OpenCode + chrome-devtools-mcp + local Chromium.
-  # Only active when AGENT_MODE=local.
+  # Always available; selected at runtime via Settings (agent mode = local).
   agent-runtime-local:
     build: ./agent-runtime-local
     container_name: cardtest-v2-agent-runtime-local
     network_mode: host
-    profiles:
-      - local
     environment:
       PORT: "4020"
       BEDROCK_REGION: "${BEDROCK_REGION:-us-east-1}"

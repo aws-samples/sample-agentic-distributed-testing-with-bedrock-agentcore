@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
     "dev:backend": "npm start --workspace backend",
-    "dev:frontend": "npm run dev --workspace frontend"
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "docker compose up -d --build",
+    "stop": "docker compose down"
   },
   "devDependencies": {
     "concurrently": "^10.0.4"
