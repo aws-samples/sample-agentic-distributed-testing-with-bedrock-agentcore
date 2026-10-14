@@ -354,13 +354,26 @@ function buildSystemPrompt(tc, targetUrl, pageNum, auth) {
   const pageInstruction = pageNum
     ? `\nBROWSER PAGE: You have been assigned page #${pageNum}. When calling browser tools, always include "pageId": ${pageNum} in your arguments to target the correct browser tab.`
     : '';
-  const authSection = (auth && auth.username) ? `
+  // Accept the previous single-credential shape ({ username, password }) as well as
+  // { accounts: [{ role, username, password }] }.
+  const accounts = Array.isArray(auth?.accounts)
+    ? auth.accounts.filter(a => a?.username)
+    : (auth?.username ? [{ role: 'user', username: auth.username, password: auth.password }] : []);
+  const roleName = { admin: 'Admin', user: 'Regular user' };
+  const authSection = accounts.length ? `
 
 AUTHENTICATION CREDENTIALS:
 This application requires authentication. Use these credentials whenever a login form, sign-in prompt, or authentication challenge appears — even if the test case does not explicitly mention them:
-- Username: ${auth.username}
-- Password: ${auth.password}
-If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test case.` : '';
+${accounts.map(a => `- ${roleName[a.role] || a.role} account — Username: ${a.username} / Password: ${a.password}`).join('\n')}
+${accounts.length > 1
+  ? `Choose the account that fits the test case: sign in as the Admin for anything about administration, privileged or admin-only features, and as the Regular user for ordinary user flows and for checking what a regular user is NOT allowed to do. If the test case does not say, use the Regular user account. If a test case needs to switch roles, sign out first, then sign in with the other account.`
+  : ''}
+If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test case.
+In the test case, "Login with Regular User credentials" means: sign in with the Regular user account above. "Login with Admin credentials" means: sign in with the Admin account above. "Logged in with ..." in a Given means you must already be signed in as that account before the When steps start. "The target URL" always means ${targetUrl}.
+Never type these credentials anywhere except the application's own sign-in form.` : `
+
+NO LOGIN CREDENTIALS WERE PROVIDED.
+If the test case says to log in (for example "Login with Regular User credentials") and the application asks for a User ID and password, do not guess or invent any. Call assert_fail and say that no credentials were configured (they are set with the Authentication button in the test editor). "The target URL" always means ${targetUrl}.`;
 
   return `You are an expert QA automation engineer testing a web application.
 
@@ -414,7 +427,20 @@ ${thenLines}`;
  *  - provider (not providers) for provider config
  *  - model is "amazon-bedrock/<model-id>" format
  */
-function buildOpencodeConfig(assertResultFile, browserWs) {
+// The model and Bedrock region can be chosen per run in the orchestration
+// platform's Settings; the request carries them. Fall back to what this
+// container was started with, so an older backend that sends neither still works.
+const MODEL_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,200}$/;
+const REGION_OK = /^[a-z]{2}(-[a-z]+)+-\d+$/;
+function resolveModelAndRegion(body) {
+  const asked = String(body?.model || '').trim().replace(/^amazon-bedrock\//, '');
+  const model = MODEL_ID_OK.test(asked) ? `amazon-bedrock/${asked}` : BEDROCK_MODEL;
+  const askedRegion = String(body?.region || '').trim();
+  const region = REGION_OK.test(askedRegion) ? askedRegion : BEDROCK_REGION;
+  return { model, region };
+}
+
+function buildOpencodeConfig(assertResultFile, browserWs, llm) {
   // Connect to the browser-level WebSocket so chrome-devtools-mcp can call
   // browser-level commands (Target.getBrowserContexts, etc.).
   // Individual page routing is handled via pageId in tool calls.
@@ -425,11 +451,11 @@ function buildOpencodeConfig(assertResultFile, browserWs) {
 
   return {
     $schema: 'https://opencode.ai/config.json',
-    model: BEDROCK_MODEL,
+    model: llm.model,
     provider: {
       'amazon-bedrock': {
         options: {
-          region: BEDROCK_REGION,
+          region: llm.region,
         },
       },
     },
@@ -475,14 +501,14 @@ function buildOpencodeConfig(assertResultFile, browserWs) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm) {
   const configPath = join(workDir, 'opencode.json');
-  const config = buildOpencodeConfig(assertResultFile, browserWs);
+  const config = buildOpencodeConfig(assertResultFile, browserWs, llm);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
-  // Log auth presence (but never the password) so operators can verify
+  // Log auth presence (usernames only, never passwords) so operators can verify
   // the agent received credentials when authentication is enabled
-  const authMatch = prompt.match(/AUTHENTICATION CREDENTIALS:.*?\n- Username: ([^\n]+)/s);
-  if (authMatch) console.log(`[prompt] auth context attached, username=${authMatch[1]}`);
+  const authNames = [...prompt.matchAll(/ account — Username: (\S+) \/ Password:/g)].map(m => m[1]);
+  if (authNames.length) console.log(`[prompt] auth context attached, usernames=${authNames.join(',')}`);
   // Fetch AWS credentials from IMDS so opencode can call Bedrock
   const awsCreds = await getAwsCredentials();
 
@@ -497,7 +523,7 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs
           ...process.env,
           HOME: process.env.HOME || '/root',
           PATH: process.env.PATH,
-          AWS_DEFAULT_REGION: BEDROCK_REGION,
+          AWS_DEFAULT_REGION: llm.region,
           OPENCODE_CONFIG: configPath,
           ...(awsCreds || {}),
         },
@@ -637,7 +663,7 @@ app.get('/health', (req, res) => {
 app.post('/', async (req, res) => {
   const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth } = req.body;
   if (action === 'run_test') {
-    console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${auth?.username ? 'yes:' + auth.username : 'no'}`);
+    console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${(auth?.accounts || (auth?.username ? [auth] : [])).filter(a => a.username).map(a => (a.role || 'user') + ':' + a.username).join(',') || 'no'}`);
   }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -750,7 +776,7 @@ app.post('/', async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs);
+    }, browserWs, resolveModelAndRegion(req.body));
 
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);

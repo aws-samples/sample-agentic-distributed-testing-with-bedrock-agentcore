@@ -87,12 +87,19 @@ export async function invokeRuntime(tc, runId, sessionId) {
     // before every scenario in the Feature; the runtime puts it in the prompt.
     testCase: { ...tc, background: featureDescriptions[tc.feature] || '' },
     targetUrl: config.targetUrl,
+    // The testing agent's model + Bedrock region chosen in Settings; the runtime uses
+    // these instead of the values it was started with.
+    model: config.agentModel,
+    region: config.agentRegion,
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in
-    auth: (config.auth?.enabled && config.auth?.username)
-      ? { username: config.auth.username, password: config.auth.password || '' }
-      : null,
+    // Accounts the agent may sign in with (admin and/or user), only those filled in.
+    auth: (() => {
+      if (!config.auth?.enabled) return null;
+      const accounts = config.auth.accounts.filter(a => a.username).map(a => ({ role: a.role, username: a.username, password: a.password || '' }));
+      return accounts.length ? { accounts } : null;
+    })(),
   };
 
   // Init per-run log store

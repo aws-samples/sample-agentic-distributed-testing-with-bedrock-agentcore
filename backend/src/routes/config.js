@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { BedrockAgentCoreControlClient, GetAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore-control';
-import { config, featureList, sessions, saveConfig } from '../state/store.js';
+import { config, featureList, sessions, saveConfig, AUTH_ROLES, bareModelId } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
 
@@ -37,21 +37,36 @@ router.get('/health', (req, res) => {
 });
 
 router.get('/config', (req, res) => {
-  // Never echo the password — return whether one is set instead
-  const authOut = {
-    enabled: !!config.auth?.enabled,
-    username: config.auth?.username || '',
-    passwordSet: !!config.auth?.password,
-  };
+  const authOut = authView();
   res.json({
     targetUrl:        config.targetUrl,
     features:          featureList,
     model:            config.bedrockModel,
     agentMode:        config.agentMode,
     bedrockRegion:    config.bedrockRegion,
+    agentModel:       config.agentModel,
+    agentRegion:      config.agentRegion,
     browserRegion:    config.browserRegion,
     auth:             authOut,
   });
+});
+
+// The testing AI agent's model and Bedrock region. Applied from the next test run;
+// open sessions keep working, so nothing is closed here.
+const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,200}$/;
+router.patch('/config/agent', (req, res) => {
+  const { model, region } = req.body || {};
+  if (model !== undefined) {
+    const id = bareModelId(model);
+    if (!MODEL_ID_RE.test(id)) return res.status(400).json({ error: 'Invalid model id' });
+    config.agentModel = id;
+  }
+  if (region !== undefined) {
+    if (!isPlausibleRegion(region)) return res.status(400).json({ error: 'Invalid region' });
+    config.agentRegion = region.trim();
+  }
+  saveConfig();
+  res.json({ agentModel: config.agentModel, agentRegion: config.agentRegion });
 });
 
 router.patch('/config/model', (req, res) => {
@@ -95,26 +110,47 @@ router.patch('/config/target-url', (req, res) => {
   res.json({ targetUrl: config.targetUrl });
 });
 
-// Update authentication for the target app. The agents inject these
-// credentials into the system prompt so any test that needs to log in
-// can succeed without the test case spelling out the username/password.
+// Never echo passwords — only whether one is stored.
+function authView() {
+  return {
+    enabled: !!config.auth.enabled,
+    accounts: config.auth.accounts.map(a => ({ role: a.role, username: a.username, passwordSet: !!a.password })),
+  };
+}
+
+// The Authentication dialog shows the real passwords (masked, with a show toggle),
+// so this one endpoint returns them. They are NOT in GET /config, which is read
+// all over the UI. Never cached.
+router.get('/config/auth', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    enabled: !!config.auth.enabled,
+    accounts: config.auth.accounts.map(a => ({ role: a.role, username: a.username, password: a.password })),
+  });
+});
+
+// Update authentication for the target app. Body:
+//   { enabled?: boolean, accounts?: [{ role: 'admin'|'user', username?, password? }] }
+// The agents get these credentials in their system prompt, so any test that
+// needs to sign in can do so without the test case spelling them out.
+// An account's password is only changed when the client sends one
+// (undefined = leave as is, "" = clear it).
 router.patch('/config/auth', (req, res) => {
-  const { enabled, username, password } = req.body;
-  const next = { ...config.auth };
+  const { enabled, accounts } = req.body || {};
+  const next = { enabled: config.auth.enabled, accounts: config.auth.accounts.map(a => ({ ...a })) };
   if (typeof enabled === 'boolean') next.enabled = enabled;
-  if (typeof username === 'string') next.username = username;
-  // Only overwrite the stored password when the client sends a new one
-  // (empty string means "clear"; undefined means "leave unchanged")
-  if (password !== undefined) next.password = String(password);
+  if (accounts !== undefined) {
+    if (!Array.isArray(accounts)) return res.status(400).json({ error: 'accounts must be an array' });
+    for (const inc of accounts) {
+      if (!AUTH_ROLES.includes(inc?.role)) return res.status(400).json({ error: `role must be one of ${AUTH_ROLES.join(', ')}` });
+      const cur = next.accounts.find(a => a.role === inc.role);
+      if (typeof inc.username === 'string') cur.username = inc.username.trim();
+      if (inc.password !== undefined) cur.password = String(inc.password);
+    }
+  }
   config.auth = next;
   saveConfig();
-  res.json({
-    auth: {
-      enabled: !!config.auth.enabled,
-      username: config.auth.username || '',
-      passwordSet: !!config.auth.password,
-    },
-  });
+  res.json({ auth: authView() });
 });
 
 router.patch('/config/mode', async (req, res) => {
@@ -181,16 +217,17 @@ router.get('/runtime-health', async (req, res) => {
 });
 
 router.post('/model/health-check', async (req, res) => {
-  const { model } = req.body;
+  const { model, region: askedRegion } = req.body;
   if (!model || typeof model !== 'string') return res.status(400).json({ error: 'model required' });
+  // Defaults to the platform's region; the agent's model is checked in the agent's region.
+  const region = askedRegion !== undefined ? String(askedRegion).trim() : config.bedrockRegion;
+  if (!isPlausibleRegion(region)) return res.status(400).json({ error: 'Invalid region' });
   try {
-    // Health-check uses the currently configured Bedrock region so the user
-    // sees the same result they'd get from a real test invocation.
-    const client = new BedrockRuntimeClient({ region: config.bedrockRegion });
+    const client = new BedrockRuntimeClient({ region });
     await client.send(new ConverseCommand({ modelId: model.trim(), messages: [{ role: 'user', content: [{ text: 'hi' }] }], inferenceConfig: { maxTokens: 1 } }));
-    res.json({ ok: true, model: model.trim(), region: config.bedrockRegion });
+    res.json({ ok: true, model: model.trim(), region });
   } catch (e) {
-    res.json({ ok: false, model: model.trim(), region: config.bedrockRegion, error: e.message?.slice(0, 120) });
+    res.json({ ok: false, model: model.trim(), region, error: e.message?.slice(0, 120) });
   }
 });
 

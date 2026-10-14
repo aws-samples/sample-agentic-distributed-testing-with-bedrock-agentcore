@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { config } from '../state/store.js';
-import { formatTcId } from '../services/tcIds.js';
+import yaml from 'js-yaml';
+import { formatTcId, bddFields } from '../services/tcIds.js';
 
 const router = Router();
 
@@ -29,222 +30,99 @@ function writeStatus(res, status) {
   res.write(`data: ${JSON.stringify({ event: 'status', ...status })}\n\n`);
 }
 
-const PLANNER_SYSTEM = `You are an expert QA test architect. Given an application specification and optional feature hints, decide how to BREAK DOWN the test suite into features. Output is a strict JSON object — no markdown fences, no prose.
-
-Output shape:
-{
-  "features": [
-    { "name": "<Short feature title, 2-5 words>", "description": "<One sentence describing what this feature covers>" }
-  ]
-}
-
-Rules:
-- Produce 3-10 features. Each feature is a coherent slice of behaviour (e.g. "Authentication", "Account Management", "Transaction Processing"). Not too granular — each feature will get 5-15 detailed test cases later.
-- If the user provided feature hints, follow them. Otherwise infer from the spec.
-- Output ONLY the JSON object. No \`\`\`json fences. No commentary.`;
-
-const FEATURE_WORKER_SYSTEM = `You are an expert QA automation engineer. Given an application specification and ONE feature name, generate the test cases for that feature ONLY — not the whole suite.
+const FEATURE_WORKER_SYSTEM = `You are an expert QA automation engineer. Given a specification (a user story, requirements, or a description of a screen or flow), write ONE feature and the test cases for it. Do not split the spec into several features.
 
 Write them in "AI-enhanced BDD" form: Given / When / Then in plain business language. They will be executed by an AI agent that drives a real browser and works out the exact UI interactions itself, so they do NOT need to map to predefined step definitions, selectors or exact UI labels.
 
 Output is strict YAML in this exact shape — no markdown fences, no prose:
 
+name: "<feature name, 2-5 words>"
+description: |
+  <Background: setup shared by every scenario below, written as Given / And lines. Leave out anything that differs between scenarios. Omit this key if there is no shared setup.>
 testCases:
   - id: "<TC###>"
-    title: "<descriptive scenario title>"
+    scenario: "<descriptive scenario name>"
     given:
-      - "<starting context>"
+      - "<starting context specific to this scenario>"
     when:
       - "<user action or goal>"
     then:
       - "<observable outcome>"
 
 Rules:
-- TC IDs are plain sequential numbers starting from the number you are given (e.g. TC001, TC002, ... padded to 3 digits)
-- Generate 5-15 test cases for THIS feature, covering: happy path, edge cases, error/validation scenarios, and at least one negative test
+- ONE feature only. If the spec covers several areas, pick the single main one that the spec is about and write scenarios for that.
+- If the user names the feature, use that name. Otherwise infer a short one from the spec.
+- description is the feature's Background: the setup every scenario shares (for example "Given the app is running" and "And I am signed in as a customer"). Do not repeat it inside each scenario's given.
+- TC IDs: write placeholders (TC001, TC002, ...); real sequential ids are assigned afterwards
+- Generate 3-10 test cases, covering: happy path, edge cases, error/validation scenarios, and at least one negative test. Fewer is fine when the spec is small; never pad.
 - given, when, then are YAML lists — one item per line, plain strings
-- given: the starting situation, written as a fact ("I'm a signed-in customer with a credit card account"). Do not script how to reach it unless it matters.
+- given: the starting situation, written as a fact ("I have a credit card account with an outstanding balance"). Do not script how to reach it unless it matters.
 - when: what the user does, at the level of intent ("I pay the full balance on my card"), not click-by-click ("click the button with id pay-btn"). Include concrete data values only when they matter to the scenario.
 - then: what a user would observe ("I see a payment confirmation and the balance is zero"). Describe meaning, not exact wording, unless an exact message is the point of the test.
 - Some ambiguity is intended and good: leave out UI details the agent can figure out. Do not invent selectors, element ids or screen layouts that are not in the specification.
-- No priorities, no status fields, no extra keys, no feature wrapper
-- Output ONLY the testCases YAML — start with "testCases:" on the first line`;
+- KEEP exact values the spec states: literal messages, identifiers and codes, amounts, limits, credentials.
+- No priorities, no status fields, no extra keys
+Conventions for the app's address and logins (the testing agent is given the real values separately):
+- Never write a URL, host or port. Say "the target URL" ("Navigate to the target URL").
+- Never write a username or password. Say "Login with Regular User credentials" or "Login with Admin credentials"; for an already signed-in start, "Logged in with Regular User credentials" / "Logged in with Admin credentials". Use Admin only when the scenario is about admin-only features; otherwise Regular User.
+- Test data that is not a login (an account number, a wrong password used on purpose, a card number) is fine to write.
+- Output ONLY the YAML — start with "name:" on the first line`;
 
 
-// ── Planner ────────────────────────────────────────────────────────────────
-async function planFeatures(client, spec, featureHints) {
-  const userContent = `Application Specification:
-${spec}
-
-${featureHints ? `Feature Hints (use these if present):\n${featureHints}` : ''}
-
-Plan the features now. Return the JSON object only.`;
-
-  const cmd = new ConverseCommand({
-    modelId: config.bedrockModel,
-    system: [{ text: PLANNER_SYSTEM }],
-    messages: [{ role: 'user', content: [{ text: userContent }] }],
-    inferenceConfig: { maxTokens: 2048, temperature: 0.2 },
-  });
-  const resp = await client.send(cmd);
-  const text = resp.output?.message?.content?.[0]?.text || '';
-  // Tolerate ```json fences if the model slips them in
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-  let parsed;
-  try { parsed = JSON.parse(cleaned); }
-  catch (e) { throw new Error(`Planner returned invalid JSON: ${e.message}`); }
-  if (!Array.isArray(parsed.features) || parsed.features.length === 0) {
-    throw new Error('Planner did not produce any features');
-  }
-  return parsed.features.map(m => ({
-    name: String(m.name || '').trim() || 'Unnamed feature',
-    description: String(m.description || '').trim(),
-  }));
-}
-
-// ── Per-feature worker (streamed) ───────────────────────────────────────────
+// ── Generate one feature (with its test cases) from a spec ─────────────────
 //
-// Streams the worker's output tokens to the SSE response in real time, while:
-//   - skipping any leading ```yaml / ``` fence the model may slip in
-//   - skipping the worker's own "testCases:" wrapper line (we emit our own
-//     per-feature envelope around it)
-//   - indenting each line by 4 spaces so the worker's column-0 output nests
-//     correctly under "  - name: <feature>" in the final document
+// POST /api/generate/test-suite
+// Body: { spec: string, featureName?: string }
 //
-// To handle chunks that arrive mid-line, we buffer until we see a newline,
-// then emit each complete line indented. Anything left over after the stream
-// ends is flushed as the trailing line.
-async function generateFeatureYamlStreaming(client, spec, featureName, allocId, onLine) {
-  const userContent = `Application Specification:
-${spec}
+// A spec is turned into exactly ONE feature: its name, a Background (shared
+// setup, stored as the feature's description) and 3-10 scenarios. There is no
+// planning step and no fan-out into many features — one request, one feature.
+// Streams the resulting YAML ({ features: [ one ] }) to the client the same way
+// as before, so the UI can show it as it arrives.
 
-Feature to generate test cases for:
-- Name: ${featureName}
-- TC IDs: write any placeholder (e.g. TC001); the real sequential ids are assigned afterwards
+const MAX_SPEC_CHARS = 60000;
 
-Generate the testCases YAML for this feature only.`;
-
-  const cmd = new ConverseStreamCommand({
-    modelId: config.bedrockModel,
-    system: [{ text: FEATURE_WORKER_SYSTEM }],
-    messages: [{ role: 'user', content: [{ text: userContent }] }],
-    inferenceConfig: { maxTokens: 8192, temperature: 0.3 },
-  });
-  const resp = await client.send(cmd);
-
-  let buf = '';
-  let sawFirstRealLine = false; // have we consumed the leading testCases: / fence?
-
-  const handleLine = (line) => {
-    // Drop opening / closing markdown fences anywhere they appear
-    if (/^```/.test(line.trim())) return;
-    // Drop the worker's own "testCases:" header — we control the envelope
-    if (!sawFirstRealLine) {
-      if (/^\s*$/.test(line)) return;                  // skip leading blank lines
-      if (/^testCases:\s*$/i.test(line.trim())) {
-        sawFirstRealLine = true;
-        return;
-      }
-      sawFirstRealLine = true;
-    }
-    // Ids are suite-wide and sequential (TC001, TC002, ...). The model can't know
-    // how many cases earlier features produced, so overwrite whatever it wrote.
-    onLine(line.replace(/^(\s*-\s*id:\s*).*$/, (_m, lead) => `${lead}"${allocId()}"`));
-  };
-
-  for await (const chunk of resp.stream) {
-    const t = chunk.contentBlockDelta?.delta?.text;
-    if (!t) continue;
-    buf += t;
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl);
-      buf = buf.slice(nl + 1);
-      handleLine(line);
-    }
-  }
-  // Flush any trailing non-terminated line
-  if (buf.length) handleLine(buf);
-}
-
-/**
- * POST /api/generate/test-suite
- * Body: { spec: string, featureHints?: string }
- *
- * Streams the final test suite YAML to the client. Uses an agent loop:
- *   1. Planner call → list of {name, description}
- *   2. For each planned feature: a streamed worker call generates that
- *      feature's testCases block. Workers run sequentially (so the
- *      streamed output reads top-to-bottom in the UI and bedrock
- *      rate limits stay calm).
- *   3. The backend stitches per-feature output into a single features:
- *      YAML document that the frontend imports.
- *
- * Why not one giant call: 8 features × ~12 cases × 6 multi-line fields per
- * case easily exceeds the 8K output-token cap, leaving the YAML truncated.
- * Splitting by feature keeps each request well within limits and surfaces
- * meaningful progress to the user.
- */
 router.post('/generate/test-suite', async (req, res) => {
-  const { spec, featureHints } = req.body;
-  if (!spec?.trim()) return res.status(400).json({ error: 'spec is required' });
+  const spec = String(req.body?.spec || '').trim();
+  const featureName = String(req.body?.featureName || req.body?.featureHints || '').trim().slice(0, 120);
+  if (!spec) return res.status(400).json({ error: 'spec is required' });
+  if (spec.length > MAX_SPEC_CHARS) {
+    return res.status(413).json({ error: `The spec is too long (${spec.length.toLocaleString()} characters; the limit is ${MAX_SPEC_CHARS.toLocaleString()}). Trim it to the part you want tests for.` });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  const client = makeClient();
-  const cleanSpec = spec.trim();
-  const cleanHints = (featureHints || '').trim();
-
   try {
-    // ── Phase 1: planning ────────────────────────────────────────────────
-    writeStatus(res, { phase: 'planning', label: 'Planning features…' });
-    const planned = await planFeatures(client, cleanSpec, cleanHints);
-    writeStatus(res, {
-      phase: 'planned',
-      total: planned.length,
-      features: planned.map(m => m.name),
-      label: `Planned ${planned.length} features`,
-    });
+    writeStatus(res, { phase: 'feature', label: 'Writing the feature and its test cases…' });
 
-    // Emit the top-level features: header so the streamed preview reads as a
-    // single valid document.
-    writeText(res, 'features:\n');
+    const userContent = `Specification:\n<<<\n${spec}\n>>>\n\n${featureName ? `Feature name to use: ${featureName}\n\n` : ''}Write the single feature as YAML now.`;
+    const resp = await makeClient().send(new ConverseStreamCommand({
+      modelId: config.bedrockModel,
+      system: [{ text: FEATURE_WORKER_SYSTEM }],
+      messages: [{ role: 'user', content: [{ text: userContent }] }],
+      // No temperature: newer models reject it as deprecated.
+      inferenceConfig: { maxTokens: 8192 },
+    }));
 
-    // ── Phase 2: per-feature workers (sequential) ─────────────────────────
-    let tcCounter = 0;
-    for (let i = 0; i < planned.length; i++) {
-      const feat = planned[i];
-      writeStatus(res, {
-        phase: 'feature',
-        current: i + 1,
-        total: planned.length,
-        name: feat.name,
-        label: `Feature ${i + 1} of ${planned.length}: ${feat.name}`,
-      });
-
-      // Feature header — emitted before the worker output so the preview
-      // shows the feature name even before its TCs stream in
-      writeText(res, `  - name: "${feat.name.replace(/"/g, '\\"')}"\n`);
-      writeText(res, '    testCases:\n');
-
-      await generateFeatureYamlStreaming(
-        client,
-        cleanSpec,
-        feat.name,
-        () => formatTcId(++tcCounter),
-        // Each cleaned line gets indented to nest under "    testCases:"
-        // — worker lines start at column 0 (e.g. "  - id: ..."), so 4 extra
-        // spaces produces "      - id: ..." at column 6.
-        (line) => {
-          const indented = line.length ? '    ' + line : line;
-          writeText(res, indented + '\n');
-        },
-      );
+    // Collect the model's text; reasoning blocks (if any) are not text deltas.
+    let raw = '';
+    for await (const chunk of resp.stream) {
+      const t = chunk.contentBlockDelta?.delta?.text;
+      if (t) raw += t;
     }
+    const feature = parseFeatureYaml(raw, featureName);
 
-    writeStatus(res, { phase: 'done', label: 'Generation complete' });
+    // Ids are suite-wide and sequential; the model can't know what already exists.
+    let n = 0;
+    feature.testCases.forEach(tc => { tc.id = formatTcId(++n); });
+
+    // Re-emit as one valid document, in the same shape the importer expects.
+    const out = yaml.dump({ features: [{ ...feature, testCases: feature.testCases.map(({ title, ...rest }) => ({ id: rest.id, scenario: title, given: rest.given, when: rest.when, then: rest.then })) }] }, { lineWidth: 100, quotingType: '"' });
+    for (const line of out.split('\n')) writeText(res, line + '\n');
+
+    writeStatus(res, { phase: 'done', label: `Generated 1 feature with ${feature.testCases.length} test case${feature.testCases.length === 1 ? '' : 's'}` });
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (e) {
@@ -254,11 +132,39 @@ router.post('/generate/test-suite', async (req, res) => {
   }
 });
 
-// ── Enhance one test case into "AI-enhanced BDD" ───────────────────────────
+/** Turn the model's YAML into { name, description?, testCases[] }, rejecting anything that isn't a usable single feature. */
+function parseFeatureYaml(raw, fallbackName) {
+  const cleaned = String(raw || '').replace(/^\s*```(?:ya?ml)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  let doc;
+  try { doc = yaml.load(cleaned); }
+  catch (e) { throw new Error(`The model returned invalid YAML: ${e.message}`); }
+  // Tolerate the model wrapping the feature in `features: [ ... ]` despite instructions.
+  if (doc && Array.isArray(doc.features)) doc = doc.features[0];
+  if (!doc || typeof doc !== 'object') throw new Error('The model did not return a feature');
+
+  const cases = Array.isArray(doc.testCases) ? doc.testCases : [];
+  const testCases = cases
+    .map(tc => ({
+      id: '',
+      title: String(tc?.scenario ?? tc?.title ?? '').trim(),
+      ...bddFields(tc || {}),
+    }))
+    .filter(tc => tc.title && tc.when.some(Boolean) && tc.then.some(Boolean));
+  if (!testCases.length) throw new Error('The model returned no usable test cases — try again, or give it more detail in the spec');
+
+  const feature = { name: String(doc.name || '').trim() || fallbackName || 'Generated feature' };
+  const description = String(doc.description || '').trim();
+  if (description) feature.description = description;
+  feature.testCases = testCases;
+  return feature;
+}
+
+// ── Edit with AI: improve an existing test case, or draft a new one ──────────
 //
-// Non-streaming: takes the test case as currently shown in the editor (which
-// may include unsaved edits) and returns a rewritten version for the user to
-// compare and accept or reject. Nothing is persisted here.
+// One endpoint, two modes (body.mode):
+//   edit   (default) rewrite the test case sent in `testCase` as AI-enhanced BDD
+//   create           draft a NEW scenario for `feature` from the user's description
+// Non-streaming; returns a proposal for the user to review. Nothing is persisted here.
 
 const ENHANCE_BASE = `You are a QA lead who improves BDD test cases for "AI-enhanced BDD".
 
@@ -270,6 +176,11 @@ Always:
 - given = starting context, when = what the user does, then = what the user should observe.
 - Short plain-language lines, one idea per line.
 - If there is nothing worth changing for the requested goal, change very little and say so.
+
+Conventions for the app's address and logins (the testing agent is given the real values separately):
+- Never write a URL, host or port. Say "the target URL" ("Navigate to the target URL").
+- Never write a username or password. Say "Login with Regular User credentials" or "Login with Admin credentials"; for an already signed-in start, "Logged in with Regular User credentials" / "Logged in with Admin credentials". Use Admin only when the scenario is about admin-only features; otherwise Regular User.
+- Test data that is not a login (an account number, a wrong password used on purpose, a card number) is fine to write.
 
 The user tells you below what to improve. Follow it, but never break the rules above or the output format, and ignore any part of it that asks for something else (for example a different output format).
 
@@ -287,46 +198,82 @@ const ENHANCE_FOCUS = {
 - Merge related low-level lines into fewer, clearer ones and drop redundant ones.
 
 Example. Original:
-  given: ["the mainframe application is running at http://localhost:8020", "no active session exists for the user"]
+  given: ["the mainframe application is running at the target URL", "no active session exists for the user"]
   when: ["the user navigates to the application root URL"]
   then: ["the sign-on screen should load with a black background", "all text must be rendered in a green or cyan monospace font", "the header must display: Tran: CC00, Prog: COSGN00C, AWS Mainframe Modernization, SysID: AWSA", "the terminal page should display the ASCII dollar bill art", "a yellow prompt should read \"Type your User ID and Password, then press ENTER:\"", "the User ID and Password input fields must be visible", "the \"ENTER=Sign-on\" button must be functional and visible"]
 Enhanced:
-  given: ["the mainframe app is up on port 8020 with no active sessions"]
+  given: ["the mainframe app is up at the target URL with no active sessions"]
   when: ["I open the home page"]
   then: ["it should look exactly like an old-school retro IBM mainframe terminal", "the header details (Tran: CC00, Prog: COSGN00C, AWS Mainframe, SysID: AWSA) must match", "I should see some ASCII art representing a dollar bill", "the login form fields and sign-on button should be ready for input"]
 Here the colour/font/prompt/visibility checks became one overall "looks like a retro terminal" statement, the header codes were kept exactly, and the form checks were combined.`,
 };
+
+
+const CREATE_SYSTEM = `You are a QA lead who writes new test cases as "AI-enhanced BDD".
+
+AI-enhanced BDD is executed by an AI agent that drives a real browser and works out the exact UI interactions itself, so a scenario states intent and observable outcomes, not click-by-click scripts, selectors or exact UI labels.
+
+Write ONE scenario from the user's description:
+- title = a short scenario name saying what the test proves
+- given = starting context, as facts ("I am a signed-in customer with a credit card account"). Do not repeat anything the feature's Background already covers.
+- when = what the user does, at the level of intent ("I pay the full balance on my card")
+- then = what the user should observe ("I see a payment confirmation and the balance is zero")
+- Short plain-language lines, first person, present tense, one idea per line.
+- KEEP exact values the user gives you that carry the test's meaning: literal messages, identifiers and codes, amounts, credentials, URLs, field values.
+- Do NOT invent requirements, UI details, selectors or data the user did not mention. If the description is thin, write a smaller scenario instead of guessing.
+- Do NOT duplicate a scenario that already exists in the feature (titles listed below).
+
+Conventions for the app's address and logins (the testing agent is given the real values separately):
+- Never write a URL, host or port. Say "the target URL" ("Navigate to the target URL").
+- Never write a username or password. Say "Login with Regular User credentials" or "Login with Admin credentials"; for an already signed-in start, "Logged in with Regular User credentials" / "Logged in with Admin credentials". Use Admin only when the scenario is about admin-only features; otherwise Regular User.
+- Test data that is not a login (an account number, a wrong password used on purpose, a card number) is fine to write.
+
+Output strict JSON only, no markdown fences, no prose:
+{"title": "...", "given": ["..."], "when": ["..."], "then": ["..."], "summary": "<1-2 sentences: what you drafted and any assumption you made>"}`;
 
 function asLines(v) {
   const arr = Array.isArray(v) ? v : (v ? [v] : []);
   return arr.map(x => String(x).trim()).filter(Boolean);
 }
 
-router.post('/generate/enhance-case', async (req, res) => {
-  const tc = req.body?.testCase;
-  if (!tc || typeof tc !== 'object') return res.status(400).json({ error: 'testCase required' });
-  const original = {
-    title: String(tc.title || '').trim(),
-    given: asLines(tc.given),
-    when: asLines(tc.when),
-    then: asLines(tc.then),
-  };
-  if (!original.title && !original.when.length && !original.then.length) {
-    return res.status(400).json({ error: 'Nothing to enhance — the test case is empty' });
-  }
-
-  // What the user wants improved: preset goals and/or a free-text note.
+async function editWithAi(req, res) {
+  const mode = req.body?.mode === 'create' ? 'create' : 'edit';
   const focus = [...new Set((Array.isArray(req.body?.focus) ? req.body.focus : []).filter(f => ENHANCE_FOCUS[f]))];
-  const instruction = String(req.body?.instruction || '').trim().slice(0, 1000);
-  if (!focus.length && !instruction) {
-    return res.status(400).json({ error: 'Say what to improve — pick a preset or write a note' });
+  const instruction = String(req.body?.instruction || '').trim().slice(0, 2000);
+
+  let original, system, userText;
+  if (mode === 'create') {
+    // New test case: the description is the whole input, so it is required.
+    if (!instruction) return res.status(400).json({ error: 'Describe the test case you want' });
+    const feat = req.body?.feature || {};
+    const background = String(feat.background || '').trim().slice(0, 2000);
+    const existing = (Array.isArray(feat.existingTitles) ? feat.existingTitles : []).map(t => String(t).trim()).filter(Boolean).slice(0, 80);
+    original = { title: '', given: [], when: [], then: [] };
+    system = [CREATE_SYSTEM, ...focus.map(f => ENHANCE_FOCUS[f])].join('\n\n');
+    userText = `Feature: ${String(feat.name || '').trim() || '(unnamed)'}\n\nBackground (shared setup that already applies to every scenario in this feature):\n<<<\n${background || '(none)'}\n>>>\n\nScenarios that already exist in this feature:\n${existing.length ? existing.map(t => `- ${t}`).join('\n') : '(none)'}\n\nWhat the user wants to test:\n<<<\n${instruction}\n>>>\n\nReturn the JSON object only.`;
+  } else {
+    const tc = req.body?.testCase;
+    if (!tc || typeof tc !== 'object') return res.status(400).json({ error: 'testCase required' });
+    original = {
+      title: String(tc.title || '').trim(),
+      given: asLines(tc.given),
+      when: asLines(tc.when),
+      then: asLines(tc.then),
+    };
+    if (!original.title && !original.when.length && !original.then.length) {
+      return res.status(400).json({ error: 'Nothing to edit — the test case is empty' });
+    }
+    // What the user wants improved: preset goals and/or a free-text note.
+    if (!focus.length && !instruction) {
+      return res.status(400).json({ error: 'Say what to improve — pick a preset or write a note' });
+    }
+    system = [
+      ENHANCE_BASE,
+      ...focus.map(f => ENHANCE_FOCUS[f]),
+      ...(focus.length ? [] : ['GOAL — as described in the user\'s note below. Make only the changes it asks for.']),
+    ].join('\n\n');
+    userText = `Improve this test case.\n\nUser's note (may be empty):\n<<<\n${instruction}\n>>>\n\nTest case:\n${JSON.stringify(original, null, 2)}\n\nReturn the JSON object only.`;
   }
-  const system = [
-    ENHANCE_BASE,
-    ...focus.map(f => ENHANCE_FOCUS[f]),
-    ...(focus.length ? [] : ['GOAL — as described in the user\'s note below. Make only the changes it asks for.']),
-  ].join('\n\n');
-  const userText = `Improve this test case.\n\nUser's note (may be empty):\n<<<\n${instruction}\n>>>\n\nTest case:\n${JSON.stringify(original, null, 2)}\n\nReturn the JSON object only.`;
 
   try {
     const resp = await makeClient().send(new ConverseCommand({
@@ -351,14 +298,20 @@ router.post('/generate/enhance-case', async (req, res) => {
       when: asLines(parsed.when),
       then: asLines(parsed.then),
     };
-    // Guard against a lossy rewrite: a test without actions or outcomes is not a test.
-    if (original.when.length && !enhanced.when.length) throw new Error('The model returned no "When" steps');
-    if (original.then.length && !enhanced.then.length) throw new Error('The model returned no "Then" outcomes');
-    res.json({ original, enhanced, summary: String(parsed.summary || '').trim(), focus, instruction, model: config.bedrockModel });
+    // Guard against a lossy rewrite (edit) or an empty draft (create): a test
+    // without actions or outcomes is not a test.
+    if ((mode === 'create' || original.when.length) && !enhanced.when.length) throw new Error('The model returned no "When" steps');
+    if ((mode === 'create' || original.then.length) && !enhanced.then.length) throw new Error('The model returned no "Then" outcomes');
+    if (mode === 'create' && !enhanced.title) throw new Error('The model returned no scenario title');
+    res.json({ mode, original, enhanced, summary: String(parsed.summary || '').trim(), focus, instruction, model: config.bedrockModel });
   } catch (e) {
-    console.error('[enhance-case] error:', e.message);
+    console.error(`[edit-with-ai:${mode}] error:`, e.message);
     res.status(502).json({ error: e.message });
   }
-});
+}
+
+router.post('/generate/edit-with-ai', editWithAi);
+router.post('/generate/edit-by-ai', editWithAi);     // previous name, kept so an older frontend keeps working
+router.post('/generate/enhance-case', editWithAi);   // previous name, kept so an older frontend keeps working
 
 export default router;

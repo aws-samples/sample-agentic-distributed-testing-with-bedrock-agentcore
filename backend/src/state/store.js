@@ -51,18 +51,55 @@ async function detectEc2Region() {
   });
 }
 
+// Credentials the agent can use to sign in to the app under test: one admin and
+// one regular-user account. Older config.json files stored a single
+// { enabled, username, password }; that becomes the "user" account.
+//
+// Until authentication has been configured, the accounts start out as the bundled
+// sample app's demo logins (sample-app/README.md), so testing it works out of the
+// box. "Configured" means saved in the accounts format (or a legacy file that had a
+// username) — after that, what is stored is respected, including deliberately empty
+// accounts, so clearing a login doesn't bring the demo one back.
+export const AUTH_ROLES = ['admin', 'user'];
+export const DEFAULT_ACCOUNTS = {
+  admin: { username: 'ADMIN001', password: 'PASSWORD' },
+  user: { username: 'USER0001', password: 'PASSWORD' },
+};
+export function normalizeAuth(a) {
+  const configured = Array.isArray(a?.accounts) || !!a?.username;
+  const source = Array.isArray(a?.accounts)
+    ? a.accounts
+    : (a?.username ? [{ role: 'user', username: a.username, password: a.password }] : []);
+  return {
+    enabled: !!a?.enabled,
+    accounts: AUTH_ROLES.map(role => {
+      const found = configured ? (source.find(x => x?.role === role) || {}) : DEFAULT_ACCOUNTS[role];
+      return { role, username: String(found.username || ''), password: String(found.password || '') };
+    }),
+  };
+}
+
+// Bedrock model ids are stored bare ("global.anthropic.claude-sonnet-5"); the
+// runtimes add the "amazon-bedrock/" prefix OpenCode wants.
+export const bareModelId = (id) => String(id || '').trim().replace(/^amazon-bedrock\//, '');
+
 export const config = {
   targetUrl:    _persisted.targetUrl  ?? (process.env.TARGET_URL    || 'http://localhost:8020'),
   bedrockModel: _persisted.bedrockModel ?? (process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-5'),
   agentMode: _persisted.agentMode ?? (process.env.AGENT_MODE || 'agentcore'),   // 'local' | 'agentcore'
   // Bedrock model inference region. Defaults to BEDROCK_REGION env or us-east-1.
   bedrockRegion: _persisted.bedrockRegion ?? (process.env.BEDROCK_REGION || 'us-east-1'),
+  // The testing AI agent's own model + Bedrock region, sent to the runtime with
+  // every run. Until set in Settings they default to the same .env values the
+  // runtimes are started with, so nothing changes for an existing setup.
+  agentModel:  _persisted.agentModel  ?? (bareModelId(process.env.BEDROCK_MODEL) || 'global.anthropic.claude-sonnet-5'),
+  agentRegion: _persisted.agentRegion ?? (process.env.BEDROCK_REGION || 'us-east-1'),
   // AgentCore Runtime / Browser region. Defaults to BROWSER_REGION env or the
   // EC2 host's own region (resolved lazily via initEc2Region below).
   browserRegion: _persisted.browserRegion ?? (process.env.BROWSER_REGION || 'ap-southeast-1'),
   // AgentCore Runtime ARN — pinned by env in docker-compose. Region implied by the ARN.
   agentcoreRuntimeArn: _persisted.agentcoreRuntimeArn ?? process.env.AGENTCORE_RUNTIME_ARN ?? null,
-  auth:         _persisted.auth ?? { enabled: false, username: '', password: '' },
+  auth:         normalizeAuth(_persisted.auth),
 };
 
 // If no persisted browser region and no env override, try to match the EC2 host
@@ -85,6 +122,8 @@ export function saveConfig() {
         auth:                config.auth,
         bedrockModel:        config.bedrockModel,
         bedrockRegion:       config.bedrockRegion,
+        agentModel:          config.agentModel,
+        agentRegion:         config.agentRegion,
         browserRegion:       config.browserRegion,
         agentMode:           config.agentMode,
         agentcoreRuntimeArn: config.agentcoreRuntimeArn,

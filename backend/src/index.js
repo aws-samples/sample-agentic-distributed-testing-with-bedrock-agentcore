@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 
 import { initWebSocket } from './services/websocket.js';
 import { config, featureList, testCasesByFeature, featureDescriptions, initEc2Region } from './state/store.js';
-import { assignTcIds, bddFields } from './services/tcIds.js';
+import { assignTcIds, bddFields, scenarioName } from './services/tcIds.js';
 import { replaceAllFeaturesAndCases } from './state/db.js';
 import { requireAuth, authEnabled } from './middleware/auth.js';
 import configRoutes   from './routes/config.js';
@@ -49,9 +49,10 @@ function loadSeed() {
       if (Array.isArray(featDef.testCases)) {
         if (!testCasesByFeature[name]) testCasesByFeature[name] = [];
         for (const tc of featDef.testCases) {
-          if (!tc.title) continue;
+          const scenario = scenarioName(tc);
+          if (!scenario) continue;
           testCasesByFeature[name].push({
-            id: tc.id, feature: name, title: tc.title, status: 'PENDING',
+            id: tc.id, feature: name, title: scenario, status: 'PENDING',
             ...bddFields(tc),
           });
         }

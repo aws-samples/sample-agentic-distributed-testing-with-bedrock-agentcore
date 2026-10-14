@@ -2,7 +2,7 @@ import { Router } from 'express';
 import yaml from 'js-yaml';
 import { config, featureList, testCasesByFeature, featureDescriptions } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
-import { assignTcIds, bddFields } from '../services/tcIds.js';
+import { assignTcIds, bddFields, scenarioName } from '../services/tcIds.js';
 import { replaceAllFeaturesAndCases } from '../state/db.js';
 
 const router = Router();
@@ -14,7 +14,7 @@ router.get('/export', (req, res) => {
       name: feat,
       ...(featureDescriptions[feat] ? { description: featureDescriptions[feat] } : {}),
       testCases: (testCasesByFeature[feat] || []).map(tc => ({
-        id: tc.id, title: tc.title,
+        id: tc.id, scenario: tc.title,
         given: tc.given, when: tc.when, then: tc.then,
       })),
     })),
@@ -60,9 +60,10 @@ router.post('/import', (req, res) => {
       // Full replace of TCs for this feature on import
       testCasesByFeature[name] = [];
       for (const tc of featDef.testCases) {
-        if (!tc.title) continue;
+        const scenario = scenarioName(tc);
+        if (!scenario) continue;
         testCasesByFeature[name].push({
-          id: tc.id, feature: name, title: tc.title, status: 'PENDING',
+          id: tc.id, feature: name, title: scenario, status: 'PENDING',
           ...bddFields(tc),
         });
         summary.casesImported++;

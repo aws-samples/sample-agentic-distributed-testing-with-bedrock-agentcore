@@ -36,6 +36,14 @@ export function assignTcIds(featureDefs) {
   }
 }
 
+/**
+ * A test case's name as written in suite files. Files say `scenario:`; files from
+ * before that rename say `title:`. Both are accepted.
+ */
+export function scenarioName(tc) {
+  return String(tc?.scenario ?? tc?.title ?? '').trim();
+}
+
 // AI-enhanced BDD fields: given / when / then. The legacy names (preconditions /
 // steps / expectedResult) are still accepted on import so older exported YAML
 // files keep working; everything stored and served uses the new names.

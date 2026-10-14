@@ -3,12 +3,12 @@ features:
   - name: Authentication and Sign-on
     testCases:
       - id: TC001
-        title: Verify terminal-style sign-on screen loads correctly
+        scenario: Verify terminal-style sign-on screen loads correctly
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - No active session exists
         when:
-          - Open a browser and navigate to http://localhost:8020
+          - Open a browser and navigate to the target URL
           - Observe the page layout, colors, and content
         then:
           - Terminal-style sign-on screen loads with black background
@@ -19,9 +19,9 @@ features:
           - User ID and Password input fields are present
           - ENTER=Sign-on button is visible
       - id: TC002
-        title: Sign-on with both fields empty shows validation error
+        scenario: Sign-on with both fields empty shows validation error
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
           - Leave the User ID field empty
@@ -32,12 +32,12 @@ features:
           - User remains on the sign-on screen
           - No session is created
       - id: TC003
-        title: Sign-on with only User ID filled shows validation error
+        scenario: Sign-on with only User ID filled shows validation error
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
-          - Enter USER0001 in the User ID field
+          - Enter the Regular User's User ID in the User ID field
           - Leave the Password field empty
           - Click the ENTER=Sign-on button
         then:
@@ -45,22 +45,22 @@ features:
           - User remains on the sign-on screen
           - No session is created
       - id: TC004
-        title: Sign-on with only Password filled shows validation error
+        scenario: Sign-on with only Password filled shows validation error
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
           - Leave the User ID field empty
-          - Enter PASSWORD in the Password field
+          - Enter the Regular User's password in the Password field
           - Click the ENTER=Sign-on button
         then:
           - "Red alert message is displayed: ** Please enter both User ID and Password."
           - User remains on the sign-on screen
           - No session is created
       - id: TC005
-        title: Sign-on with invalid credentials shows authentication failure
+        scenario: Sign-on with invalid credentials shows authentication failure
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
           - Enter BADUSER in the User ID field
@@ -71,15 +71,13 @@ features:
           - User remains on the sign-on screen
           - No session is created
       - id: TC006
-        title: Sign-on with valid regular user credentials redirects to Main Menu
+        scenario: Sign-on with valid regular user credentials redirects to Main Menu
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
-          - User USER0001 with password PASSWORD exists in the system
+          - Regular User credentials are available
         when:
-          - Enter USER0001 in the User ID field
-          - Enter PASSWORD in the Password field
-          - Click the ENTER=Sign-on button
+          - Login with Regular User credentials
         then:
           - User is redirected to the Main Menu page
           - "Terminal header shows Tran: CM00 and Prog: COMEN01C"
@@ -88,9 +86,9 @@ features:
           - Navigation bar does NOT show Users or Batch links
           - Footer shows ENTER=Continue  F3=Exit  F7=Backward  F8=Forward
       - id: TC007
-        title: Regular user Main Menu displays correct numbered items without admin options
+        scenario: Regular user Main Menu displays correct numbered items without admin options
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Observe the Main Menu page content and numbered items
         then:
@@ -99,15 +97,13 @@ features:
           - Admin menu items 11, 12, and 13 are NOT visible
           - "Yellow prompt reads: Please select an option : with a 2-character input field"
       - id: TC008
-        title: Sign-on with valid admin credentials shows Admin Menu with elevated navigation
+        scenario: Sign-on with valid admin credentials shows Admin Menu with elevated navigation
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
-          - Admin user ADMIN001 with password PASSWORD exists in the system
+          - Admin credentials are available
         when:
-          - Enter ADMIN001 in the User ID field
-          - Enter PASSWORD in the Password field
-          - Click the ENTER=Sign-on button
+          - Login with Admin credentials
         then:
           - User is redirected to the Main Menu page
           - Page title shows Admin Menu
@@ -115,9 +111,9 @@ features:
           - Navigation bar includes Users and Batch links
           - User badge shows ADMIN in yellow
       - id: TC009
-        title: Sign-off clears session and redirects to sign-on screen
+        scenario: Sign-off clears session and redirects to sign-on screen
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click F3=Signoff in the navigation bar
         then:
@@ -125,36 +121,36 @@ features:
           - Session is cleared
           - Sign-on screen displays with all original terminal-style elements
       - id: TC010
-        title: Accessing application URL after sign-off does not restore previous session
+        scenario: Accessing application URL after sign-off does not restore previous session
         given:
-          - User USER0001 was previously logged in and has signed off
+          - The Regular User was previously logged in and has signed off
           - User is on the sign-on screen
         when:
-          - Attempt to navigate directly to http://localhost:8020 or any internal page URL
+          - Attempt to navigate directly to the target URL or any internal page URL
         then:
           - User is presented with the sign-on screen
           - No authenticated session is restored
           - Protected pages are not accessible without re-authenticating
       - id: TC011
-        title: Password field masks input characters
+        scenario: Password field masks input characters
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
           - Click on the Password input field
-          - Type PASSWORD into the Password field
+          - Type the Regular User's password into the Password field
           - Observe the characters displayed in the field
         then:
           - Password characters are masked and not displayed in plain text
           - The field renders dots or asterisks instead of the actual characters
       - id: TC012
-        title: Sign-on with correct User ID but wrong password is rejected
+        scenario: Sign-on with correct User ID but wrong password is rejected
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
-          - User USER0001 exists in the system
+          - A Regular User account exists in the system
         when:
-          - Enter USER0001 in the User ID field
+          - Enter the Regular User's User ID in the User ID field
           - Enter WRONGPASS in the Password field
           - Click the ENTER=Sign-on button
         then:
@@ -162,13 +158,13 @@ features:
           - User remains on the sign-on screen
           - No session is created
       - id: TC013
-        title: Sign-on with correct Password but wrong User ID is rejected
+        scenario: Sign-on with correct Password but wrong User ID is rejected
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Sign-on screen is displayed
         when:
           - Enter NONEXISTENT in the User ID field
-          - Enter PASSWORD in the Password field
+          - Enter the Regular User's password in the Password field
           - Click the ENTER=Sign-on button
         then:
           - Red alert message is displayed indicating invalid credentials
@@ -177,23 +173,22 @@ features:
   - name: Main Menu Navigation
     testCases:
       - id: TC014
-        title: Successful login redirects to Main Menu with correct header and footer
+        scenario: Successful login redirects to Main Menu with correct header and footer
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Enter User ID = USER0001 and Password = PASSWORD
-          - Click ENTER=Sign-on
+          - Navigate to the target URL
+          - Login with Regular User credentials
         then:
           - Redirected to Main Menu page
           - "Terminal header shows Tran: CM00 and Prog: COMEN01C"
           - "Live Date: and Time: values are displayed on the right side of the header"
           - Footer shows ENTER=Continue  F3=Exit  F7=Backward  F8=Forward
       - id: TC015
-        title: Main Menu displays correct title and numbered options for regular user
+        scenario: Main Menu displays correct title and numbered options for regular user
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Observe the Main Menu page content
         then:
@@ -203,9 +198,9 @@ features:
           - Admin-only items 11, 12, and 13 are NOT visible
           - Yellow prompt 'Please select an option :' is shown with a 2-character input field
       - id: TC016
-        title: Regular user navigation bar does not show admin links
+        scenario: Regular user navigation bar does not show admin links
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Observe the navigation bar
         then:
@@ -213,9 +208,9 @@ features:
           - Users link is NOT present in the navigation bar
           - Batch link is NOT present in the navigation bar
       - id: TC017
-        title: Selecting option 01 from Main Menu navigates to Accounts page
+        scenario: Selecting option 01 from Main Menu navigates to Accounts page
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Type 01 in the option input field
           - Press Enter or click ENTER=Continue
@@ -224,9 +219,9 @@ features:
           - Page header shows ACCOUNTS in white
           - Subtitle reads 'Search and view credit card accounts'
       - id: TC018
-        title: Submitting empty option field shows validation error or no navigation
+        scenario: Submitting empty option field shows validation error or no navigation
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Leave the option input field empty
           - Press Enter or click ENTER=Continue
@@ -234,9 +229,9 @@ features:
           - User remains on the Main Menu page
           - An error or prompt is displayed indicating a valid option must be selected
       - id: TC019
-        title: Entering an invalid option number shows an error
+        scenario: Entering an invalid option number shows an error
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Type 99 in the option input field
           - Press Enter or click ENTER=Continue
@@ -244,14 +239,13 @@ features:
           - User remains on the Main Menu page
           - An error message is displayed indicating the option is invalid or not available
       - id: TC020
-        title: Admin user sees Admin Menu title and extra menu items
+        scenario: Admin user sees Admin Menu title and extra menu items
         given:
-          - Application is running at http://localhost:8020
-          - Admin user ADMIN001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Admin credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Enter User ID = ADMIN001 and Password = PASSWORD
-          - Click ENTER=Sign-on
+          - Navigate to the target URL
+          - Login with Admin credentials
           - Observe the Main Menu page
         then:
           - Page title shows 'Admin Menu'
@@ -259,45 +253,45 @@ features:
           - Navigation bar includes Users and Batch links
           - User badge shows ADMIN in yellow
       - id: TC021
-        title: Clicking Accounts in the navigation bar navigates to Accounts page
+        scenario: Clicking Accounts in the navigation bar navigates to Accounts page
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click the Accounts link in the navigation bar
         then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS
       - id: TC022
-        title: Clicking Transactions in the navigation bar navigates to Transactions page
+        scenario: Clicking Transactions in the navigation bar navigates to Transactions page
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click the Transactions link in the navigation bar
         then:
           - Navigated to the Transactions page
           - Page header shows TRANSACTIONS
       - id: TC023
-        title: Clicking Bill-Pay in the navigation bar navigates to Bill Payment page
+        scenario: Clicking Bill-Pay in the navigation bar navigates to Bill Payment page
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click the Bill-Pay link in the navigation bar
         then:
           - Navigated to the Bill Payment page
           - Form shows Account ID input and Look Up button
       - id: TC024
-        title: Clicking Reports in the navigation bar navigates to Reports page
+        scenario: Clicking Reports in the navigation bar navigates to Reports page
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click the Reports link in the navigation bar
         then:
           - Navigated to the Reports page
           - Form shows Report Type dropdown, Start Date, and End Date fields
       - id: TC025
-        title: Clicking Menu in the navigation bar returns to Main Menu
+        scenario: Clicking Menu in the navigation bar returns to Main Menu
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - User has navigated away from Main Menu to the Accounts page
         when:
           - Click the Menu link in the navigation bar
@@ -305,19 +299,19 @@ features:
           - Navigated back to the Main Menu page
           - Numbered menu items and option input field are displayed
       - id: TC026
-        title: F3=Signoff from Main Menu clears session and returns to sign-on screen
+        scenario: F3=Signoff from Main Menu clears session and returns to sign-on screen
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Click F3=Signoff in the navigation bar
         then:
-          - Redirected to the terminal-style sign-on screen at http://localhost:8020
+          - Redirected to the terminal-style sign-on screen at the target URL
           - Session is cleared — user is no longer authenticated
           - Sign-on screen shows the login prompt with User ID and Password fields
       - id: TC027
-        title: Entering non-numeric characters in the option field is handled gracefully
+        scenario: Entering non-numeric characters in the option field is handled gracefully
         given:
-          - User USER0001 is logged in and on the Main Menu page
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Type AB in the option input field
           - Press Enter or click ENTER=Continue
@@ -325,7 +319,7 @@ features:
           - User remains on the Main Menu page
           - An error or no-navigation response is shown — non-numeric input is rejected or ignored
       - id: TC028
-        title: Accessing Main Menu URL directly without login redirects to sign-on screen
+        scenario: Accessing Main Menu URL directly without login redirects to sign-on screen
         given:
           - No active session exists
         when:
@@ -336,14 +330,14 @@ features:
   - name: Account Search and Details
     testCases:
       - id: TC029
-        title: Admin can search all accounts with empty Account ID field
+        scenario: Admin can search all accounts with empty Account ID field
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Seed data is present with multiple accounts
-          - Admin user ADMIN001 exists with password PASSWORD
+          - Admin credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Log in as ADMIN001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Admin credentials
           - Click Accounts in the navigation bar
           - Leave the Account ID field empty
           - Click Search
@@ -352,13 +346,13 @@ features:
           - "Table displays multiple accounts with columns: Account ID, Status, Current Balance, Credit Limit, Open Date"
           - All accounts in the system are visible to the admin
       - id: TC030
-        title: Regular user receives error when searching with empty Account ID
+        scenario: Regular user receives error when searching with empty Account ID
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Type 01 in the main menu option field and press Enter
           - Leave the Account ID field empty
           - Click Search
@@ -367,14 +361,14 @@ features:
           - No account results are shown
           - User remains on the Accounts search page
       - id: TC031
-        title: Search for a valid account by Account ID as regular user
+        scenario: Search for a valid account by Account ID as regular user
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
-          - Account 0000000011 exists in seed data and is linked to USER0001
+          - Application is running at the target URL
+          - Regular User credentials are available
+          - Account 0000000011 exists in seed data and is linked to the Regular User
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Type 01 in the main menu option field and press Enter
           - Enter 0000000011 in the Account ID field
           - Click Search
@@ -383,14 +377,14 @@ features:
           - Row displays Status badge (Active or Inactive), Current Balance, Credit Limit, and Open Date
           - Table text is rendered in terminal green with cyan column headers
       - id: TC032
-        title: Search for a non-existent Account ID returns no results
+        scenario: Search for a non-existent Account ID returns no results
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Account 9999999999 does not exist in the system
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Type 01 in the main menu option field and press Enter
           - Enter 9999999999 in the Account ID field
           - Click Search
@@ -399,14 +393,14 @@ features:
           - An appropriate message is shown indicating no accounts were found
           - No application error or crash occurs
       - id: TC033
-        title: Navigate to Account Details page from search results
+        scenario: Navigate to Account Details page from search results
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Account 0000000011 exists in seed data
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Type 01 in the main menu option field and press Enter
           - Enter 0000000011 in the Account ID field and click Search
           - Click on the account row for 0000000011
@@ -419,14 +413,14 @@ features:
           - "Customer Information section displays: Customer Name, FICO Score"
           - Labels are rendered in cyan with colon suffix; values are rendered in green
       - id: TC034
-        title: Account Details page shows correct data for account 0000000011
+        scenario: Account Details page shows correct data for account 0000000011
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Account 0000000011 exists with known seed data values
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Navigate to Accounts and search for 0000000011
           - Click on the account row for 0000000011
           - Observe all three detail sections on the Account Details page
@@ -437,14 +431,14 @@ features:
           - Customer Name and FICO Score are populated with seeded values
           - No fields are blank or show placeholder text
       - id: TC035
-        title: View Cards button navigates to filtered card list for the account
+        scenario: View Cards button navigates to filtered card list for the account
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Account 0000000011 has at least one associated card in seed data
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Navigate to Accounts, search for 0000000011, and click on the account row
           - On the Account Details page, click the View Cards button
         then:
@@ -454,13 +448,13 @@ features:
             Name, Expiration, Status
           - Only cards belonging to account 0000000011 are shown
       - id: TC036
-        title: Accounts page is accessible via main menu option 01
+        scenario: Accounts page is accessible via main menu option 01
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - On the Main Menu, type 01 in the option field
           - Press Enter
         then:
@@ -469,43 +463,43 @@ features:
           - Subtitle reads Search and view credit card accounts
           - Account ID search field and Search button are visible
       - id: TC037
-        title: Accounts page is accessible via Accounts link in the navigation bar
+        scenario: Accounts page is accessible via Accounts link in the navigation bar
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Click Accounts in the navigation bar
         then:
           - Navigated to the Accounts page
           - Page header shows ACCOUNTS in white
           - Account ID search field and Search button are visible
       - id: TC038
-        title: Regular user cannot access accounts belonging to other users
+        scenario: Regular user cannot access accounts belonging to other users
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
-          - At least one account exists that is NOT linked to USER0001
+          - Application is running at the target URL
+          - Regular User credentials are available
+          - At least one account exists that is NOT linked to the Regular User
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Navigate to Accounts
-          - Enter an Account ID that belongs to a different user (not USER0001)
+          - Enter an Account ID that belongs to a different user (not the Regular User)
           - Click Search
         then:
           - Either no results are returned or an access-denied error is displayed
           - The account details of the other user's account are not accessible
           - No application error or crash occurs
       - id: TC039
-        title: Admin can view account details and access Edit Account from details page
+        scenario: Admin can view account details and access Edit Account from details page
         given:
-          - Application is running at http://localhost:8020
-          - Admin user ADMIN001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Admin credentials are available
           - Account 0000000011 exists in seed data
         when:
-          - Navigate to http://localhost:8020
-          - Log in as ADMIN001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Admin credentials
           - Click Accounts in the navigation bar
           - Leave Account ID empty and click Search
           - Click on account row for 0000000011
@@ -516,14 +510,14 @@ features:
           - Edit Account button is visible on the page
           - All field labels are in cyan and values are in green
       - id: TC040
-        title: Back navigation from Account Details returns to account search results
+        scenario: Back navigation from Account Details returns to account search results
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Account 0000000011 exists in seed data
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Navigate to Accounts and search for 0000000011
           - Click on the account row to open Account Details
           - Click the Back button or browser back navigation
@@ -531,14 +525,14 @@ features:
           - User is returned to the Accounts search/list page
           - Previous search results for 0000000011 are still displayed or the search form is accessible
       - id: TC041
-        title: Account status badge displays correctly for active and inactive accounts
+        scenario: Account status badge displays correctly for active and inactive accounts
         given:
-          - Application is running at http://localhost:8020
-          - Admin user ADMIN001 exists with password PASSWORD
+          - Application is running at the target URL
+          - Admin credentials are available
           - Seed data contains at least one active and one inactive account
         when:
-          - Navigate to http://localhost:8020
-          - Log in as ADMIN001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Admin credentials
           - Click Accounts in the navigation bar
           - Leave Account ID empty and click Search
           - Observe the Status column in the account results table
@@ -547,9 +541,9 @@ features:
           - Inactive accounts display an Inactive status badge
           - Status badges are visually distinct from each other
       - id: TC042
-        title: Accounts page not accessible without authentication
+        scenario: Accounts page not accessible without authentication
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - No active session exists
         when:
           - Open a browser and navigate directly to the Accounts page URL without logging in
@@ -560,15 +554,14 @@ features:
   - name: Card View and Update
     testCases:
       - id: TC043
-        title: Admin login and navigate to Cards page - full card list visible
+        scenario: Admin login and navigate to Cards page - full card list visible
         given:
           - Seed data present
-          - Admin user ADMIN001 exists with password PASSWORD
+          - Admin credentials are available
           - Account 0000000011 has at least one associated card
         when:
-          - Navigate to http://localhost:8020
-          - Enter User ID = ADMIN001 and Password = PASSWORD
-          - Click ENTER=Sign-on
+          - Navigate to the target URL
+          - Login with Admin credentials
           - Click Cards in the navigation bar
         then:
           - Login succeeds and Main Menu loads with Admin Menu title
@@ -576,9 +569,9 @@ features:
           - "Card table columns visible: Card Number (masked in magenta), Account ID, Embossed Name, Expiration, Status"
           - Navigation bar includes Users and Batch links confirming admin session
       - id: TC044
-        title: Search cards by Account ID 0000000011 and verify results
+        scenario: Search cards by Account ID 0000000011 and verify results
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Cards page is loaded
           - Account 0000000011 has at least one card in seed data
         when:
@@ -591,9 +584,9 @@ features:
             Expiration, and Status
           - No cards from other accounts are shown
       - id: TC045
-        title: Navigate to Card Details page by clicking a card row
+        scenario: Navigate to Card Details page by clicking a card row
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Cards page is loaded with results for Account ID 0000000011
         when:
           - Click on any card row in the card list
@@ -605,9 +598,9 @@ features:
           - "Account Information section displays: Customer Name, Account Status, Current Balance, Credit Limit"
           - Edit Card button is visible
       - id: TC046
-        title: Open Card Update form and verify editable vs read-only fields
+        scenario: Open Card Update form and verify editable vs read-only fields
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card Details page is loaded for a card under Account 0000000011
         when:
           - Note the current values for Embossed Name, Expiration Date, and Status
@@ -618,9 +611,9 @@ features:
           - "Editable fields present: Embossed Name, Expiration Month, Expiration Year, Active Status"
           - Current values are pre-populated in the editable fields
       - id: TC047
-        title: Validation CRD-V02 - Embossed Name cannot be empty
+        scenario: Validation CRD-V02 - Embossed Name cannot be empty
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Clear the Embossed Name field leaving it blank
@@ -630,9 +623,9 @@ features:
           - Card is not updated
           - Form remains open with other field values intact
       - id: TC048
-        title: Validation CRD-V03 - Expiration Month above valid range (13)
+        scenario: Validation CRD-V03 - Expiration Month above valid range (13)
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Enter Embossed Name = UPDATED NAME
@@ -642,9 +635,9 @@ features:
           - "Red error message displayed: 'Card expiry month must be between 1 and 12'"
           - Card is not updated
       - id: TC049
-        title: Validation CRD-V03 - Expiration Month below valid range (0)
+        scenario: Validation CRD-V03 - Expiration Month below valid range (0)
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Enter Embossed Name = UPDATED NAME
@@ -654,9 +647,9 @@ features:
           - "Red error message displayed: 'Card expiry month must be between 1 and 12'"
           - Card is not updated
       - id: TC050
-        title: Validation CRD-V04 - Expiration Year below valid range (1949)
+        scenario: Validation CRD-V04 - Expiration Year below valid range (1949)
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Enter Embossed Name = UPDATED NAME
@@ -667,9 +660,9 @@ features:
           - Red error message displayed indicating invalid card expiry year outside 1950-2099 range
           - Card is not updated
       - id: TC051
-        title: Validation CRD-V04 - Expiration Year above valid range (2100)
+        scenario: Validation CRD-V04 - Expiration Year above valid range (2100)
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Enter Embossed Name = UPDATED NAME
@@ -680,9 +673,9 @@ features:
           - Red error message displayed indicating invalid card expiry year outside 1950-2099 range
           - Card is not updated
       - id: TC052
-        title: Validation CRD-V05 - Active Status must be YES or NO
+        scenario: Validation CRD-V05 - Active Status must be YES or NO
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
           - Application allows manual entry or blank selection of Active Status field
         when:
@@ -695,9 +688,9 @@ features:
           - "Red error message displayed: 'Card Status must be YES or NO'"
           - Card is not updated
       - id: TC053
-        title: Validation CRD-V06 - No change detected when all values remain the same
+        scenario: Validation CRD-V06 - No change detected when all values remain the same
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
           - Current card values are noted
         when:
@@ -707,9 +700,9 @@ features:
           - "Error or info message displayed: 'No change detected with respect to values fetched'"
           - Card record is not modified
       - id: TC054
-        title: Toggle card status from Active (Y) to Inactive (N) - CRD-01
+        scenario: Toggle card status from Active (Y) to Inactive (N) - CRD-01
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card that currently has Active Status = Y
         when:
           - Ensure Embossed Name, Expiration Month, and Expiration Year are valid and unchanged
@@ -719,9 +712,9 @@ features:
           - "Green alert displayed: card updated successfully"
           - Card Details page or updated form shows Status as Inactive
       - id: TC055
-        title: Toggle card status from Inactive (N) back to Active (Y) - CRD-02
+        scenario: Toggle card status from Inactive (N) back to Active (Y) - CRD-02
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - The card updated in MD004-TC012 now has Active Status = N
           - Card update form is open for that card
         when:
@@ -732,9 +725,9 @@ features:
           - "Green alert displayed: card updated successfully"
           - Card Details page or updated form shows Status as Active
       - id: TC056
-        title: Successful card update with valid Embossed Name and Expiration changes
+        scenario: Successful card update with valid Embossed Name and Expiration changes
         given:
-          - Admin ADMIN001 is logged in
+          - Logged in with Admin credentials
           - Card update form is open for a card under Account 0000000011
         when:
           - Set Embossed Name to JOHN DOE UPDATED
@@ -748,15 +741,15 @@ features:
           - Expiration Date reflects month 09 and year 2029
           - Status shows Active
       - id: TC057
-        title: Regular user cannot access Edit Card functionality
+        scenario: Regular user cannot access Edit Card functionality
         given:
-          - Regular user USER0001 exists with password PASSWORD
-          - USER0001 is linked to Account 0000000011 which has at least one card
+          - Regular User credentials are available
+          - The Regular User is linked to Account 0000000011 which has at least one card
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Navigate to Cards page
-          - Click on a card row associated with USER0001's account
+          - Click on a card row associated with the Regular User's account
           - Observe whether Edit Card button is present
         then:
           - Card Details page loads showing card information
@@ -765,14 +758,14 @@ features:
   - name: Transaction List and Details
     testCases:
       - id: TC058
-        title: Navigate to Transactions page via navigation bar
+        scenario: Navigate to Transactions page via navigation bar
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 exists with PASSWORD
+          - Application is running at the target URL
+          - Regular User credentials are available
           - Seed transaction data is present
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Click Transactions in the navigation bar
         then:
           - Transactions page loads successfully
@@ -781,9 +774,9 @@ features:
           - Transaction table is populated with existing seeded transactions
           - "Table columns shown: Tran ID, Card, Type, Amount, Date, Description"
       - id: TC059
-        title: Navigate to Transactions page via Main Menu option 07
+        scenario: Navigate to Transactions page via Main Menu option 07
         given:
-          - User USER0001 is logged in and on the Main Menu
+          - Logged in with Regular User credentials and on the Main Menu page
         when:
           - Type the transaction menu option number in the option field
           - Press Enter
@@ -792,9 +785,9 @@ features:
           - Page header displays TRANSACTIONS
           - Transaction table is visible with seeded data
       - id: TC060
-        title: Verify pagination controls appear when more than 10 transactions exist
+        scenario: Verify pagination controls appear when more than 10 transactions exist
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - More than 10 transactions exist in the seed data
         when:
           - Navigate to the Transactions page
@@ -805,9 +798,9 @@ features:
           - F7=Backward is disabled or inactive on page 1
           - F8=Forward is active and clickable
       - id: TC061
-        title: Navigate forward through transaction pages using F8=Forward
+        scenario: Navigate forward through transaction pages using F8=Forward
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is loaded on page 1
           - More than 10 transactions exist
         when:
@@ -818,9 +811,9 @@ features:
           - A different set of transactions is displayed
           - F7=Backward becomes active
       - id: TC062
-        title: Navigate backward through transaction pages using F7=Backward
+        scenario: Navigate backward through transaction pages using F7=Backward
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is currently on page 2
         when:
           - Click the F7=Backward button
@@ -829,9 +822,9 @@ features:
           - Pagination indicator updates to Page 1 of N
           - The original first-page transactions are displayed again
       - id: TC063
-        title: Filter transactions by Account ID
+        scenario: Filter transactions by Account ID
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is loaded
           - Account 0000000011 has associated transactions
         when:
@@ -842,9 +835,9 @@ features:
           - Only transactions associated with Account ID 0000000011 are displayed
           - All displayed rows correspond to the filtered account
       - id: TC064
-        title: Filter transactions by a non-existent Account ID returns no results
+        scenario: Filter transactions by a non-existent Account ID returns no results
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is loaded
         when:
           - Enter 9999999999 in the Account ID filter field
@@ -854,9 +847,9 @@ features:
           - An appropriate empty-state message or no-rows indicator is displayed
           - No error crash occurs
       - id: TC065
-        title: Filter transactions by Card Number
+        scenario: Filter transactions by Card Number
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is loaded
           - A known valid card number from seed data is available
         when:
@@ -866,9 +859,9 @@ features:
           - Transaction table refreshes
           - Only transactions associated with the specified card number are displayed
       - id: TC066
-        title: View transaction details by clicking a transaction row
+        scenario: View transaction details by clicking a transaction row
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transactions page is loaded with at least one transaction
         when:
           - Click on any transaction row in the table
@@ -882,9 +875,9 @@ features:
           - "Merchant Information shows: Merchant ID, Name, City, ZIP"
           - "Timestamps section shows: Original Date, Processing Date"
       - id: TC067
-        title: Verify card number masking on Transaction Details page
+        scenario: Verify card number masking on Transaction Details page
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transaction Details page is open for a transaction
         when:
           - Observe the Card Number field in the Transaction Information section
@@ -893,9 +886,9 @@ features:
           - Card Number is masked, showing only the last 4 digits (e.g., **** **** **** 1234)
           - Full card number is not exposed
       - id: TC068
-        title: Navigate back from Transaction Details to Transaction List
+        scenario: Navigate back from Transaction Details to Transaction List
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Transaction Details page is open
         when:
           - Click the Back button on the Transaction Details page
@@ -904,9 +897,9 @@ features:
           - Previous filter/search results are still displayed
           - No data loss or page error occurs
       - id: TC069
-        title: Verify negative amount displayed in red on Transaction Details
+        scenario: Verify negative amount displayed in red on Transaction Details
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - At least one transaction with a negative amount (e.g., a credit/refund) exists in seed data
         when:
           - Navigate to the Transactions page
@@ -915,9 +908,9 @@ features:
           - Transaction Details page loads
           - The Amount value is displayed in red text to indicate a negative/credit amount
       - id: TC070
-        title: Verify positive amount displayed in green on Transaction Details
+        scenario: Verify positive amount displayed in green on Transaction Details
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - At least one transaction with a positive amount exists in seed data
         when:
           - Navigate to the Transactions page
@@ -926,22 +919,22 @@ features:
           - Transaction Details page loads
           - The Amount value is displayed in green text to indicate a positive amount
       - id: TC071
-        title: Regular user cannot view transactions belonging to other users' accounts
+        scenario: Regular user cannot view transactions belonging to other users' accounts
         given:
-          - User USER0001 is logged in
-          - Another account exists that is not linked to USER0001
+          - Logged in with Regular User credentials
+          - Another account exists that is not linked to the Regular User
         when:
           - Navigate to the Transactions page
-          - Enter an Account ID not belonging to USER0001 in the Account ID filter
+          - Enter an Account ID not belonging to the Regular User in the Account ID filter
           - Click Search or press Enter
         then:
           - No transactions are returned for the unrelated account
           - An error message or empty result is shown
-          - USER0001 cannot access transaction data from accounts they do not own
+          - The Regular User cannot access transaction data from accounts they do not own
       - id: TC072
-        title: Transaction list displays correct terminal-style visual formatting
+        scenario: Transaction list displays correct terminal-style visual formatting
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
         when:
           - Navigate to the Transactions page
           - Observe the visual styling of the page and table
@@ -953,12 +946,12 @@ features:
   - name: Add Transaction Validation
     testCases:
       - id: TC073
-        title: Both Account ID and Card Number empty — cross-reference required error
+        scenario: Both Account ID and Card Number empty — cross-reference required error
         given:
           - Seed data present
-          - User USER0001 exists with associated accounts and cards
+          - The Regular User exists with associated accounts and cards
           - Account 0000000011 exists with at least one card in cross-reference
-          - User is logged in as USER0001 / PASSWORD
+          - Logged in with Regular User credentials
           - Add Transaction form is open
         when:
           - Leave Account ID field empty
@@ -980,10 +973,10 @@ features:
           - Confirmation box does not appear
           - No transaction is created
       - id: TC074
-        title: Non-existent Account ID with no Card Number — account not found error
+        scenario: Non-existent Account ID with no Card Number — account not found error
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 9999999999 does not exist in the system
         when:
@@ -1006,10 +999,10 @@ features:
           - Confirmation box does not appear
           - No transaction is created
       - id: TC075
-        title: Non-existent Card Number with no Account ID — card not found error
+        scenario: Non-existent Card Number with no Account ID — card not found error
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Card number 9999999999999999 does not exist in the system
         when:
@@ -1032,10 +1025,10 @@ features:
           - Confirmation box does not appear
           - No transaction is created
       - id: TC076
-        title: Valid Account ID provided without Card Number — Card Number auto-resolved from cross-reference
+        scenario: Valid Account ID provided without Card Number — Card Number auto-resolved from cross-reference
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card in cross-reference
         when:
@@ -1058,10 +1051,10 @@ features:
           - The summary displays a resolved Card Number auto-populated from the cross-reference for Account 0000000011
           - No error messages are shown
       - id: TC077
-        title: Valid Card Number provided without Account ID — Account ID auto-resolved from cross-reference
+        scenario: Valid Card Number provided without Account ID — Account ID auto-resolved from cross-reference
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - A valid card number from seed data is known and linked to Account 0000000011
         when:
@@ -1084,10 +1077,10 @@ features:
           - The summary displays Account ID auto-resolved from the cross-reference as 0000000011
           - No error messages are shown
       - id: TC078
-        title: Cancel confirmation and verify transaction is not persisted
+        scenario: Cancel confirmation and verify transaction is not persisted
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
         when:
@@ -1112,10 +1105,10 @@ features:
           - All previously entered values are preserved in the form fields
           - No transaction is created in the system
       - id: TC079
-        title: Submit transaction after confirmation — transaction created with auto-generated ID
+        scenario: Submit transaction after confirmation — transaction created with auto-generated ID
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
         when:
@@ -1140,10 +1133,10 @@ features:
           - The new Transaction ID is auto-generated
           - The form is cleared to empty state
       - id: TC080
-        title: Newly submitted transaction appears in transaction list
+        scenario: Newly submitted transaction appears in transaction list
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - A transaction with Description 'Submit Test' and Amount 200.00 was just created in MD006-TC007
         when:
           - Click Transactions in the navigation bar
@@ -1153,10 +1146,10 @@ features:
           - The newly created transaction appears with Amount $200.00 and Description 'Submit Test'
           - The Transaction ID matches the one returned in the success alert
       - id: TC081
-        title: Duplicate transaction submission — unique ID or duplicate detection
+        scenario: Duplicate transaction submission — unique ID or duplicate detection
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists with at least one card
         when:
@@ -1182,10 +1175,10 @@ features:
           - "Or if duplicate detection is implemented, a red error is displayed: 'Tran ID already exist' (TRN-02)"
           - No system crash or unhandled error occurs
       - id: TC082
-        title: Both Account ID and Card Number provided — transaction resolves correctly
+        scenario: Both Account ID and Card Number provided — transaction resolves correctly
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists with a known card number in cross-reference
         when:
@@ -1208,10 +1201,10 @@ features:
           - Both Account ID and Card Number are shown correctly in the summary
           - No cross-reference error is displayed
       - id: TC083
-        title: Account ID provided but mismatched Card Number — cross-reference mismatch error
+        scenario: Account ID provided but mismatched Card Number — cross-reference mismatch error
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Add Transaction form is open
           - Account 0000000011 exists; a card number belonging to a different account is known
         when:
@@ -1234,10 +1227,10 @@ features:
           - Confirmation box does not appear
           - No transaction is created
       - id: TC084
-        title: Negative test — navigate to Add Transaction as regular user and verify access is permitted
+        scenario: Negative test — navigate to Add Transaction as regular user and verify access is permitted
         given:
           - Seed data present
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
         when:
           - From the Main Menu, type 08 in the option field and press Enter
         then:
@@ -1247,18 +1240,15 @@ features:
   - name: Add Transaction Confirmation Flow
     testCases:
       - id: TC085
-        title: Valid data triggers confirmation box with full transaction summary
+        scenario: Valid data triggers confirmation box with full transaction summary
         given:
-          - Application is running at http://localhost:8020
+          - Application is running at the target URL
           - Seed data present; account 0000000011 exists with at least one associated card
-          - User USER0001 exists with password PASSWORD
+          - Regular User credentials are available
         when:
-          - Navigate to http://localhost:8020 and log in as USER0001 / PASSWORD
+          - Navigate to the target URL and login with Regular User credentials
           - Navigate to Add Transaction via Main Menu option 08 or nav link
-          - >-
-            Fill in Account ID = 0000000011, Type Code = 01, Category Code = 5411, Source = ONLINE, Description = Test
-            Purchase, Amount = 125.50, Merchant ID = 1234567890, Merchant Name = Test Store, Merchant City = New York,
-            Merchant ZIP = 10001, Original Date = today, Processing Date = today
+          - Fill in Account ID = 0000000011, Type Code = 01, Category Code = 5411, Source = ONLINE, Description = Test Purchase, Amount = 125.50, Merchant ID = 1234567890, Merchant Name = Test Store, Merchant City = New York, Merchant ZIP = 10001, Original Date = today, Processing Date = today
           - Click Review Transaction
         then:
           - A confirmation box appears with a yellow border
@@ -1269,10 +1259,10 @@ features:
             Date, Processing Date
           - "Two buttons are visible: Yes, Submit and No, Go Back"
       - id: TC086
-        title: Clicking No, Go Back returns to form with all values preserved
+        scenario: Clicking No, Go Back returns to form with all values preserved
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is filled with valid data and confirmation box is displayed
         when:
           - >-
@@ -1290,10 +1280,10 @@ features:
             Description, Amount, Merchant ID, Merchant Name, Merchant City, Merchant ZIP, Original Date, Processing Date
           - No transaction is created
       - id: TC087
-        title: Transaction does not exist in list after clicking No, Go Back
+        scenario: Transaction does not exist in list after clicking No, Go Back
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - A unique Description (e.g., NoSubmitTest_<timestamp>) is used to identify the transaction
         when:
           - Navigate to Add Transaction
@@ -1306,10 +1296,10 @@ features:
           - No transaction with Description NoSubmitTest_<timestamp> appears in the transaction list
           - The transaction was not persisted to the system
       - id: TC088
-        title: Clicking Yes, Submit creates the transaction and shows success alert
+        scenario: Clicking Yes, Submit creates the transaction and shows success alert
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is accessible
         when:
           - Navigate to Add Transaction
@@ -1325,10 +1315,10 @@ features:
           - The new Transaction ID is shown in the alert
           - The Add Transaction form clears to an empty state
       - id: TC089
-        title: Newly submitted transaction appears in the transaction list
+        scenario: Newly submitted transaction appears in the transaction list
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - A transaction with Description = ConfirmSubmitTest and Amount = 125.50 was just successfully submitted
         when:
           - Click Transactions in the navigation bar
@@ -1338,10 +1328,10 @@ features:
           - Amount is displayed as $125.50
           - The Transaction ID matches the one shown in the success alert
       - id: TC090
-        title: Confirmation box does not appear without clicking Review Transaction
+        scenario: Confirmation box does not appear without clicking Review Transaction
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is loaded
         when:
           - Navigate to Add Transaction
@@ -1352,10 +1342,10 @@ features:
           - The form remains in its editable state
           - No transaction is created
       - id: TC091
-        title: Multiple No, Go Back cycles followed by Yes, Submit creates exactly one transaction
+        scenario: Multiple No, Go Back cycles followed by Yes, Submit creates exactly one transaction
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is accessible
         when:
           - Navigate to Add Transaction
@@ -1372,10 +1362,10 @@ features:
           - No duplicate transactions are created from the prior cancelled confirmations
           - Green success alert was shown with a single Transaction ID upon final submission
       - id: TC092
-        title: Confirmation summary shows auto-resolved Card Number when only Account ID is provided
+        scenario: Confirmation summary shows auto-resolved Card Number when only Account ID is provided
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Account 0000000011 has at least one card in the cross-reference table
         when:
           - Navigate to Add Transaction
@@ -1389,10 +1379,10 @@ features:
             0000000011
           - Card Number field in the summary is not blank
       - id: TC093
-        title: Confirmation summary shows auto-resolved Account ID when only Card Number is provided
+        scenario: Confirmation summary shows auto-resolved Account ID when only Card Number is provided
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - A valid Card Number from seed data exists in the cross-reference table
         when:
           - Navigate to Add Transaction
@@ -1407,10 +1397,10 @@ features:
             entered Card Number
           - Account ID field in the summary is not blank
       - id: TC094
-        title: Amount displayed with dollar formatting in confirmation summary
+        scenario: Amount displayed with dollar formatting in confirmation summary
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is accessible
         when:
           - Navigate to Add Transaction
@@ -1420,10 +1410,10 @@ features:
           - Confirmation box appears
           - Amount is displayed as $1,250.75 in the summary (formatted with dollar sign and comma separator)
       - id: TC095
-        title: Negative test — form submission without Review Transaction step does not create transaction
+        scenario: Negative test — form submission without Review Transaction step does not create transaction
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - Add Transaction form is accessible
         when:
           - Navigate to Add Transaction
@@ -1436,10 +1426,10 @@ features:
           - No transaction is created without going through the Review Transaction confirmation step
           - The transaction does not appear in the transaction list
       - id: TC096
-        title: Transaction detail view shows correct data after confirmation and submission
+        scenario: Transaction detail view shows correct data after confirmation and submission
         given:
-          - Application is running at http://localhost:8020
-          - User USER0001 is logged in
+          - Application is running at the target URL
+          - Logged in with Regular User credentials
           - A transaction has been successfully submitted via the confirmation flow
         when:
           - Navigate to Transactions in the navigation bar
@@ -1457,14 +1447,14 @@ features:
   - name: Reports and Bill Payment
     testCases:
       - id: TC097
-        title: Navigate to Reports page from navigation bar
+        scenario: Navigate to Reports page from navigation bar
         given:
-          - User USER0001 exists with PASSWORD
-          - Application is running at http://localhost:8020
+          - Regular User credentials are available
+          - Application is running at the target URL
           - Seed transaction data is present
         when:
-          - Navigate to http://localhost:8020
-          - Log in as USER0001 / PASSWORD
+          - Navigate to the target URL
+          - Login with Regular User credentials
           - Click Reports in the navigation bar
         then:
           - Reports page loads successfully
@@ -1472,9 +1462,9 @@ features:
           - Form shows Report Type dropdown with options Monthly, Yearly, Custom
           - Start Date and End Date fields are pre-filled for the current month
       - id: TC098
-        title: Generate Monthly report with default date range
+        scenario: Generate Monthly report with default date range
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
           - At least one transaction exists within the current month
         when:
@@ -1486,9 +1476,9 @@ features:
           - "Confirmation message reads: Generate a Monthly report from <start> to <end>?"
           - "Two buttons are displayed: Yes, Generate and No, Cancel"
       - id: TC099
-        title: Confirm Monthly report generation and verify results
+        scenario: Confirm Monthly report generation and verify results
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open with Monthly type and current month dates
           - At least one transaction exists within the current month
         when:
@@ -1502,9 +1492,9 @@ features:
           - "A yellow total row appears at the bottom showing Total Amount: $X,XXX.XX"
           - Amounts are formatted as currency
       - id: TC100
-        title: Cancel report generation from confirmation box
+        scenario: Cancel report generation from confirmation box
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
         when:
           - Leave Report Type as Monthly
@@ -1515,9 +1505,9 @@ features:
           - No report table is rendered
           - User remains on the Reports page with the form intact
       - id: TC101
-        title: Generate Yearly report
+        scenario: Generate Yearly report
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
           - At least one transaction exists within the current year
         when:
@@ -1530,9 +1520,9 @@ features:
           - Yellow total row at bottom shows the summed Total Amount for the year
           - Confirmation message prior to generation referenced Yearly report type
       - id: TC102
-        title: Generate Custom report with a valid custom date range
+        scenario: Generate Custom report with a valid custom date range
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
           - Transactions exist within the chosen custom date range
         when:
@@ -1545,9 +1535,9 @@ features:
           - Report table appears showing only transactions within the specified custom date range
           - Yellow total row at bottom shows the correct Total Amount for the range
       - id: TC103
-        title: Generate report with End Date earlier than Start Date
+        scenario: Generate report with End Date earlier than Start Date
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
         when:
           - Select Custom from the Report Type dropdown
@@ -1559,9 +1549,9 @@ features:
           - No confirmation box appears
           - No report table is rendered
       - id: TC104
-        title: Generate report with no transactions in the selected date range
+        scenario: Generate report with no transactions in the selected date range
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Reports page is open
           - No transactions exist in the far-future date range
         when:
@@ -1574,9 +1564,9 @@ features:
           - Report table appears with no transaction rows, or an informational message indicating no transactions found
           - Total Amount row shows $0.00 or is absent
       - id: TC105
-        title: Navigate to Bill Payment page from navigation bar
+        scenario: Navigate to Bill Payment page from navigation bar
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
         when:
           - Click Bill-Pay in the navigation bar
         then:
@@ -1584,9 +1574,9 @@ features:
           - Form shows an Account ID input field and a Look Up button
           - No account information is displayed until a lookup is performed
       - id: TC106
-        title: Look up a valid account with a positive balance
+        scenario: Look up a valid account with a positive balance
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
           - Account 0000000011 exists with a balance greater than $0.00
         when:
@@ -1597,9 +1587,9 @@ features:
           - Pay Full Balance button is displayed with the payment amount shown
           - Balance is greater than $0.00
       - id: TC107
-        title: Pay full balance and verify success
+        scenario: Pay full balance and verify success
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
           - Account 0000000011 has a balance greater than $0.00
         when:
@@ -1615,9 +1605,9 @@ features:
             $X,XXX.XX
           - Account information section clears after successful payment
       - id: TC108
-        title: Cancel bill payment from confirmation box
+        scenario: Cancel bill payment from confirmation box
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
           - Account 0000000011 has a balance greater than $0.00
         when:
@@ -1630,9 +1620,9 @@ features:
           - Payment is NOT processed
           - Account Information section still shows the original balance
       - id: TC109
-        title: Look up account with zero balance
+        scenario: Look up account with zero balance
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
           - Account 0000000011 has been paid down to $0.00 balance
         when:
@@ -1643,9 +1633,9 @@ features:
           - Pay Full Balance button is NOT displayed
           - "Info message shown: You have nothing to pay. Your current balance is $0.00."
       - id: TC110
-        title: Look up a non-existent account in Bill Payment
+        scenario: Look up a non-existent account in Bill Payment
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
         when:
           - Enter 9999999999 in the Account ID field
@@ -1654,9 +1644,9 @@ features:
           - Red error message is displayed indicating the account was not found
           - No Account Information section or Pay Full Balance button is shown
       - id: TC111
-        title: Submit Bill Payment with empty Account ID field
+        scenario: Submit Bill Payment with empty Account ID field
         given:
-          - User USER0001 is logged in
+          - Logged in with Regular User credentials
           - Bill Payment page is open
         when:
           - Leave the Account ID field empty

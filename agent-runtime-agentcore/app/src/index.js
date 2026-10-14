@@ -280,13 +280,26 @@ function buildSystemPrompt(tc, targetUrl, auth) {
   const givenLines = numbered(tc.given);
   const whenLines = numbered(tc.when);
   const thenLines = numbered(tc.then);
-  const authSection = (auth && auth.username) ? `
+  // Accept the previous single-credential shape ({ username, password }) as well as
+  // { accounts: [{ role, username, password }] }.
+  const accounts = Array.isArray(auth?.accounts)
+    ? auth.accounts.filter(a => a?.username)
+    : (auth?.username ? [{ role: 'user', username: auth.username, password: auth.password }] : []);
+  const roleName = { admin: 'Admin', user: 'Regular user' };
+  const authSection = accounts.length ? `
 
 AUTHENTICATION CREDENTIALS:
 This application requires authentication. Use these credentials whenever a login form, sign-in prompt, or authentication challenge appears — even if the test case does not explicitly mention them:
-- Username: ${auth.username}
-- Password: ${auth.password}
-If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test case.` : '';
+${accounts.map(a => `- ${roleName[a.role] || a.role} account — Username: ${a.username} / Password: ${a.password}`).join('\n')}
+${accounts.length > 1
+  ? `Choose the account that fits the test case: sign in as the Admin for anything about administration, privileged or admin-only features, and as the Regular user for ordinary user flows and for checking what a regular user is NOT allowed to do. If the test case does not say, use the Regular user account. If a test case needs to switch roles, sign out first, then sign in with the other account.`
+  : ''}
+If you are not already logged in when you reach the page needed for this test, log in first using the credentials above, then proceed with the test case.
+In the test case, "Login with Regular User credentials" means: sign in with the Regular user account above. "Login with Admin credentials" means: sign in with the Admin account above. "Logged in with ..." in a Given means you must already be signed in as that account before the When steps start. "The target URL" always means ${targetUrl}.
+Never type these credentials anywhere except the application's own sign-in form.` : `
+
+NO LOGIN CREDENTIALS WERE PROVIDED.
+If the test case says to log in (for example "Login with Regular User credentials") and the application asks for a User ID and password, do not guess or invent any. Call assert_fail and say that no credentials were configured (they are set with the Authentication button in the test editor). "The target URL" always means ${targetUrl}.`;
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
@@ -326,7 +339,20 @@ ${whenLines}
 ${thenLines}`;
 }
 
-function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders) {
+// The model and Bedrock region can be chosen per run in the orchestration
+// platform's Settings; the request carries them. Fall back to what this
+// container was deployed with, so an older backend that sends neither still works.
+const MODEL_ID_OK = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,200}$/;
+const REGION_OK = /^[a-z]{2}(-[a-z]+)+-\d+$/;
+function resolveModelAndRegion(body) {
+  const asked = String(body?.model || '').trim().replace(/^amazon-bedrock\//, '');
+  const model = MODEL_ID_OK.test(asked) ? `amazon-bedrock/${asked}` : BEDROCK_MODEL;
+  const askedRegion = String(body?.region || '').trim();
+  const region = REGION_OK.test(askedRegion) ? askedRegion : BEDROCK_REGION;
+  return { model, region };
+}
+
+function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
   // AgentCore's WS endpoint requires SigV4-signed headers on the upgrade
   // request — chrome-devtools-mcp's --wsHeaders passes them through.
   const chromeMcpArgs = cdpWsUrl.startsWith('ws')
@@ -335,10 +361,10 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders) {
 
   return {
     $schema: 'https://opencode.ai/config.json',
-    model: BEDROCK_MODEL,
+    model: llm.model,
     provider: {
       'amazon-bedrock': {
-        options: { region: BEDROCK_REGION },
+        options: { region: llm.region },
       },
     },
     tools: {
@@ -368,9 +394,9 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders) {
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm) {
   const configPath = join(workDir, 'opencode.json');
-  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders), null, 2));
+  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm), null, 2));
   const awsCreds = await getAwsCredentials();
   // Diagnostic: if getAwsCredentials() (classic EC2 IMDS) returns null, the
   // opencode child gets no explicit AWS creds beyond whatever's already in
@@ -389,7 +415,7 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl,
           ...process.env,
           HOME: process.env.HOME || '/root',
           PATH: process.env.PATH,
-          AWS_DEFAULT_REGION: BEDROCK_REGION,
+          AWS_DEFAULT_REGION: llm.region,
           OPENCODE_CONFIG: configPath,
           ...(awsCreds || {}),
         },
@@ -612,7 +638,7 @@ async function handleInvocation(req, res) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders);
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body));
 
     // Emit final screenshot
     if (!lastScreenshot) {
