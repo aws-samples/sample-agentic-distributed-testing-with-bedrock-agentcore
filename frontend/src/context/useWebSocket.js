@@ -6,6 +6,11 @@ export function useWebSocket(onLog) {
   const { dispatch } = useApp()
   const wsRef = useRef(null)
   const reconnectTimer = useRef(null)
+  // Set when the page using this hook goes away. Without it, closing the socket
+  // in the cleanup fires onclose, which schedules a reconnect the cleanup already
+  // missed — that leaves an orphan socket, and every orphan delivers every server
+  // message again (the same Agent Log line, once per orphan).
+  const disposed = useRef(false)
 
   const addSessionLog = useCallback((feature, msg, type, kind) => {
     const ts = new Date().toLocaleTimeString()
@@ -17,7 +22,10 @@ export function useWebSocket(onLog) {
   }, [dispatch])
 
   const connect = useCallback(async () => {
+    if (disposed.current) return
     const url = await buildAuthedWsUrl('/ws')
+    // The page may have been left while the URL (and token) was being built.
+    if (disposed.current) return
     const ws = new WebSocket(url)
     wsRef.current = ws
 
@@ -26,6 +34,9 @@ export function useWebSocket(onLog) {
     }
 
     ws.onclose = () => {
+      // Closed on purpose (page left): say nothing and do not reconnect. A socket
+      // that is no longer the current one must never revive itself either.
+      if (disposed.current || wsRef.current !== ws) return
       onLog?.('WebSocket disconnected', 'warn')
       reconnectTimer.current = setTimeout(connect, 3000)
     }
@@ -33,6 +44,7 @@ export function useWebSocket(onLog) {
     ws.onerror = () => {}
 
     ws.onmessage = (evt) => {
+      if (disposed.current || wsRef.current !== ws) return   // a stale socket must not deliver anything
       try {
         handleMessage(JSON.parse(evt.data))
       } catch (e) {}
@@ -204,10 +216,14 @@ export function useWebSocket(onLog) {
   }, [dispatch, onLog, addSessionLog])
 
   useEffect(() => {
+    disposed.current = false       // StrictMode runs effect -> cleanup -> effect on the same hook
     connect()
     return () => {
+      disposed.current = true
       clearTimeout(reconnectTimer.current)
-      wsRef.current?.close()
+      const ws = wsRef.current
+      wsRef.current = null
+      ws?.close()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
