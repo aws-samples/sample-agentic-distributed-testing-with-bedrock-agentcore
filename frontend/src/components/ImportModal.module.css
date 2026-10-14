@@ -1,0 +1,15 @@
+.body { display: flex; flex-direction: column; gap: 16px; }
+.step { display: flex; gap: 12px; }
+.stepNum { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.stepBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.stepBody > :global(div):last-child { align-self: stretch; }
+.stepTitle { font-size: 13px; font-weight: 700; }
+.stepTitle span { font-weight: 400; color: var(--text-muted); font-size: 12px; }
+.sub { font-size: 12px; color: var(--text-muted); }
+.error { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.08); border-radius: 6px; color: var(--red); font-size: 12px; line-height: 1.5; }
+.errorText { white-space: pre-wrap; min-width: 0; }
+.ok { padding: 10px 12px; border: 1px solid rgba(63, 185, 80, 0.4); background: rgba(63, 185, 80, 0.07); border-radius: 6px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.ok :global(.material-symbols-rounded) { color: var(--green); vertical-align: middle; }
+.names { font-size: 11px; color: var(--text-muted); }
+.replace { font-size: 12px; color: var(--yellow); margin-top: 2px; }
+.replace :global(.material-symbols-rounded) { color: var(--yellow); }

@@ -4,7 +4,7 @@
  *
  * Why patch window.fetch instead of updating each call site: the codebase
  * has raw `fetch('/api/...')` calls in useApi.js plus several page/component
- * files (EditorPage, GenerateModal, TcEvidencePanel, AnalysisPage). A single
+ * files (EditorPage, FeatureModal, TcEvidencePanel, AnalysisPage). A single
  * interceptor guarantees every current AND future call site is covered
  * without hunting down each one — the alternative is a fetch wrapper that's
  * easy to forget to use in a new file.

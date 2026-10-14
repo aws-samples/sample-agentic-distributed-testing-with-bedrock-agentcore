@@ -26,19 +26,21 @@
   align-items: center;
 }
 
-.expandBtns { display: flex; gap: 2px; flex-shrink: 0; }
 .expandBtn {
-  padding: 2px 6px;
+  padding: 3px 5px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-muted);
-  font-size: 13px;
   cursor: pointer;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
   transition: all 0.1s;
 }
-.expandBtn:hover { border-color: var(--accent); color: var(--accent); }
+.expandBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.expandBtn:disabled { opacity: 0.4; cursor: default; }
 
 .searchInput {
   flex: 1;
@@ -113,21 +115,23 @@
   flex-shrink: 0;
 }
 
-.featureActions { margin-left: 2px; display: flex; gap: 4px; }
+.featureActions { margin-left: 2px; display: flex; gap: 2px; flex-shrink: 0; }
 
-.featureDelBtn {
-  opacity: 0;
-  padding: 2px 6px;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+/* Edit / add-test-case buttons on a feature header: always visible, muted until hovered */
+.featIconBtn {
+  padding: 2px;
   background: transparent;
-  color: var(--red);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0.7;
   cursor: pointer;
-  transition: opacity 0.1s;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.1s;
 }
-.featureHeader:hover .featureDelBtn { opacity: 1; }
-.featureDelBtn:hover { background: rgba(248,81,73,0.1); }
+.featureHeader:hover .featIconBtn { opacity: 1; }
+.featIconBtn:hover { color: var(--accent); border-color: var(--border); background: var(--surface); opacity: 1; }
 
 /* TC rows */
 .tcGroup { margin-bottom: 4px; }

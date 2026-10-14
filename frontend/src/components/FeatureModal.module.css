@@ -12,9 +12,13 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  width: 440px;
+  width: min(460px, 94vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
+.modalWide { width: min(660px, 94vw); }
 
 .header {
   padding: 15px 18px 11px;
@@ -31,9 +35,12 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .footer {
+  flex-shrink: 0;
   padding: 12px 18px;
   border-top: 1px solid var(--border);
   display: flex;
@@ -67,3 +74,71 @@
   width: 100%;
 }
 .input:focus { border-color: var(--accent); }
+
+.deleteWarn {
+  margin: 0 18px;
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+}
+.deleteWarn > span { color: var(--red); margin-top: 2px; }
+
+.optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.help { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.inputBad { border-color: var(--red); }
+.fieldError { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: var(--red); line-height: 1.45; }
+
+/* "Draft test cases from a spec" entry card */
+.draftCard { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; font-family: inherit; color: var(--text); background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.1s, background 0.1s; }
+.draftCard:hover, .draftCard:focus-visible { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); outline: none; }
+.draftCard > :global(.material-symbols-rounded):first-child { color: var(--accent); }
+.draftCard > :global(.material-symbols-rounded):last-child { color: var(--text-muted); margin-left: auto; }
+.draftText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.draftTitle { font-size: 13px; font-weight: 700; }
+.draftSub { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+
+/* spec panel */
+.specPanel { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.count { font-size: 11px; color: var(--text-muted); text-align: right; }
+.countOver { color: var(--red); }
+.sampleToggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; background: none; border: none; color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sampleToggle:hover { color: var(--accent); }
+.sampleBody { display: flex; flex-direction: column; gap: 8px; }
+.samplePre { margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+.specActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.specFooter { display: flex; gap: 8px; justify-content: flex-end; padding-top: 2px; }
+.errorBox { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.08); border-radius: 6px; color: var(--red); font-size: 12px; line-height: 1.5; }
+
+/* loading */
+.working { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 22px 0; text-align: center; }
+.workingText { font-size: 13px; font-weight: 600; }
+.spinner { display: inline-flex; color: var(--accent); animation: featSpin 0.9s linear infinite; }
+@keyframes featSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* drafted test cases */
+.cases { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: hidden; }
+.casesHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+.casesActions { display: inline-flex; gap: 12px; }
+.linkBtn { background: none; border: none; padding: 0; font-family: inherit; font-size: 12px; color: var(--accent); cursor: pointer; }
+.linkBtn:hover:not(:disabled) { text-decoration: underline; }
+.linkBtn:disabled { opacity: 0.5; cursor: default; }
+.caseList { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.caseItem { border-bottom: 1px solid var(--border); }
+.caseItem:last-child { border-bottom: none; }
+.caseRow { display: flex; align-items: center; gap: 4px; padding-right: 6px; }
+.caseTitle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 7px 10px; background: none; border: none; text-align: left; font-family: inherit; font-size: 13px; color: var(--text); cursor: pointer; }
+.caseTitle span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.caseTitle:hover { color: var(--accent); }
+.iconBtn { background: none; border: 1px solid transparent; border-radius: 4px; padding: 2px; color: var(--text-muted); cursor: pointer; display: inline-flex; }
+.iconBtn:hover:not(:disabled) { color: var(--red); border-color: var(--border); }
+.gherkin { padding: 2px 12px 10px 32px; font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.6; word-break: break-word; }
+.kw { color: var(--accent); font-weight: 700; }
+.gStep { padding-left: 16px; }

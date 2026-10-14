@@ -4,7 +4,10 @@ import NavBar from '../components/NavBar'
 import FeaturePanel from '../components/FeaturePanel'
 import FeatureModal from '../components/FeatureModal'
 import TcEditor from '../components/TcEditor'
-import GenerateModal from '../components/GenerateModal'
+import EditWithAiModal from '../components/EditWithAiModal'
+import AuthModal from '../components/AuthModal'
+import ImportModal from '../components/ImportModal'
+import { useApi } from '../context/useApi'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import { buildAuthedWsUrl } from '../context/authFetch'
@@ -20,6 +23,12 @@ function nextTcId(allFeatures) {
   return `TC${String(max + 1).padStart(3, '0')}`
 }
 
+// What the Authentication button shows: is a login configured, and for how many accounts.
+function summarizeAuth(a) {
+  const count = (a?.accounts || []).filter(x => x.username).length
+  return { enabled: !!a?.enabled, count }
+}
+
 function docForExport(doc) {
   return {
     ...doc,
@@ -27,7 +36,7 @@ function docForExport(doc) {
       name: m.name,
       ...(m.description ? { description: m.description } : {}),
       testCases: (m.testCases || []).map(tc => ({
-        id: tc.id, title: tc.title,
+        id: tc.id, scenario: tc.title,
         given: tc.given, when: tc.when, then: tc.then,
       })),
     })),
@@ -44,15 +53,13 @@ export default function EditorPage() {
   const [status, setStatus] = useState({ msg: '', kind: '' })
   const [featModalOpen, setFeatModalOpen] = useState(false)
   const [editingFeatIdx, setEditingFeatIdx] = useState(null)
-  const [generateModalOpen, setGenerateModalOpen] = useState(false)
+  const [addingToFeatIdx, setAddingToFeatIdx] = useState(null)   // feature the AI is drafting a new test case for
+  const api = useApi()
+  const [importModalOpen, setImportModalOpen] = useState(false)
   const [targetUrl, setTargetUrl] = useState('')
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
-  const [authEnabled, setAuthEnabled] = useState(false)
-  const [authUsername, setAuthUsername] = useState('')
-  const [authPassword, setAuthPassword] = useState('')
-  const [authPasswordSet, setAuthPasswordSet] = useState(false) // backend has a stored password
-  const [authDirty, setAuthDirty] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
   // Read-only mode while a test run is in progress
   const [activeFeatures, setActiveFeatures] = useState(new Set())
   const [anyRunningFromSnapshot, setAnyRunningFromSnapshot] = useState(false)
@@ -67,34 +74,8 @@ export default function EditorPage() {
       const cfg = await res.json()
       setTargetUrl(cfg.targetUrl || '')
       setTargetUrlDirty(false)
-      const a = cfg.auth || {}
-      setAuthEnabled(!!a.enabled)
-      setAuthUsername(a.username || '')
-      setAuthPasswordSet(!!a.passwordSet)
-      setAuthPassword('') // never echo from server; field starts empty
-      setAuthDirty(false)
+      setAuthSummary(summarizeAuth(cfg.auth))
     } catch { /* ignore */ }
-  }
-
-  const saveAuth = async () => {
-    try {
-      const body = { enabled: authEnabled, username: authUsername }
-      // Only send password if user typed one (don't clobber the stored one with empty)
-      if (authPassword !== '') body.password = authPassword
-      const res = await fetch('/api/config/auth', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) throw new Error(`${res.status}`)
-      const data = await res.json()
-      setAuthPasswordSet(!!data.auth?.passwordSet)
-      setAuthPassword('')
-      setAuthDirty(false)
-      setStatusMsg(authEnabled ? 'Authentication saved' : 'Authentication disabled', 'ok')
-    } catch (e) {
-      setStatusMsg('Save failed: ' + e.message, 'err')
-    }
   }
 
   const saveTargetUrl = async () => {
@@ -138,6 +119,10 @@ export default function EditorPage() {
       const parsed = jsyaml.load(text) || { features: [] }
       const loaded = parsed
       if (!loaded.features) loaded.features = []
+      // The file format says `scenario:`; the editor's state calls it `title`.
+      for (const f of loaded.features) for (const tc of f.testCases || []) {
+        if (tc.scenario !== undefined) { if (tc.title === undefined) tc.title = tc.scenario; delete tc.scenario }
+      }
       setDoc(loaded)
       setDirty(false)
       // Pre-select the first feature and its first test case (if any exist)
@@ -145,6 +130,7 @@ export default function EditorPage() {
       const firstFeat = loaded.features[0]
       const firstTc = firstFeat?.testCases?.[0]
       setSelectedFeatIdx(firstFeat ? 0 : null)
+      if (firstFeat) setExpandedFeatNames(new Set([firstFeat.name]))
       setSelectedTcId(firstTc ? firstTc.id : null)
       setStatusMsg('Loaded', 'ok')
       // Mark initial load complete so the auto-save effect doesn't fire on this setDoc.
@@ -183,54 +169,15 @@ export default function EditorPage() {
     a.click()
   }
 
-  // Called when generation completes — ask user to export first if there's existing data
-  const handleGenerated = (generatedDoc) => {
-    const hasExisting = doc.features.length > 0
-    if (hasExisting) {
-      const confirmed = window.confirm(
-        `This will replace your current ${doc.features.length} feature(s) and all their test cases.\n\n` +
-        `Click OK to replace, or Cancel to keep your current test suite.\n\n` +
-        `Tip: Export your current suite first (Export button) to save a backup.`
-      )
-      if (!confirmed) return
-    }
-    setDoc(generatedDoc)
+  // Called by the Import dialog once the file has been checked and the user confirms.
+  const handleImport = (parsed, fileName) => {
+    setDoc(parsed)
     setDirty(true)
     setSelectedFeatIdx(null)
     setSelectedTcId(null)
     setExpandedFeatNames(new Set())
-    setStatusMsg(`Generated ${generatedDoc.features.length} features with ${generatedDoc.features.reduce((s, m) => s + (m.testCases?.length || 0), 0)} test cases`, 'ok')
-  }
-
-  const importYamlFile = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const parsed = jsyaml.load(ev.target.result) || { features: [] }
-        if (!parsed.features && Array.isArray(parsed.modules)) parsed.features = parsed.modules   // pre-rename files
-        if (!parsed.features) throw new Error('Expected { features: [...] }')
-        // Accept YAML exported before the AI-enhanced BDD rename
-        for (const m of parsed.features) {
-          for (const tc of m.testCases || []) {
-            if (tc.given === undefined && tc.preconditions !== undefined) tc.given = tc.preconditions
-            if (tc.when === undefined && tc.steps !== undefined) tc.when = tc.steps
-            if (tc.then === undefined && tc.expectedResult !== undefined) tc.then = tc.expectedResult
-            delete tc.preconditions; delete tc.steps; delete tc.expectedResult
-          }
-        }
-        setDoc(parsed)
-        setDirty(true)
-        setSelectedFeatIdx(null)
-        setSelectedTcId(null)
-        setStatusMsg('Imported ' + file.name, 'ok')
-      } catch (err) {
-        setStatusMsg('YAML parse error: ' + err.message, 'err')
-      }
-    }
-    reader.readAsText(file)
-    e.target.value = ''
+    setImportModalOpen(false)
+    setStatusMsg('Imported ' + fileName, 'ok')
   }
 
   useEffect(() => {
@@ -330,28 +277,28 @@ export default function EditorPage() {
   const handleFeatureClick = (featName) => {
     const idx = doc.features.findIndex(m => m.name === featName)
     if (idx === -1) return
-    // Toggle tree expansion
+    // Only open / close the group. The right-hand panel keeps showing whatever
+    // is being edited; picking a test case (or Edit / +) is what changes it.
     setExpandedFeatNames(prev => {
       const next = new Set(prev)
       next.has(featName) ? next.delete(featName) : next.add(featName)
       return next
     })
-    // Select for editing
-    setSelectedFeatIdx(idx === selectedFeatIdx ? null : idx)
-    setSelectedTcId(null)
   }
 
   const handleTcClick = (tcId, featName) => {
     const idx = doc.features.findIndex(m => m.name === featName)
-    if (idx !== -1) setSelectedFeatIdx(idx)
+    if (idx !== -1) {
+      setSelectedFeatIdx(idx)
+      setExpandedFeatNames(p => new Set(p).add(featName))
+    }
     setSelectedTcId(prev => (prev === tcId && selectedFeatIdx === idx) ? null : tcId)
   }
 
+  // Confirmation happens inside the Edit Feature modal, so this deletes straight away.
   const handleDeleteFeat = (featName) => {
     const idx = doc.features.findIndex(m => m.name === featName)
     if (idx === -1) return
-    const feat = doc.features[idx]
-    if (!confirm(`Delete feature "${feat.name}" and all ${(feat.testCases || []).length} test cases?`)) return
     setDoc(prev => {
       const feats = [...prev.features]
       feats.splice(idx, 1)
@@ -359,7 +306,9 @@ export default function EditorPage() {
     })
     if (selectedFeatIdx === idx) { setSelectedFeatIdx(null); setSelectedTcId(null) }
     else if (selectedFeatIdx > idx) setSelectedFeatIdx(prev => prev - 1)
+    setExpandedFeatNames(prev => { const next = new Set(prev); next.delete(featName); return next })
     setDirty(true)
+    setStatusMsg('Feature deleted: ' + featName, 'ok')
   }
 
   const handleOpenAddFeat = () => {
@@ -372,44 +321,63 @@ export default function EditorPage() {
     setFeatModalOpen(true)
   }
 
-  const handleConfirmFeat = ({ name, description }) => {
+  const handleConfirmFeat = ({ name, description, testCases }) => {
     if (editingFeatIdx != null) {
       setDoc(prev => {
         const feats = [...prev.features]
+        const oldName = feats[editingFeatIdx].name
         feats[editingFeatIdx] = { ...feats[editingFeatIdx], name, description: description || undefined }
+        if (oldName !== name) {
+          setExpandedFeatNames(p => {
+            if (!p.has(oldName)) return p
+            const next = new Set(p); next.delete(oldName); next.add(name); return next
+          })
+        }
         return { ...prev, features: feats }
       })
       setStatusMsg('Feature updated', 'ok')
     } else {
       if (doc.features.find(m => m.name === name)) { setStatusMsg('Feature already exists', 'err'); return }
+      // Test cases drafted from a spec arrive without ids; number them after the highest existing one.
+      let max = 0
+      for (const f of doc.features) for (const t of f.testCases || []) {
+        const m = /^TC(\d+)$/.exec(t.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10))
+      }
+      const newCases = (testCases || []).map(tc => ({ ...tc, id: `TC${String(++max).padStart(3, '0')}` }))
       setDoc(prev => {
-        const feats = [...prev.features, { name, description, testCases: [] }]
+        const feats = [...prev.features, { name, description, testCases: newCases }]
         setSelectedFeatIdx(feats.length - 1)
-        setSelectedTcId(null)
+        setExpandedFeatNames(p => new Set(p).add(name))
+        setSelectedTcId(newCases[0]?.id ?? null)
         return { ...prev, features: feats }
       })
-      setStatusMsg('Feature added: ' + name, 'ok')
+      setStatusMsg(newCases.length ? `Added feature "${name}" with ${newCases.length} test case${newCases.length === 1 ? '' : 's'}` : 'Feature added: ' + name, 'ok')
     }
     setDirty(true)
     setFeatModalOpen(false)
   }
 
-  const handleAddTc = (featIdx) => {
+  // "+" on a feature opens the Edit-with-AI modal in create mode; nothing is added
+  // until the user confirms the draft (handleAddTc below).
+  const handleStartAddTc = (featIdx) => setAddingToFeatIdx(featIdx)
+
+  const handleAddTc = (featIdx, draft) => {
     setDoc(prev => {
       const feats = [...prev.features]
       const feat = { ...feats[featIdx] }
       if (!feat.testCases) feat.testCases = []
       const newTc = {
         id: nextTcId(prev.features),
-        title: 'New test case',
-        given: ['I am on the home page'],
-        when: ['I do something'],
-        then: ['I see the expected outcome'],
+        title: draft.title,
+        given: draft.given,
+        when: draft.when,
+        then: draft.then,
       }
       feat.testCases = [...feat.testCases, newTc]
       feats[featIdx] = feat
       setSelectedFeatIdx(featIdx)
       setSelectedTcId(newTc.id)
+      setExpandedFeatNames(p => new Set(p).add(feat.name))   // show the new case even if the feature was collapsed
       return { ...prev, features: feats }
     })
     setDirty(true)
@@ -449,12 +417,6 @@ export default function EditorPage() {
   const testCasesForPanel = {}
   doc.features.forEach(m => { testCasesForPanel[m.name] = m.testCases || [] })
 
-  const expandedFeature = selectedFeatIdx != null ? doc.features[selectedFeatIdx]?.name : null
-  // Keep expandedFeatNames in sync when selected feature changes
-  // (selecting a feature auto-expands it)
-  if (expandedFeature && !expandedFeatNames.has(expandedFeature)) {
-    expandedFeatNames.add(expandedFeature)
-  }
 
   // Nav right content
   const navRight = (
@@ -478,13 +440,10 @@ export default function EditorPage() {
       <Btn variant="primary" onClick={handleOpenAddFeat} disabled={readOnly}>
         <Icon name="add" />Add Feature
       </Btn>
-      <Btn onClick={() => setGenerateModalOpen(true)} disabled={readOnly}>
-        <Icon name="auto_awesome" />Generate from Spec
-      </Btn>
 
       <span className={styles.toolbarDivider} />
 
-      <Btn onClick={() => document.getElementById('importFileInput').click()} disabled={readOnly} title="Import test suite from YAML file">
+      <Btn onClick={() => setImportModalOpen(true)} disabled={readOnly} title="Import a test suite from a YAML file (template available)">
         <Icon name="upload_file" />Import
       </Btn>
       <Btn onClick={downloadYaml} title="Download current test suite as YAML">
@@ -493,13 +452,6 @@ export default function EditorPage() {
       <Btn onClick={loadFromBackend} title="Reload from backend, discarding any unsaved changes">
         <Icon name="refresh" />Reload
       </Btn>
-      <input
-        type="file"
-        id="importFileInput"
-        accept=".yaml,.yml"
-        style={{ display: 'none' }}
-        onChange={importYamlFile}
-      />
     </>
   )
 
@@ -508,45 +460,12 @@ export default function EditorPage() {
     if (selectedTc) {
       return (
         <>
-          <div className={styles.rightHeader}>
-                        <span className={styles.rightHeaderTitle}>{selectedFeat?.name}</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>›</span>
-            <span className={styles.rightHeaderId} style={{ color: 'var(--accent)' }}>{selectedTc.id}</span>
-            <span className={styles.rightHeaderSub}>{selectedTc.title}</span>
-          </div>
           <TcEditor
             tc={selectedTc}
             onApply={handleApplyTc}
             onDelete={handleDeleteTc}
             readOnly={readOnly}
           />
-        </>
-      )
-    }
-
-    if (selectedFeat) {
-      const tcs = selectedFeat.testCases || []
-      return (
-        <>
-          <div className={styles.rightHeader}>
-            <span className={styles.rightHeaderTitle}>{selectedFeat.name}</span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {tcs.length} test case{tcs.length !== 1 ? 's' : ''}
-            </span>
-            <Btn size="sm" onClick={() => handleOpenEditFeat(selectedFeatIdx)} disabled={readOnly}><Icon name="edit" />Edit Feature</Btn>
-          </div>
-          <div className={styles.background}>
-            <div className={styles.backgroundLabel}>Background <span>— shared setup, runs before every scenario in this feature</span></div>
-            {selectedFeat.description
-              ? <div className={styles.backgroundText}>{selectedFeat.description}</div>
-              : <div className={styles.backgroundEmpty}>None yet. Click <strong>Edit Feature</strong> to add the setup every scenario here starts from, e.g. “Given the app is running and I am signed in”.</div>}
-          </div>
-          <div style={{ padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>
-            Select a test case from the left panel to edit it, or click{' '}
-            <strong>Add Test Case</strong>.
-            <br /><br />
-            <Btn variant="primary" onClick={() => handleAddTc(selectedFeatIdx)} disabled={readOnly}><Icon name="add" />Add Test Case</Btn>
-          </div>
         </>
       )
     }
@@ -559,8 +478,8 @@ export default function EditorPage() {
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
         </svg>
-        <div style={{ fontSize: 14 }}>Select a feature or test case to edit</div>
-        <div style={{ fontSize: 12 }}>Or click <strong>+ Add Feature</strong> to create one</div>
+        <div style={{ fontSize: 14 }}>Select a test case to edit</div>
+        <div style={{ fontSize: 12 }}>Use <strong>+</strong> on a feature to add one, or <strong>+ Add Feature</strong> to start a new group (it can draft test cases from a spec)</div>
       </div>
     )
   }
@@ -600,71 +519,18 @@ export default function EditorPage() {
         >
           <Icon name="save" />{targetUrlDirty ? 'Save URL' : 'Saved'}
         </Btn>
-        <span className={styles.targetHint}>
-          The application your test cases will run against
-        </span>
-      </div>
-
-      {/* Authentication bar — credentials injected into every test's system prompt */}
-      <div className={styles.authBar}>
-        <label className={styles.authToggle}>
-          <input
-            type="checkbox"
-            checked={authEnabled}
-            onChange={(e) => { setAuthEnabled(e.target.checked); setAuthDirty(true) }}
-            disabled={readOnly}
-          />
-          <Icon name="lock" />
-          <span>Need authentication</span>
-        </label>
-
-        {authEnabled && (
-          <>
-            <input
-              type="text"
-              className={styles.authInput}
-              placeholder="Username"
-              value={authUsername}
-              onChange={(e) => { setAuthUsername(e.target.value); setAuthDirty(true) }}
-              autoComplete="off"
-              disabled={readOnly}
-            />
-            <div className={styles.authPasswordWrap}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className={styles.authInput}
-                placeholder={authPasswordSet ? '••••••• (stored)' : 'Password'}
-                value={authPassword}
-                onChange={(e) => { setAuthPassword(e.target.value); setAuthDirty(true) }}
-                autoComplete="new-password"
-                disabled={readOnly}
-              />
-              <button
-                type="button"
-                className={styles.eyeBtn}
-                onClick={() => setShowPassword(s => !s)}
-                title={showPassword ? 'Hide' : 'Show'}
-                disabled={readOnly}
-              >
-                <Icon name={showPassword ? 'visibility_off' : 'visibility'} />
-              </button>
-            </div>
-          </>
-        )}
-
         <Btn
           size="sm"
-          variant={authDirty ? 'primary' : ''}
-          disabled={!authDirty || readOnly}
-          onClick={saveAuth}
+          onClick={() => setAuthModalOpen(true)}
+          title={authSummary.enabled
+            ? `Authentication is on (${authSummary.count} account${authSummary.count === 1 ? '' : 's'}) — click to edit`
+            : 'Set the admin / user logins the agent should use'}
         >
-          <Icon name="save" />{authDirty ? 'Save Auth' : 'Saved'}
+          <Icon name="lock" />Authentication
+          {authSummary.enabled && authSummary.count > 0 && <span className={styles.authBadge}>{authSummary.count}</span>}
         </Btn>
-
-        <span className={styles.authHint}>
-          {authEnabled
-            ? 'Agents will log in with these credentials when any test page requires it'
-            : 'Enable to give the agent login credentials for the target app'}
+        <span className={styles.targetHint}>
+          The application your test cases will run against
         </span>
       </div>
 
@@ -676,10 +542,13 @@ export default function EditorPage() {
           selectedTcId={selectedTcId}
           onFeatureClick={handleFeatureClick}
           onTcClick={handleTcClick}
-          onFeatureDelete={readOnly ? null : handleDeleteFeat}
+          onFeatureEdit={readOnly ? null : (featName) => {
+            const idx = doc.features.findIndex(m => m.name === featName)
+            if (idx !== -1) handleOpenEditFeat(idx)
+          }}
           onTcAdd={readOnly ? null : (featName) => {
             const idx = doc.features.findIndex(m => m.name === featName)
-            if (idx !== -1) handleAddTc(idx)
+            if (idx !== -1) handleStartAddTc(idx)
           }}
           onExpandAll={() => setExpandedFeatNames(new Set(doc.features.map(m => m.name)))}
           onCollapseAll={() => setExpandedFeatNames(new Set())}
@@ -695,18 +564,47 @@ export default function EditorPage() {
         </div>
       </div>
 
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImport={handleImport}
+        existingCount={doc.features.length}
+      />
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        readOnly={readOnly}
+        onSaved={(a) => { setAuthSummary(summarizeAuth(a)); setStatusMsg(a.enabled ? 'Authentication saved' : 'Authentication disabled', 'ok') }}
+      />
+      <EditWithAiModal
+        open={addingToFeatIdx != null}
+        mode="create"
+        onClose={() => setAddingToFeatIdx(null)}
+        feature={addingToFeatIdx != null ? {
+          name: doc.features[addingToFeatIdx]?.name,
+          background: doc.features[addingToFeatIdx]?.description,
+          existingTitles: (doc.features[addingToFeatIdx]?.testCases || []).map(t => t.title),
+        } : null}
+        api={api}
+        onSave={(draft) => {
+          const idx = addingToFeatIdx
+          setAddingToFeatIdx(null)
+          if (idx != null) handleAddTc(idx, draft)
+        }}
+      />
       <FeatureModal
         open={featModalOpen}
         onClose={() => setFeatModalOpen(false)}
         onConfirm={handleConfirmFeat}
+        onDelete={() => {
+          const name = doc.features[editingFeatIdx]?.name
+          setFeatModalOpen(false)
+          if (name) handleDeleteFeat(name)
+        }}
         editFeature={editingFeatIdx != null ? doc.features[editingFeatIdx] : null}
+        existingNames={doc.features.filter((_, i) => i !== editingFeatIdx).map(f => f.name)}
       />
 
-      <GenerateModal
-        open={generateModalOpen}
-        onClose={() => setGenerateModalOpen(false)}
-        onGenerated={handleGenerated}
-      />
     </div>
   )
 }

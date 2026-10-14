@@ -28,8 +28,10 @@ export function useApi() {
     updateTargetUrl: (url) => apiCall('PATCH', '/api/config/target-url', { url }),
     updateRegions: (regions) => apiCall('PATCH', '/api/config/regions', regions),
     getKnownRegions: () => apiCall('GET', '/api/config/regions/known'),
-    enhanceCase: (testCase, { focus = [], instruction = '' } = {}) => apiCall('POST', '/api/generate/enhance-case', { testCase, focus, instruction }),
-    checkModelHealth: (model) => apiCall('POST', '/api/model/health-check', { model }),
+    editWithAi: ({ mode = 'edit', testCase, feature, focus = [], instruction = '' }) =>
+      apiCall('POST', '/api/generate/edit-with-ai', { mode, testCase, feature, focus, instruction }),
+    checkModelHealth: (model, region) => apiCall('POST', '/api/model/health-check', { model, region }),
+    updateAgent: ({ model, region }) => apiCall('PATCH', '/api/config/agent', { model, region }),
     requestAnalysis: (testCase, stepResults, failureDetails) =>
       apiCall('POST', '/api/analysis/bug-fix', { testCase, stepResults, failureDetails }),
     exportYaml: async () => {

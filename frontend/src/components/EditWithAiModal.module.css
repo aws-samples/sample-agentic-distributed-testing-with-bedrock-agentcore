@@ -50,3 +50,8 @@
 .asked { font-size: 12px; color: var(--text-muted); }
 
 .ask { min-width: 0; }
+
+.presetsLabel { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.bgNote { font-size: 12px; color: var(--text-muted); padding: 8px 10px; border: 1px dashed var(--border); border-radius: 6px; white-space: pre-wrap; max-height: 90px; overflow-y: auto; }
+
+.rowHeader { padding-left: 8px; text-indent: 0; margin-top: 4px; }

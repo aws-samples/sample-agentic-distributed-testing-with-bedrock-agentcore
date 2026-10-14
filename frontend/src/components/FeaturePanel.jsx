@@ -15,8 +15,8 @@ function toArr(v) {
  * showTcDetail           runner/focus: TC rows are expanders; clicking expands
  *                         a read-only detail pane inline. Includes Expand All /
  *                         Collapse All controls in the filter bar.
- * onFeatureDelete         editor: ✕ delete on feature header
- * onTcAdd                editor: + Add TC inside expanded feature
+ * onFeatureEdit           editor: pencil on the feature header (rename / edit Background / delete)
+ * onTcAdd                editor: + on the feature header adds a test case to that feature
  *
  * expandedFeature         editor: controlled single-feature expansion
  *                        runner/focus: ignored — panel manages its own Set
@@ -35,7 +35,7 @@ export default function FeaturePanel({
   // Callbacks
   onFeatureClick,
   onTcClick,
-  onFeatureDelete,
+  onFeatureEdit,
   onTcAdd,
   onExpandAll,   // editor: called to expand all features
   onCollapseAll, // editor: called to collapse all features
@@ -118,6 +118,9 @@ export default function FeaturePanel({
     }
   }
 
+  // One button toggles: collapse when every feature is open, otherwise expand all.
+  const allExpanded = features.length > 0 && features.every(f => isFeatExpanded(f))
+
   // Editor: selectedTcId from parent; runner/focus: not used (detail is inside TC expander)
   const selectedTcId = !showTcDetail ? externalSelectedTcId : null
 
@@ -134,10 +137,16 @@ export default function FeaturePanel({
           onChange={(e) => onSearchChange?.(e.target.value)}
         />
         {(showTcDetail || showExpandControls) && (
-          <div className={styles.expandBtns}>
-            <button className={styles.expandBtn} onClick={expandAll} title="Expand all features">⊞</button>
-            <button className={styles.expandBtn} onClick={collapseAll} title="Collapse all">⊟</button>
-          </div>
+          <button
+            type="button"
+            className={styles.expandBtn}
+            onClick={allExpanded ? collapseAll : expandAll}
+            disabled={features.length === 0}
+            title={allExpanded ? 'Collapse all features' : 'Expand all features'}
+            aria-label={allExpanded ? 'Collapse all features' : 'Expand all features'}
+          >
+            <Icon name={allExpanded ? 'unfold_less' : 'unfold_more'} size={16} />
+          </button>
         )}
       </div>
 
@@ -175,15 +184,28 @@ export default function FeaturePanel({
                 {showSessionIndicators && <div className={indClass} />}
                 <span className={styles.featName}>{feat}</span>
                 <span className={styles.count}>{tcs.length}</span>
-                <div className={styles.featureActions}>
-                  {onFeatureDelete && (
-                    <button
-                      className={styles.featureDelBtn}
-                      onClick={(e) => { e.stopPropagation(); onFeatureDelete(feat) }}
-                      title="Delete feature"
-                    ><Icon name="close" size={13} /></button>
-                  )}
-                </div>
+                {(onFeatureEdit || onTcAdd) && (
+                  <div className={styles.featureActions}>
+                    {onFeatureEdit && (
+                      <button
+                        type="button"
+                        className={styles.featIconBtn}
+                        onClick={(e) => { e.stopPropagation(); onFeatureEdit(feat) }}
+                        title="Edit feature"
+                        aria-label={`Edit feature ${feat}`}
+                      ><Icon name="edit" size={14} /></button>
+                    )}
+                    {onTcAdd && (
+                      <button
+                        type="button"
+                        className={styles.featIconBtn}
+                        onClick={(e) => { e.stopPropagation(); onTcAdd(feat) }}
+                        title="Add test case"
+                        aria-label={`Add test case to ${feat}`}
+                      ><Icon name="add" size={15} /></button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {featExpanded && (
@@ -262,13 +284,6 @@ export default function FeaturePanel({
                     </div>
                   )}
 
-                  {onTcAdd && (
-                    <div style={{ padding: '4px 8px 6px' }}>
-                      <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => onTcAdd(feat)}>
-                        <Icon name="add" />Add Test Case
-                      </button>
-                    </div>
-                  )}
                 </>
               )}
             </div>

@@ -174,38 +174,9 @@
   color: var(--text-muted);
 }
 
-.rightHeader {
-  padding: 11px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
-.rightHeaderId {
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--surface2);
-  padding: 3px 7px;
-  border-radius: 3px;
-}
 
-.rightHeaderTitle {
-  font-size: 15px;
-  font-weight: 700;
-}
 
-.rightHeaderSub {
-  font-size: 12px;
-  color: var(--text-muted);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .targetBar {
   display: flex;
@@ -247,77 +218,17 @@
   margin-left: auto;
 }
 
-.authBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 16px;
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.authToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  user-select: none;
-}
-.authToggle input[type="checkbox"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.authToggle :global(.material-symbols-rounded) {
-  color: var(--text-muted);
-  font-size: 16px;
-}
-
-.authInput {
-  padding: 6px 9px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-size: 12px;
-  font-family: monospace;
-  width: 180px;
-  outline: none;
-}
-.authInput:focus { border-color: var(--accent); }
-
-.authPasswordWrap {
-  position: relative;
-  display: inline-block;
-}
-.authPasswordWrap .authInput {
-  padding-right: 30px;
-  width: 200px;
-}
-.eyeBtn {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  padding: 3px;
-  display: flex;
-  align-items: center;
-}
-.eyeBtn :global(.material-symbols-rounded) { font-size: 16px; }
-.eyeBtn:hover { color: var(--text); }
-
-.authHint {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-left: auto;
+.authBadge {
+  margin-left: 2px;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
 }
 
 /* Read-only banner shown while a test run is in progress */
@@ -349,9 +260,3 @@
   margin: 0 2px;
   align-self: center;
 }
-
-.background { margin: 14px 20px 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-.backgroundLabel { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.backgroundLabel span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
-.backgroundText { font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
-.backgroundEmpty { font-size: 12px; color: var(--text-muted); }
