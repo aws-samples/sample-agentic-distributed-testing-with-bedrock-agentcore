@@ -9,7 +9,8 @@ function applyTheme(theme) {
 export function useTheme() {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
-    return saved === 'light' ? 'light' : 'dark'
+    // Light unless the user has chosen dark.
+    return saved === 'dark' ? 'dark' : 'light'
   })
 
   // Apply on mount and whenever theme changes

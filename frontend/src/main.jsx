@@ -6,7 +6,7 @@ import './styles/global.css'
 
 // Apply saved theme before first render to avoid flash
 const savedTheme = localStorage.getItem('app-theme')
-document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark')
+document.documentElement.setAttribute('data-theme', savedTheme === 'dark' ? 'dark' : 'light')
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
