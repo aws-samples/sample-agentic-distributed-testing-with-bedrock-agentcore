@@ -21,6 +21,10 @@ The frontend, backend, and sample-app are **intentionally simple Docker deployme
 
 Features contain test cases (Gherkin scenarios: `given` / `when` / `then`). A Feature's `description` is its Background — shared setup sent to the agent with every scenario in it. Test case ids are global and sequential (`TC001`, …); never derive an id from a feature. The word "module" was retired in favour of "feature" everywhere (DB, API `/api/features`, YAML `features:`, UI); `db.js` migrates old databases on start-up.
 
+## Writing test cases
+
+Never put the app's URL or a username/password in a test case. Write "the target URL", "Login with Regular User credentials", "Login with Admin credentials" (and "Logged in with ..." for a Given). The backend sends the Target URL and the Authentication accounts to the runtime with every run and the runtime prompt (`buildSystemPrompt`, both runtimes) explains the phrases. The same rule is in the AI prompts in `backend/src/routes/generate.js`. `backend/src/state/seed.yaml` follows it. Wrong-password / unknown-user negative tests may still write the bad value they test with.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
@@ -28,7 +32,7 @@ The orchestration platform is one app that can drive either runtime — selectab
 - `AGENT_MODE=local` → `agent-runtime-local/`: OpenCode + local Chromium managed via CDP
 - `AGENT_MODE=agentcore` → AWS AgentCore Runtime running `agent-runtime-agentcore/`: OpenCode + AgentCore Browser (managed Chrome)
 
-Agent Mode, the Bedrock model and the Bedrock inference region are runtime-configurable from the frontend's Settings modal. The AgentCore Runtime/Browser region is fixed at deploy time by `init-agentcore-runtime.sh` and shown read-only in Settings. Connect never deploys the runtime — it must already exist. See `backend/src/state/store.js` for the full config surface and `README.md` for the environment variable defaults.
+Settings has two sections. *Orchestration platform*: theme, and the Bedrock model + region the backend uses for its own AI (Edit with AI, drafting from a spec) — `config.bedrockModel` / `bedrockRegion`. *Testing AI agent*: mode, and the Bedrock model + region the agent runs on — `config.agentModel` / `agentRegion`, sent in every run request and applied by both runtimes (`resolveModelAndRegion`), falling back to the env they started with. Keep the two pairs separate. The AgentCore Runtime/Browser region is fixed at deploy time by `init-agentcore-runtime.sh` and shown read-only in Settings. Connect never deploys the runtime — it must already exist. See `backend/src/state/store.js` for the full config surface and `README.md` for the environment variable defaults.
 
 ## Safety
 
