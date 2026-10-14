@@ -1,0 +1,14 @@
+.section { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px 14px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+.sectionTitle { margin: 0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; color: var(--text); }
+.sectionTitle :global(.material-symbols-rounded) { color: var(--accent); }
+.sectionSub { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: -6px; }
+.sectionSub strong { color: var(--text); font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin-top: 2px; }
+.hint code { font-family: 'Courier New', monospace; }
+.check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.themeBtn { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; padding: 8px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 13px; font-family: inherit; }
+.themeBtn:hover { border-color: var(--accent); }
+.readonly { font-size: 12px; padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; }
+.error { font-size: 12px; color: var(--red); }
