@@ -3,6 +3,7 @@ import Modal from './Modal'
 import Btn from './Btn'
 import Icon from './Icon'
 import styles from './SettingsModal.module.css'
+import EnvVarsEditor, { validateEnvVars, cleanEnvVars } from './EnvVarsEditor'
 import { ModelRegionPicker, MODEL_IDS, KNOWN_REGIONS_FALLBACK, toChoice, fromChoice } from './ModelRegionPicker'
 
 /**
@@ -23,6 +24,11 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const [aRegion, setARegion] = useState({ choice: '', custom: '' })
   const [browserRegion, setBrowserRegion] = useState('')
   const [saved, setSaved] = useState({ pModel: '', pRegion: '', aModel: '', aRegion: '' })
+  const [envRows, setEnvRows] = useState([])
+  const [envLimits, setEnvLimits] = useState({ value: 2000, description: 500 })
+  const [envReserved, setEnvReserved] = useState(['TARGET_URL'])
+  const [envSaved, setEnvSaved] = useState('[]')
+  const [builtIn, setBuiltIn] = useState([])
   const [status, setStatus] = useState({ kind: 'loading' })      // loading | idle | saving | error
 
   useEffect(() => {
@@ -33,7 +39,9 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
     Promise.all([
       api.getConfig(),
       api.getKnownRegions?.().catch(() => null),
-    ]).then(([cfg, regions]) => {
+      api.getEnvVars().catch(() => null),
+      api.getAuth().catch(() => null),
+    ]).then(([cfg, regions, env, auth]) => {
       if (cancelled) return
       const known = regions?.regions?.length ? regions.regions : KNOWN_REGIONS_FALLBACK
       setKnownRegions(known)
@@ -42,6 +50,15 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       setAModel(toChoice(cfg.agentModel, MODEL_IDS))
       setARegion(toChoice(cfg.agentRegion, known))
       setBrowserRegion(cfg.browserRegion || '')
+      const rows = (env?.variables || []).map(v => ({ name: v.name, value: v.value, description: v.description, secret: !!v.secret }))
+      setEnvRows(rows); setEnvSaved(JSON.stringify(cleanEnvVars(rows)))
+      if (env?.limits) setEnvLimits(env.limits)
+      if (env?.reserved) setEnvReserved(env.reserved)
+      const accts = (auth?.accounts || []).filter(a => a.username)
+      setBuiltIn([
+        { name: 'TARGET_URL', value: cfg.targetUrl, where: 'Test Editor → Target URL', description: 'The application under test; the agent always starts here.' },
+        { name: 'LOGINS', value: auth?.enabled ? (accts.length ? accts.map(a => `${a.role === 'admin' ? 'Admin' : 'Regular user'}: ${a.username}`).join(' · ') : 'on, but no username set') : 'off — no login given to the agent', where: 'Test Editor → Authentication', description: 'Admin and Regular user sign-ins.' },
+      ])
       setSaved({ pModel: cfg.model || '', pRegion: cfg.bedrockRegion || '', aModel: cfg.agentModel || '', aRegion: cfg.agentRegion || '' })
       setStatus({ kind: 'idle' })
     }).catch(e => !cancelled && setStatus({ kind: 'error', error: `Couldn't load settings: ${e.message}` }))
@@ -51,9 +68,12 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const ids = { pModel: fromChoice(pModel), pRegion: fromChoice(pRegion), aModel: fromChoice(aModel), aRegion: fromChoice(aRegion) }
   const missing = !ids.pModel || !ids.pRegion || !ids.aModel || !ids.aRegion
   const busy = status.kind === 'loading' || status.kind === 'saving'
+  const envErrors = validateEnvVars(envRows, envReserved, envLimits)
+  const envInvalid = Object.keys(envErrors).length > 0
+  const envDirty = JSON.stringify(cleanEnvVars(envRows)) !== envSaved
 
   const handleSave = async () => {
-    if (missing) return
+    if (missing || envInvalid) return
     setStatus({ kind: 'saving' })
     try {
       // Only send what changed, so an unrelated save never rewrites a value.
@@ -61,6 +81,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       if (ids.aModel !== saved.aModel || ids.aRegion !== saved.aRegion) {
         await api.updateAgent({ model: ids.aModel, region: ids.aRegion })
       }
+      if (envDirty) await api.saveEnvVars(cleanEnvVars(envRows))
       let savedMode = currentMode
       if (mode !== currentMode) { await api.updateMode(mode); savedMode = mode }
       await onSave({ model: ids.pModel, mode: savedMode })
@@ -75,11 +96,11 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       open={open}
       onClose={onClose}
       title="Settings"
-      width="min(560px, 94vw)"
+      width="min(820px, 94vw)"
       footer={
         <>
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" disabled={busy || missing} onClick={handleSave}>Save</Btn>
+          <Btn variant="primary" disabled={busy || missing || envInvalid} onClick={handleSave}>Save</Btn>
         </>
       }
     >
@@ -125,6 +146,14 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
           onChange={(p) => { if (p.model) setAModel(p.model); if (p.region) setARegion(p.region) }}
           regionNote="Where the agent's model calls go. This is separate from where the AgentCore Runtime and its browser run."
         />
+
+        <div className={styles.field}>
+          <label className={styles.label}>Context variables</label>
+          <div className={styles.hint} style={{ marginTop: 0 }}>
+            Named values handed to the agent on every run. Add a description saying <strong>when</strong> to use each one, so the agent knows whether it applies to a test.
+          </div>
+          <EnvVarsEditor rows={envRows} onChange={setEnvRows} builtIn={builtIn} errors={envErrors} disabled={busy} />
+        </div>
 
         {mode === 'agentcore' && (
           <div className={styles.field}>

@@ -1,0 +1,32 @@
+.wrap { display: flex; flex-direction: column; gap: 8px; }
+.builtIn { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
+.bRow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--border); min-width: 0; }
+.bRow:last-child { border-bottom: none; }
+.bName { font-family: 'Courier New', monospace; font-weight: 700; flex-shrink: 0; }
+.bValue { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.bTag { font-size: 10px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; white-space: nowrap; flex-shrink: 0; }
+.empty { font-size: 12px; color: var(--text-muted); line-height: 1.5; padding: 2px 2px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.bad { border-color: var(--red); }
+.line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.name { flex: 0 0 200px; width: 200px; min-width: 0; font-family: 'Courier New', monospace; text-transform: none; }
+.eq { color: var(--text-muted); }
+.valueWrap { position: relative; flex: 1; min-width: 0; }
+.value { width: 100%; box-sizing: border-box; padding-right: 30px; font-family: 'Courier New', monospace; }
+.eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 3px; display: flex; }
+.eye:hover { color: var(--text); }
+.del { background: none; border: 1px solid transparent; border-radius: 4px; padding: 3px; color: var(--text-muted); cursor: pointer; display: inline-flex; }
+.del:hover:not(:disabled) { color: var(--red); border-color: var(--border); }
+.desc { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; font-size: 12px; }
+.foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 11px; }
+.secret { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); cursor: pointer; }
+.warn { color: var(--yellow); }
+.err { color: var(--red); margin-left: auto; }
+
+/* Narrow screens: stack name above value so neither gets cramped. */
+@media (max-width: 560px) {
+  .line { flex-wrap: wrap; }
+  .name { flex: 1 1 100%; width: 100%; }
+  .eq { display: none; }
+  .valueWrap { flex: 1 1 0; }
+}

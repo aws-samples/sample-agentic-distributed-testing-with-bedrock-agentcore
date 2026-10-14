@@ -79,6 +79,22 @@ export function normalizeAuth(a) {
   };
 }
 
+// Context variables: named values (with a description saying WHEN to use them) that
+// are handed to the testing agent on every run, next to the built-in ones (the
+// Target URL and the Authentication logins).
+export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export const RESERVED_ENV_NAMES = ['TARGET_URL'];   // built in
+export const ENV_LIMITS = { count: 50, value: 2000, description: 500 };
+export function normalizeEnvVars(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, ENV_LIMITS.count).map(v => ({
+    name: String(v?.name || '').trim(),
+    value: String(v?.value ?? '').slice(0, ENV_LIMITS.value),
+    description: String(v?.description ?? '').slice(0, ENV_LIMITS.description),
+    secret: !!v?.secret,
+  })).filter(v => ENV_NAME_RE.test(v.name));
+}
+
 // Bedrock model ids are stored bare ("global.anthropic.claude-sonnet-5"); the
 // runtimes add the "amazon-bedrock/" prefix OpenCode wants.
 export const bareModelId = (id) => String(id || '').trim().replace(/^amazon-bedrock\//, '');
@@ -100,6 +116,7 @@ export const config = {
   // AgentCore Runtime ARN — pinned by env in docker-compose. Region implied by the ARN.
   agentcoreRuntimeArn: _persisted.agentcoreRuntimeArn ?? process.env.AGENTCORE_RUNTIME_ARN ?? null,
   auth:         normalizeAuth(_persisted.auth),
+  envVars:      normalizeEnvVars(_persisted.envVars),
 };
 
 // If no persisted browser region and no env override, try to match the EC2 host
@@ -120,6 +137,7 @@ export function saveConfig() {
       const persist = {
         targetUrl:           config.targetUrl,
         auth:                config.auth,
+        envVars:             config.envVars,
         bedrockModel:        config.bedrockModel,
         bedrockRegion:       config.bedrockRegion,
         agentModel:          config.agentModel,

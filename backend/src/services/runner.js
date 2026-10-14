@@ -91,6 +91,8 @@ export async function invokeRuntime(tc, runId, sessionId) {
     // these instead of the values it was started with.
     model: config.agentModel,
     region: config.agentRegion,
+    // Context variables (name, value, when-to-use description) for the agent's prompt.
+    env: config.envVars.map(({ name, value, description }) => ({ name, value, description })),
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in

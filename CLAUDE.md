@@ -25,6 +25,10 @@ Features contain test cases (Gherkin scenarios: `given` / `when` / `then`). A Fe
 
 Never put the app's URL or a username/password in a test case. Write "the target URL", "Login with Regular User credentials", "Login with Admin credentials" (and "Logged in with ..." for a Given). The backend sends the Target URL and the Authentication accounts to the runtime with every run and the runtime prompt (`buildSystemPrompt`, both runtimes) explains the phrases. The same rule is in the AI prompts in `backend/src/routes/generate.js`. `backend/src/state/seed.yaml` follows it. Wrong-password / unknown-user negative tests may still write the bad value they test with.
 
+## Context variables
+
+Settings → Testing AI agent has user-defined context variables (`config.envVars`: name, value, description, secret flag). They go to the runtime in every run request as `env` and both runtimes render them in a `CONTEXT VARIABLES:` prompt section next to the built-in `TARGET_URL`; the description tells the agent *when* to use each one. Values are served only from `GET/PUT /api/config/env` (never `GET /api/config`), names are validated server-side and `TARGET_URL` is reserved. Prompt text treats values as data, not instructions.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:

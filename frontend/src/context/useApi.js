@@ -31,6 +31,9 @@ export function useApi() {
     editWithAi: ({ mode = 'edit', testCase, feature, focus = [], instruction = '' }) =>
       apiCall('POST', '/api/generate/edit-with-ai', { mode, testCase, feature, focus, instruction }),
     checkModelHealth: (model, region) => apiCall('POST', '/api/model/health-check', { model, region }),
+    getEnvVars: () => apiCall('GET', '/api/config/env'),
+    saveEnvVars: (variables) => apiCall('PUT', '/api/config/env', { variables }),
+    getAuth: () => apiCall('GET', '/api/config/auth'),
     updateAgent: ({ model, region }) => apiCall('PATCH', '/api/config/agent', { model, region }),
     requestAnalysis: (testCase, stepResults, failureDetails) =>
       apiCall('POST', '/api/analysis/bug-fix', { testCase, stepResults, failureDetails }),

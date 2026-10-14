@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { BedrockAgentCoreControlClient, GetAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore-control';
-import { config, featureList, sessions, saveConfig, AUTH_ROLES, bareModelId } from '../state/store.js';
+import { config, featureList, sessions, saveConfig, AUTH_ROLES, bareModelId, ENV_NAME_RE, RESERVED_ENV_NAMES, ENV_LIMITS, normalizeEnvVars } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
 
@@ -67,6 +67,35 @@ router.patch('/config/agent', (req, res) => {
   }
   saveConfig();
   res.json({ agentModel: config.agentModel, agentRegion: config.agentRegion });
+});
+
+// Context variables for the testing agent: [{ name, value, description, secret }].
+// Values may be sensitive, so like the logins they are served only from this endpoint
+// (never from GET /config) and never cached.
+router.get('/config/env', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ variables: config.envVars, limits: ENV_LIMITS, reserved: RESERVED_ENV_NAMES });
+});
+
+// Replaces the whole list. Validated as a whole so the saved list is never half-applied.
+router.put('/config/env', (req, res) => {
+  const list = req.body?.variables;
+  if (!Array.isArray(list)) return res.status(400).json({ error: 'variables must be an array' });
+  if (list.length > ENV_LIMITS.count) return res.status(400).json({ error: `At most ${ENV_LIMITS.count} variables` });
+  const seen = new Set();
+  for (const [i, v] of list.entries()) {
+    const name = String(v?.name || '').trim();
+    const where = `Variable ${i + 1}`;
+    if (!ENV_NAME_RE.test(name)) return res.status(400).json({ error: `${where}: the name must start with a letter or _ and use only letters, digits and _ (max 64)` });
+    if (RESERVED_ENV_NAMES.includes(name.toUpperCase())) return res.status(400).json({ error: `${where}: ${name} is built in — set it where it already lives` });
+    if (seen.has(name.toUpperCase())) return res.status(400).json({ error: `${where}: ${name} appears twice` });
+    seen.add(name.toUpperCase());
+    if (String(v?.value ?? '').length > ENV_LIMITS.value) return res.status(400).json({ error: `${where} (${name}): the value is longer than ${ENV_LIMITS.value} characters` });
+    if (String(v?.description ?? '').length > ENV_LIMITS.description) return res.status(400).json({ error: `${where} (${name}): the description is longer than ${ENV_LIMITS.description} characters` });
+  }
+  config.envVars = normalizeEnvVars(list);
+  saveConfig();
+  res.json({ variables: config.envVars });
 });
 
 router.patch('/config/model', (req, res) => {
