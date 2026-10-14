@@ -133,6 +133,18 @@
   line-height: 1.65;
   padding: 14px 18px;
   min-height: 0;
+  tab-size: 2;
+  white-space: pre;        /* keep indentation and long lines as typed; scroll sideways */
+  overflow: auto;
+}
+.yamlHint kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--surface2);
 }
 
 .gherkinMsgs {

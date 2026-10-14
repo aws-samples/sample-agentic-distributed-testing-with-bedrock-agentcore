@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import styles from './TcEditor.module.css'
 import Btn from './Btn'
 import Icon from './Icon'
-import EnhanceModal from './EnhanceModal'
+import EditWithAiModal from './EditWithAiModal'
 import BddHelpModal from './BddHelpModal'
 import { useApi } from '../context/useApi'
 import { toGherkin, fromGherkin } from '../utils/gherkin'
+import { tabEdit, enterEdit } from '../utils/textEdit'
 
 const SECTIONS = [
   { key: 'given', label: 'Given', placeholder: "e.g. I'm a signed-in customer with a credit card account" },
@@ -32,12 +33,13 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
   const [activeTab, setActiveTab] = useState('editor')   // 'editor' | 'gherkin'
   const [draft, setDraft] = useState(() => (tc ? toDraft(tc) : { title: '', given: [], when: [], then: [] }))
   const [gherkin, setGherkin] = useState(() => (tc ? toGherkin(tc) : ''))
-  const [enhanceOpen, setEnhanceOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [switchBlocked, setSwitchBlocked] = useState(false)
   const api = useApi()
   const focusNext = useRef(null)    // `${section}:${index}` to focus after the next render
   const inputs = useRef({})
+  const gherkinRef = useRef(null)
 
   useEffect(() => {
     if (!tc) return
@@ -81,11 +83,11 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
     onApply(updated)
   }
 
-  const handleSaveEnhanced = (e) => {
+  const handleSaveFromAi = (e) => {
     const updated = { ...tc, title: e.title || tc.title, given: e.given, when: e.when, then: e.then }
     show(updated)
     onApply(updated)
-    setEnhanceOpen(false)
+    setAiOpen(false)
   }
 
   const handleSwitchTab = (tab) => {
@@ -98,6 +100,36 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
     }
     setSwitchBlocked(false)
     setActiveTab(tab)
+  }
+
+  // ── Gherkin tab: behave like a small code editor ────────────────────────
+  // Apply an edit through the browser's own editing command (execCommand) so it
+  // lands on the native undo stack — Ctrl+Z / Ctrl+Y keep working. If that isn't
+  // available, fall back to setting the value directly (undo is lost, but the
+  // edit still happens).
+  const applyTextEdit = (el, edit) => {
+    el.focus()
+    el.setSelectionRange(edit.from, edit.to)
+    const done = typeof document.execCommand === 'function' && document.execCommand('insertText', false, edit.text)
+    if (!done) {
+      const next = el.value.slice(0, edit.from) + edit.text + el.value.slice(edit.to)
+      setGherkin(next)
+      requestAnimationFrame(() => el.setSelectionRange(edit.selStart, edit.selEnd))
+      return
+    }
+    el.setSelectionRange(edit.selStart, edit.selEnd)
+  }
+
+  const onGherkinKeyDown = (e) => {
+    if (readOnly || e.nativeEvent.isComposing) return          // never interfere with IME input
+    const el = e.currentTarget
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      applyTextEdit(el, tabEdit(el.value, el.selectionStart, el.selectionEnd, e.shiftKey))
+    } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault()
+      applyTextEdit(el, enterEdit(el.value, el.selectionStart, el.selectionEnd))
+    }
   }
 
   // ── Editor-tab row helpers ──────────────────────────────────────────────
@@ -134,9 +166,9 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
         <Btn variant="primary" disabled={!canApply} onClick={handleApply}>
           <Icon name="check" />Apply Changes
         </Btn>
-        <Btn disabled={readOnly || !canApply} onClick={() => setEnhanceOpen(true)}
-          title={!canApply && !readOnly ? 'Fix the Gherkin errors first' : 'Rewrite this test case as AI-enhanced BDD and review the change'}>
-          <Icon name="auto_awesome" />Enhance by AI
+        <Btn disabled={readOnly || !canApply} onClick={() => setAiOpen(true)}
+          title={!canApply && !readOnly ? 'Fix the Gherkin errors first' : 'Describe what to change, or pick a preset, and review the AI\'s edit before saving'}>
+          <Icon name="auto_awesome" />Edit with AI
         </Btn>
         <Btn variant="danger" disabled={readOnly} style={{ marginLeft: 'auto' }} onClick={onDelete}><Icon name="delete" />Delete TC</Btn>
       </div>
@@ -205,16 +237,23 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
           <div className={styles.yamlToolbar}>
             <span className={styles.idBadge} style={{ padding: '2px 8px', fontSize: 12 }}>{tc.id}</span>
             <span className={styles.yamlHint}>
-              Raw Gherkin — one Scenario with Given / When / Then / And.
+              Raw Gherkin — a <code>Scenario:</code>, then <code>Given:</code> / <code>When:</code> / <code>Then:</code> each with a <code>-</code> list of steps. <kbd>Tab</kbd> indents, <kbd>Shift</kbd>+<kbd>Tab</kbd> outdents.
             </span>
           </div>
           <textarea
+            ref={gherkinRef}
             className={styles.yamlEditor}
             value={gherkin}
             onChange={(e) => { setGherkin(e.target.value); setSwitchBlocked(false) }}
+            onKeyDown={onGherkinKeyDown}
             spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            wrap="off"
+            aria-label="Gherkin scenario"
+
             disabled={readOnly}
-            placeholder={'Scenario: Customer pays the full card balance\n  Given I am a signed-in customer with a credit card account\n  When I pay the full balance\n  Then I see a confirmation\n  And the balance shows as zero'}
+            placeholder={'Scenario: Customer pays the full card balance\n\nGiven:\n  - I am a signed-in customer with a credit card account\nWhen:\n  - I pay the full balance\nThen:\n  - I see a confirmation\n  - the balance shows as zero'}
           />
           {(parsed.errors.length > 0 || parsed.warnings.length > 0 || switchBlocked) && (
             <div className={styles.gherkinMsgs}>
@@ -226,12 +265,13 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
         </div>
       )}
       <BddHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <EnhanceModal
-        open={enhanceOpen}
-        onClose={() => setEnhanceOpen(false)}
-        testCase={enhanceOpen ? current() : null}
+      <EditWithAiModal
+        open={aiOpen}
+        mode="edit"
+        onClose={() => setAiOpen(false)}
+        testCase={aiOpen ? current() : null}
         api={api}
-        onSave={handleSaveEnhanced}
+        onSave={handleSaveFromAi}
       />
     </div>
   )

@@ -3,10 +3,14 @@ import Btn from './Btn'
 import styles from './BddHelpModal.module.css'
 
 const EXAMPLE = `Scenario: Customer pays the full card balance
-  Given I am a signed-in customer with a credit card account
-  When I pay the full balance on my card
-  Then I see a payment confirmation
-  And the balance shows as zero`
+
+Given:
+  - I am a signed-in customer with a credit card account
+When:
+  - I pay the full balance on my card
+Then:
+  - I see a payment confirmation
+  - the balance shows as zero`
 
 export default function BddHelpModal({ open, onClose }) {
   return (
@@ -28,7 +32,7 @@ export default function BddHelpModal({ open, onClose }) {
             <tr><td className={styles.kw}>Given</td><td>The starting situation. <span className={styles.eg}>I'm a signed-in customer with a credit card account</span></td></tr>
             <tr><td className={styles.kw}>When</td><td>What the user does. <span className={styles.eg}>I pay the full balance on my card</span></td></tr>
             <tr><td className={styles.kw}>Then</td><td>What should be true afterwards. <span className={styles.eg}>I see a payment confirmation</span></td></tr>
-            <tr><td className={styles.kw}>And</td><td>Adds another step to the one above it, in the same section. <span className={styles.eg}>the balance shows as zero</span></td></tr>
+            <tr><td className={styles.kw}>- step</td><td>Each step is one line starting with a dash. Add as many as you need under a header. <span className={styles.eg}>the balance shows as zero</span></td></tr>
           </tbody>
         </table>
 
@@ -50,10 +54,10 @@ export default function BddHelpModal({ open, onClose }) {
         <div className={styles.h}>Format rules</div>
         <ul>
           <li><strong>Editor</strong> tab: one row per step. Press Enter for the next step, and use the arrows to reorder.</li>
-          <li><strong>Gherkin</strong> tab: the same scenario as raw text. Start with <code>Scenario:</code>, then lines starting with <code>Given</code>, <code>When</code>, <code>Then</code>, <code>And</code> or <code>But</code>.</li>
+          <li><strong>Gherkin</strong> tab: the same scenario as text, laid out like YAML. Start with <code>Scenario:</code>, then a <code>Given:</code>, <code>When:</code> and <code>Then:</code> header, each followed by its steps as an indented <code>- </code> list. Classic Gherkin (<code>Given …</code> / <code>And …</code> lines) pasted in is understood and tidied into this layout.</li>
           <li>One scenario per test case. Add more test cases instead of more scenarios.</li>
           <li>Steps are kept in Given → When → Then order.</li>
-          <li><strong>Enhance by AI</strong> rewrites a detailed test case into this style and lets you compare before saving.</li>
+          <li><strong>Edit with AI</strong> changes an existing test case the way you ask (or from a preset such as Formatting or More ambiguous) and lets you compare before saving. The <strong>+</strong> on a feature uses the same box (without the presets) to draft a new test case from a short description.</li>
         </ul>
       </div>
     </Modal>

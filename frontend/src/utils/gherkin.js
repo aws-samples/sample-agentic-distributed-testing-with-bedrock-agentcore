@@ -1,26 +1,54 @@
-// Standard Gherkin <-> the stored test case shape { title, given[], when[], then[] }.
+// The Gherkin tab's text <-> the stored test case { title, given[], when[], then[] }.
 //
-// Storage stays three arrays, so And/But lines fold into whichever of
-// Given/When/Then came before them, and the first line of each group is
-// rendered with its keyword and the rest as "And". One test case = one
+// Written form is Gherkin keywords laid out like a YAML tree: the scenario on
+// one line, then each keyword as a header with its steps as a "- " list below:
+//
+//   Scenario: Customer pays the full balance
+//
+//   Given:
+//     - I am a signed-in customer
+//   When:
+//     - I pay the full balance
+//   Then:
+//     - I see a confirmation
+//     - the balance shows as zero
+//
+// Reading is lenient: classic Gherkin (Given x / And y / When z ...) pasted in
+// is understood too, and is rewritten in the form above. Storage stays three
+// arrays, so an "And" simply joins the keyword before it. One test case = one
 // Scenario; a Background (if pasted in) is merged into Given.
 
 const SECTIONS = [['given', 'Given'], ['when', 'When'], ['then', 'Then']]
-const STEP_RE = /^(Given|When|Then|And|But|\*)\s+(.*\S)\s*$/i
+const STEP_RE = /^(Given|When|Then|And|But|\*)\s+(.*\S)\s*$/i          // classic: "Given I am ..."
+const HEADER_RE = /^(Given|When|Then)\s*:\s*(.*?)\s*$/i                  // "Given:" (optionally "Given: first step")
+const ITEM_RE = /^[-*]\s+(.*\S)\s*$/                                    // "- a step"
+const EMPTY_ITEM_RE = /^[-*]\s*$/                                        // "-" with nothing after it yet
 const SCENARIO_RE = /^(?:Scenario(?: Outline| Template)?|Example)\s*:\s*(.*)$/i
 
-// Rows are the single source for both the text form and the highlighted view.
-export function toRows(tc) {
+/**
+ * Rows are the single source for the text form and for the highlighted views in
+ * the dialogs. kinds: 'scenario' | 'header' (Given: ...) | 'step' ("- ...").
+ * omitEmpty drops a header whose list is empty (used by read-only previews).
+ */
+export function toRows(tc, { omitEmpty = false } = {}) {
   const rows = [{ kind: 'scenario', kw: 'Scenario:', text: tc.title || '' }]
   for (const [key, label] of SECTIONS) {
-    const lines = Array.isArray(tc[key]) ? tc[key] : (tc[key] ? [tc[key]] : [])
-    lines.filter(Boolean).forEach((text, i) => rows.push({ kind: 'step', section: key, kw: i === 0 ? label : 'And', text }))
+    const lines = (Array.isArray(tc[key]) ? tc[key] : (tc[key] ? [tc[key]] : [])).filter(Boolean)
+    if (omitEmpty && lines.length === 0) continue
+    rows.push({ kind: 'header', section: key, kw: `${label}:`, text: '' })
+    lines.forEach(text => rows.push({ kind: 'step', section: key, kw: '-', text }))
   }
   return rows
 }
 
 export function toGherkin(tc) {
-  return toRows(tc).map(r => (r.kind === 'scenario' ? `${r.kw} ${r.text}` : `  ${r.kw} ${r.text}`)).join('\n')
+  const out = []
+  for (const r of toRows(tc)) {
+    if (r.kind === 'scenario') out.push(`${r.kw} ${r.text}`.trimEnd(), '')
+    else if (r.kind === 'header') out.push(r.kw)
+    else out.push(`  - ${r.text}`)
+  }
+  return out.join('\n')
 }
 
 // Returns { title, given, when, then, errors: [], warnings: [] }.
@@ -33,6 +61,23 @@ export function fromGherkin(text) {
   let inDocString = false
   let mergedContext = false
   let lastKeyIdx = -1
+
+  // Switch to a Given / When / Then section (inside a Background, Given stays in it).
+  const enterSection = (kw) => {
+    const key = current === 'background' ? 'background' : kw
+    if (current === 'background' && kw !== 'given') current = kw
+    else current = key
+    if (key !== 'background') {
+      const idx = SECTIONS.findIndex(s => s[0] === key)
+      if (idx < lastKeyIdx) out.warnings.push('Steps are stored grouped as Given / When / Then, so a sequence that goes back to an earlier keyword is merged into that group.')
+      lastKeyIdx = Math.max(lastKeyIdx, idx)
+    }
+  }
+  const addStep = (stepText) => {
+    const target = current === 'background' ? background : out[current]
+    target.push(stepText)
+    lastTarget = target
+  }
 
   const lines = String(text || '').split('\n')
   lines.forEach((raw, idx) => {
@@ -58,28 +103,40 @@ export function fromGherkin(text) {
       return
     }
 
+    // "Given:" / "When:" / "Then:" header, with an optional first step on the same line
+    const hd = line.match(HEADER_RE)
+    if (hd) {
+      enterSection(hd[1].toLowerCase())
+      if (hd[2]) addStep(hd[2])
+      return
+    }
+
+    // "- a step" under the current header
+    if (EMPTY_ITEM_RE.test(line)) return           // a dash still being typed
+    const item = line.match(ITEM_RE)
+    if (item) {
+      if (!current) { out.errors.push(`Line ${n}: put this step under a "Given:", "When:" or "Then:" header.`); return }
+      addStep(item[1].trim())
+      return
+    }
+
+    // classic "Given I am ..." / "And ..." lines
     const st = line.match(STEP_RE)
     if (!st) {
-      out.errors.push(`Line ${n}: expected Given, When, Then, And or But — got "${line.slice(0, 40)}".`)
+      if (/^(Given|When|Then)$/i.test(line)) {      // the colon is the usual thing to forget
+        out.errors.push(`Line ${n}: add a colon — "${line}:" — then list its steps underneath with "- ".`)
+        return
+      }
+      out.errors.push(`Line ${n}: expected "Scenario:", a "Given:" / "When:" / "Then:" header, or a "- step" — got "${line.slice(0, 40)}".`)
       return
     }
     const kw = st[1].toLowerCase()
-    const stepText = st[2].trim()
-    if (kw === 'given' || kw === 'when' || kw === 'then') {
-      const key = current === 'background' ? 'background' : kw
-      if (current === 'background' && kw !== 'given') current = kw
-      else current = key
-      if (key !== 'background' && SECTIONS.findIndex(s => s[0] === key) < lastKeyIdx) {
-        out.warnings.push('Steps are stored grouped as Given / When / Then, so a sequence that goes back to an earlier keyword is merged into that group.')
-      }
-      if (key !== 'background') lastKeyIdx = Math.max(lastKeyIdx, SECTIONS.findIndex(s => s[0] === key))
-    } else if (!current) {
+    if (kw === 'given' || kw === 'when' || kw === 'then') enterSection(kw)
+    else if (!current) {
       out.errors.push(`Line ${n}: "${st[1]}" must follow a Given, When or Then.`)
       return
     }
-    const target = current === 'background' ? background : out[current]
-    target.push(stepText)
-    lastTarget = target
+    addStep(st[2].trim())
   })
 
   if (inDocString) out.errors.push('A """ block is never closed.')
