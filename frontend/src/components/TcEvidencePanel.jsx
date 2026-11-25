@@ -27,7 +27,9 @@ function useSnapshotUrls(snapshots) {
   return urls
 }
 
-export default function TcEvidencePanel({ tc }) {
+// liveScreenshot: base64 of the feature's current browser frame, shown while a case is
+// still running (its evidence snapshots are only uploaded when it finishes).
+export default function TcEvidencePanel({ tc, liveScreenshot }) {
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const snapshots = tc?.snapshots || []
   const snapshotUrls = useSnapshotUrls(snapshots)
@@ -94,15 +96,37 @@ export default function TcEvidencePanel({ tc }) {
           )}
         </section>
 
+        {/* Human input: this case was redone with a hint, and/or was later redone */}
+        {(tc.hint || tc.retries?.length > 0) && (
+          <section className={styles.section}>
+            <div className={styles.sectionLabel}>HUMAN INPUT</div>
+            {tc.hint && (
+              <div className={styles.hintBox}>
+                <div>Redone with a human hint{tc.retryOf ? <> (replaces the result in <code>{tc.retryOf}</code>)</> : null}:</div>
+                <div className={styles.hintText}>{tc.hint}</div>
+              </div>
+            )}
+            {(tc.retries || []).map(r => (
+              <div key={r.runId} className={styles.hintBox}>
+                <div>Later redone with a human hint in <code>{r.runId}</code>:</div>
+                <div className={styles.hintText}>{r.hint}</div>
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Evidence snapshots from S3 */}
         <section className={styles.section}>
           <div className={styles.sectionLabel}>
             EVIDENCE SNAPSHOTS
             {snapshots.length > 0 && <span className={styles.snapCount}>{snapshots.length} frame{snapshots.length === 1 ? '' : 's'}</span>}
           </div>
-          {snapshots.length === 0 && (
+          {snapshots.length === 0 && liveScreenshot && status === 'RUNNING' && (
+            <img className={styles.liveShot} src={`data:image/jpeg;base64,${liveScreenshot}`} alt="Live browser" />
+          )}
+          {snapshots.length === 0 && !(liveScreenshot && status === 'RUNNING') && (
             <div className={styles.noScreenshot}>
-              No snapshots captured for this test case.
+              {status === 'RUNNING' ? 'Waiting for the first frame…' : 'No snapshots captured for this test case.'}
             </div>
           )}
           {snapshots.length > 0 && (

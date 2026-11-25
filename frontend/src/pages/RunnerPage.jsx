@@ -6,6 +6,7 @@ import NavBar from '../components/NavBar'
 import FeaturePanel from '../components/FeaturePanel'
 import BrowserCell from '../components/BrowserCell'
 import FocusModal from '../components/FocusModal'
+import LiveCaseModal from '../components/LiveCaseModal'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import { SEED_TEST_CASES } from '../data/seedTestCases'
@@ -324,6 +325,25 @@ export default function RunnerPage() {
     }
   }
 
+  // Pause holds one feature before its next test case; the others keep running.
+  const handleTogglePause = async (feat) => {
+    const wasPaused = !!state.pausedFeatures[feat]
+    try {
+      if (wasPaused) await api.resumeFeature(feat)
+      else await api.pauseFeature(feat)
+      addLog(wasPaused ? `Resumed ${feat}` : `Pause requested for ${feat} — holds after its current test case`, 'warn')
+    } catch (e) {
+      addLog(`${wasPaused ? 'Resume' : 'Pause'} failed: ${e.message}`, 'fail')
+    }
+  }
+
+  // Redo failed cases of one feature with a human hint (a new run; the old result stays in history).
+  const handleRedo = async (feat, testCaseIds, hint) => {
+    const { runId } = await api.redoCases({ feature: feat, testCaseIds, hint })
+    dispatch({ type: 'SET_CURRENT_RUN_ID', runId })
+    addLog(`Redo with hint started for ${feat}: ${testCaseIds.join(', ')} (${runId})`, 'info')
+  }
+
   const handleRequestAnalysis = async (tcId) => {
     let tc = null
     for (const tcs of Object.values(state.testCases)) {
@@ -454,7 +474,10 @@ export default function RunnerPage() {
                 featureName={feat}
                 sessionStatus={state.sessionStatus[feat]}
                 activeFeatures={state.activeFeatures}
+                pauseState={state.pausedFeatures[feat]}
                 onFocus={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: feat })}
+                onLive={() => dispatch({ type: 'SET_LIVE_FEATURE', feature: feat })}
+                onTogglePause={() => handleTogglePause(feat)}
               />
             ))}
           </div>
@@ -481,6 +504,21 @@ export default function RunnerPage() {
           </div>
         </div>
       </div>
+
+      {state.liveFeature && (
+        <LiveCaseModal
+          feature={state.liveFeature}
+          testCases={state.testCases[state.liveFeature]}
+          testResults={state.testResults}
+          tcLogs={state.tcLogs}
+          sessionStatus={state.sessionStatus[state.liveFeature]}
+          running={state.activeFeatures.has(state.liveFeature)}
+          pauseState={state.pausedFeatures[state.liveFeature]}
+          onTogglePause={() => handleTogglePause(state.liveFeature)}
+          onRedo={(ids, hint) => handleRedo(state.liveFeature, ids, hint)}
+          onClose={() => dispatch({ type: 'SET_LIVE_FEATURE', feature: null })}
+        />
+      )}
 
       {state.focusedFeature && (
         <FocusModal

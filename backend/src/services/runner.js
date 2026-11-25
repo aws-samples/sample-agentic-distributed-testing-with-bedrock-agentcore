@@ -3,6 +3,7 @@ import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeF
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
+import { holdWhilePaused, clearPause } from './runControl.js';
 
 // Per-region client cache so live region changes from Settings are picked up
 // without restarting the container.
@@ -24,21 +25,23 @@ function getRuntimeArn() {
   return config.agentcoreRuntimeArn;
 }
 
-function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
+// Stateful SSE parser: feedLine() takes one line as it arrives (so the live log can
+// follow the agent), finish() returns the verdict once the stream has ended.
+function createSseParser(sessionId, runId, tcId, logEntry) {
   const textParts = [];
   let assertResult = null;
 
-  for (const line of rawText.split('\n')) {
-    if (!line.startsWith('data: ')) continue;
+  function feedLine(line) {
+    if (!line.startsWith('data: ')) return;
     try {
       const ev = JSON.parse(line.slice(6))?.event;
-      if (!ev) continue;
+      if (!ev) return;
 
       if (ev.screenshot?.data) {
         const sess = sessions[sessionId];
         if (sess) { sess.screenshot = ev.screenshot.data; broadcast({ type: 'screenshot', sessionId, data: ev.screenshot.data, action: sess.action || '' }); }
         if (runId && tcId) recordFrame(runId, tcId, ev.screenshot.data, sess?.action);
-        continue;
+        return;
       }
 
       const imgSource = ev.contentBlockStart?.start?.image?.source;
@@ -64,23 +67,33 @@ function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
     } catch { /* skip */ }
   }
 
-  if (assertResult) {
-    try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
-    return assertResult;
+  function finish() {
+    if (assertResult) {
+      try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
+      return assertResult;
+    }
+
+    const text = textParts.join('');
+    if (!text) return { passed: false, reason: 'No result from runtime' };
+    try {
+      const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
+      if (m) { const p = JSON.parse(m[0]); return { passed: p.passed, reason: p.reason || text.slice(-200) }; }
+    } catch { /* ignore */ }
+    const tail = text.slice(-500).toLowerCase();
+    if (tail.includes('pass') || tail.includes('success') || tail.includes('verified')) return { passed: true, reason: text.slice(-200) };
+    return { passed: false, reason: text.slice(-200) };
   }
 
-  const text = textParts.join('');
-  if (!text) return { passed: false, reason: 'No result from runtime' };
-  try {
-    const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
-    if (m) { const p = JSON.parse(m[0]); return { passed: p.passed, reason: p.reason || text.slice(-200) }; }
-  } catch { /* ignore */ }
-  const tail = text.slice(-500).toLowerCase();
-  if (tail.includes('pass') || tail.includes('success') || tail.includes('verified')) return { passed: true, reason: text.slice(-200) };
-  return { passed: false, reason: text.slice(-200) };
+  return { feedLine, finish };
 }
 
-export async function invokeRuntime(tc, runId, sessionId) {
+function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
+  const p = createSseParser(sessionId, runId, tcId, logEntry);
+  for (const line of rawText.split('\n')) p.feedLine(line);
+  return p.finish();
+}
+
+export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   const payload = {
     action: 'run_test',
     // The Feature's Background (its description) is shared setup that applies
@@ -93,6 +106,8 @@ export async function invokeRuntime(tc, runId, sessionId) {
     region: config.agentRegion,
     // Context variables (name, value, when-to-use description) for the agent's prompt.
     env: config.envVars.map(({ name, value, description }) => ({ name, value, description })),
+    // Human hint for a redo (see routes/tests.js POST /tests/redo); the runtime renders it as data.
+    ...(hint ? { hint } : {}),
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in
@@ -110,8 +125,12 @@ export async function invokeRuntime(tc, runId, sessionId) {
   const tcLog = runLogs[runId][tc.id];
 
   const logEntry = (msg, kind = 'info') => {
-    tcLog.push({ ts: new Date().toLocaleTimeString(), msg, kind });
+    const entry = { ts: new Date().toLocaleTimeString(), msg, kind };
+    tcLog.push(entry);
+    // Live per-test-case log for the Runner's detail view; replayed on reconnect (websocket.js).
+    broadcast({ type: 'tc_log', runId, testId: tc.id, sessionId, entry });
   };
+  if (hint) logEntry(`Redo with human hint: ${hint}`, 'info');
 
   try {
     let rawText = '';
@@ -143,17 +162,33 @@ export async function invokeRuntime(tc, runId, sessionId) {
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
       const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
       const response = await getAgentCoreClient().send(cmd);
-      if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
+      // Parse as the chunks arrive so the live log follows the agent. A chunk can end
+      // mid-line, so only complete lines are fed.
+      const parser = createSseParser(sessionId, runId, tc.id, logEntry);
+      const decoder = new TextDecoder();
+      let buf = '';
+      if (response.response) {
+        for await (const chunk of response.response) {
+          buf += decoder.decode(new Uint8Array(Object.values(chunk)), { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) parser.feedLine(line);
+        }
+      }
+      buf += decoder.decode();
+      if (buf) parser.feedLine(buf);
+      return parser.finish();
     }
     // Local mode already logged text/tool events live via the onLine callback above;
-    // only pass logEntry here for agentcore mode, where parseSSE is the sole log source.
-    return parseSSE(rawText, sessionId, runId, tc.id, config.agentMode === 'local' ? null : logEntry);
+    // parseSSE gets no logEntry here so they are not logged twice.
+    return parseSSE(rawText, sessionId, runId, tc.id, null);
   } catch (e) {
     return { passed: false, reason: `Runtime error: ${e.message}` };
   }
 }
 
-export async function runFeatureTests(feature, testCases, runId, onProgress) {
+// hints: { [tcId]: { hint } } for a redo run; empty for a normal run.
+export async function runFeatureTests(feature, testCases, runId, onProgress, hints = {}) {
   const sessionId = feature;
   activeFeatures.add(feature);
   try {
@@ -167,10 +202,17 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
     }
     onProgress?.();
     activeFeatures.delete(feature);
+    clearPause(feature);
     return;
   }
 
   for (const tc of testCases) {
+    // A human can pause one feature; it holds here, between test cases (a case already
+    // running inside the agent can't be interrupted). Stop releases it.
+    await holdWhilePaused(feature, () => stopFlags[runId], {
+      onHold: () => broadcast({ type: 'feature_paused', feature, runId }),
+      onRelease: () => broadcast({ type: 'feature_resumed', feature, runId }),
+    });
     if (stopFlags[runId]) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'PENDING' };
       broadcast({ type: 'test_skipped', testId: tc.id, sessionId, runId });
@@ -191,7 +233,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
     // concurrent connection to the same AgentCore Browser session 429s.
     if (sess) sess.testRunning = true;
     try {
-      const result = await invokeRuntime(tc, runId, sessionId);
+      const result = await invokeRuntime(tc, runId, sessionId, hints[tc.id]?.hint);
       const status = result.passed ? 'PASS' : 'FAIL';
       // Upload buffered evidence frames to S3; tucked into testRuns so the
       // archive builder can pick them up when the run completes.
@@ -211,5 +253,6 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
   }
 
   activeFeatures.delete(feature);
+  clearPause(feature);
   broadcast({ type: 'feature_complete', feature: sessionId, runId });
 }

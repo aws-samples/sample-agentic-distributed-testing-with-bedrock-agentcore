@@ -20,6 +20,9 @@ const initialState = {
   filterStatus: 'ALL',
   gridMode: '4',
   focusedFeature: null,
+  liveFeature: null,    // feature whose live per-test-case view is open
+  tcLogs: {},           // tcId -> [{ts,msg,kind}] live log of the current attempt
+  pausedFeatures: {},   // feature -> 'pausing' (waiting for the running case) | 'paused'
 }
 
 function reducer(state, action) {
@@ -90,6 +93,22 @@ function reducer(state, action) {
       return { ...state, gridMode: action.mode }
     case 'SET_FOCUSED_FEATURE':
       return { ...state, focusedFeature: action.feature }
+    case 'SET_LIVE_FEATURE':
+      return { ...state, liveFeature: action.feature }
+    case 'SET_TC_LOGS':
+      return { ...state, tcLogs: { ...state.tcLogs, [action.tcId]: action.logs.slice(-500) } }
+    case 'APPEND_TC_LOG': {
+      const prev = state.tcLogs[action.tcId] || []
+      return { ...state, tcLogs: { ...state.tcLogs, [action.tcId]: [...prev, action.entry].slice(-500) } }
+    }
+    case 'SET_PAUSE': {
+      const next = { ...state.pausedFeatures }
+      if (action.state) next[action.feature] = action.state
+      else delete next[action.feature]
+      return { ...state, pausedFeatures: next }
+    }
+    case 'SET_PAUSED_ALL':
+      return { ...state, pausedFeatures: action.paused }
     case 'RESET_ALL': {
       const clearedSessions = {}
       for (const k of Object.keys(state.sessionStatus)) {
@@ -110,6 +129,9 @@ function reducer(state, action) {
         sessionStatus: clearedSessions,
         sessionLogs: clearedLogs,
         focusedFeature: null,
+        liveFeature: null,
+        tcLogs: {},
+        pausedFeatures: {},
       }
     }
     default:

@@ -29,6 +29,10 @@ Never put the app's URL or a username/password in a test case. Write "the target
 
 Settings → Testing AI agent has user-defined context variables (`config.envVars`: name, value, description, secret flag). They go to the runtime in every run request as `env` and both runtimes render them in a `CONTEXT VARIABLES:` prompt section next to the built-in `TARGET_URL`; the description tells the agent *when* to use each one. Values are served only from `GET/PUT /api/config/env` (never `GET /api/config`), names are validated server-side and `TARGET_URL` is reserved. Prompt text treats values as data, not instructions.
 
+## Live log, pause and redo with a hint
+
+The Runner's feature cell has a live view (`LiveCaseModal`, reusing `TcEvidencePanel`) fed by `tc_log` WebSocket events (`runLogs[runId][tcId]`, replayed as `tc_log_replay` on reconnect). Pause is per feature (`services/runControl.js`) and holds at the next test case boundary; a case already running inside the agent is not interrupted. `POST /api/tests/redo` reruns chosen cases of an idle feature as a new run with a human `hint` in the run payload; both runtimes render it as data in a `HUMAN HINT` prompt section. The new case records `hint` + `retryOf`, the earlier case records `retries`, and Analysis shows both. Backend tests: `npm test --workspace backend`.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:

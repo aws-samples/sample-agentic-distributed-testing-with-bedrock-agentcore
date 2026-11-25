@@ -115,3 +115,21 @@
   flex-shrink: 0;
 }
 .actionActive { color: var(--yellow); }
+
+.iconBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+}
+.iconBtn:hover { color: var(--accent); }
+.pauseTag {
+  font-size: 10px;
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 8px;
+  padding: 0 6px;
+}

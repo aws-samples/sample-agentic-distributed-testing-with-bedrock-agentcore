@@ -90,6 +90,7 @@ export function useWebSocket(onLog) {
 
         case 'test_start':
           dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'RUNNING' } })
+          dispatch({ type: 'SET_TC_LOGS', tcId: msg.testId, logs: [] })   // a redo starts a fresh log
           if (msg.sessionId) {
             dispatch({ type: 'SET_ACTIVE_FEATURE', feature: msg.sessionId, active: true })
             addSessionLog(msg.sessionId, `▶ ${msg.testId}`, 'info', 'tool')
@@ -143,7 +144,30 @@ export function useWebSocket(onLog) {
           }
           break
 
+        case 'tc_log':
+          if (msg.testId && msg.entry) dispatch({ type: 'APPEND_TC_LOG', tcId: msg.testId, entry: msg.entry })
+          break
+
+        case 'tc_log_replay':
+          if (msg.testId) dispatch({ type: 'SET_TC_LOGS', tcId: msg.testId, logs: msg.logs || [] })
+          break
+
+        case 'feature_pause_requested':
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: msg.holding ? 'paused' : 'pausing' })
+          break
+
+        case 'feature_paused':
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: 'paused' })
+          addSessionLog(msg.feature, 'Paused', 'warn', 'warn')
+          break
+
+        case 'feature_resumed':
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: null })
+          addSessionLog(msg.feature, 'Resumed', 'info', 'info')
+          break
+
         case 'feature_complete':
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: null })
           dispatch({ type: 'SET_ACTIVE_FEATURE', feature: msg.feature, active: false })
           onLog?.(`Feature complete: ${msg.feature}`, 'pass')
           break
@@ -153,7 +177,10 @@ export function useWebSocket(onLog) {
           break
 
         case 'run_complete':
-          dispatch({ type: 'CLEAR_ACTIVE_FEATURES' })
+          // A redo run can finish while other features of an earlier run are still going,
+          // so only clear the features this run covered when the server says which.
+          if (msg.features) for (const f of msg.features) dispatch({ type: 'SET_ACTIVE_FEATURE', feature: f, active: false })
+          else dispatch({ type: 'CLEAR_ACTIVE_FEATURES' })
           onLog?.(
             msg.stopped ? 'Run stopped by user' : 'All features complete',
             msg.stopped ? 'warn' : 'pass'
@@ -186,6 +213,9 @@ export function useWebSocket(onLog) {
             dispatch({ type: 'SET_CURRENT_RUN_ID', runId: msg.currentRunId })
           }
           dispatch({ type: 'SET_STOPPING', stopping: !!msg.stopping })
+          if (Array.isArray(msg.paused)) {
+            dispatch({ type: 'SET_PAUSED_ALL', paused: Object.fromEntries(msg.paused.map(p => [p.feature, p.holding ? 'paused' : 'pausing'])) })
+          }
           break
 
         case 'feature_added':

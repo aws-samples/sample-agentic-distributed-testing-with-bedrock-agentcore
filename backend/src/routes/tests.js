@@ -1,15 +1,15 @@
 import { Router } from 'express';
-import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, activeRunPromises } from '../state/store.js';
+import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, activeRunPromises, featureList, activeFeatures } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { runFeatureTests } from '../services/runner.js';
-import { upsertRunRecord } from '../state/archive.js';
+import { upsertRunRecord, runArchive } from '../state/archive.js';
+import { pausedFeatures, pauseState, planRedo, addRetry } from '../services/runControl.js';
 
 const router = Router();
 
-router.post('/tests/run', (req, res) => {
-  const { testCases } = req.body;
-  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
-
+// Starts a run of `testCases`, one parallel session per feature, and returns its runId.
+// `hints` ({ [tcId]: { hint, retryOf } }) is set only for a redo-with-hint run.
+function startRun(testCases, hints = {}) {
   const runId = `run-${Date.now()}`;
   testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
   stopFlags[runId] = false;
@@ -44,6 +44,8 @@ router.post('/tests/run', (req, res) => {
         else if (status === 'FAIL') fail++;
         else pending++; // covers RUNNING and PENDING alike in the summary badge
 
+        const h = hints[tc.id];
+        const retries = run.retries?.[tc.id];
         return {
           id: tc.id,
           title: tc.title || tc.id,
@@ -51,6 +53,10 @@ router.post('/tests/run', (req, res) => {
           reason: r.reason || '',
           snapshots: r.snapshots || [],  // [{key, ts, action, seq}] uploaded to S3
           logs: (runLogs[runId]?.[tc.id]) || [],
+          // Human input: this case was redone with `hint`; retryOf is the run it replaces.
+          ...(h ? { hint: h.hint, retryOf: h.retryOf } : {}),
+          // Later runs that redid this case with a human hint: [{ runId, hint, ts }].
+          ...(retries?.length ? { retries } : {}),
         };
       });
       features[feat] = { cases };
@@ -80,12 +86,12 @@ router.post('/tests/run', (req, res) => {
 
   broadcast({ type: 'run_start', runId, features: Object.keys(byFeature) });
 
-  const runPromise = Promise.all(Object.entries(byFeature).map(([feat, tcs]) => runFeatureTests(feat, tcs, runId, persistProgress)))
+  const runPromise = Promise.all(Object.entries(byFeature).map(([feat, tcs]) => runFeatureTests(feat, tcs, runId, persistProgress, hints)))
     .then(() => {
       const record = buildRunRecord(new Date().toISOString());
       upsertRunRecord(record);
       delete runLogs[runId]; // free memory after archiving
-      broadcast({ type: 'run_complete', runId, stopped: record.stopped });
+      broadcast({ type: 'run_complete', runId, stopped: record.stopped, features: Object.keys(byFeature) });
       broadcast({ type: 'run_archive_updated', runId });
     })
     .catch(e => console.error('Run error:', e))
@@ -96,7 +102,54 @@ router.post('/tests/run', (req, res) => {
 
   activeRunPromises.set(runId, runPromise);
 
+  return runId;
+}
+
+router.post('/tests/run', (req, res) => {
+  const { testCases } = req.body;
+  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
+  res.json({ runId: startRun(testCases) });
+});
+
+// Redo failed (or suspicious) cases of one feature with a human hint added to the agent's
+// prompt. Runs as a new run so the earlier result stays in history; the new case links back
+// (retryOf) and the earlier case gets a retries entry, so Analysis shows both.
+router.post('/tests/redo', (req, res) => {
+  const { feature, testCaseIds, hint } = req.body || {};
+  const plan = planRedo({ feature, testCaseIds, hint, featureList, casesByFeature: testCasesByFeature, archive: runArchive, activeFeatures });
+  if (plan.error) return res.status(plan.status).json({ error: plan.error });
+  const runId = startRun(plan.testCases, plan.hints);
+  const ts = new Date().toISOString();
+  for (const tc of plan.testCases) {
+    const { hint: text, retryOf } = plan.hints[tc.id];
+    if (!retryOf) continue;
+    const entry = { runId, hint: text, ts };
+    const live = testRuns[retryOf];
+    if (live) { live.retries = live.retries || {}; live.retries[tc.id] = [...(live.retries[tc.id] || []), entry]; }
+    const archived = runArchive.find(r => r.runId === retryOf);
+    if (archived && addRetry(archived, tc.id, entry)) {
+      upsertRunRecord(archived);
+      broadcast({ type: 'run_archive_updated', runId: retryOf });
+    }
+  }
   res.json({ runId });
+});
+
+// Pause / resume one feature's run loop. Takes effect at the next test case boundary.
+router.post('/tests/pause', (req, res) => {
+  const { feature } = req.body || {};
+  if (typeof feature !== 'string' || !activeFeatures.has(feature)) return res.status(409).json({ error: 'Feature is not running' });
+  pausedFeatures.add(feature);
+  broadcast({ type: 'feature_pause_requested', ...pauseState(feature) });
+  res.json(pauseState(feature));
+});
+
+router.post('/tests/resume', (req, res) => {
+  const { feature } = req.body || {};
+  if (typeof feature !== 'string') return res.status(400).json({ error: 'feature required' });
+  pausedFeatures.delete(feature);
+  broadcast({ type: 'feature_resumed', feature });
+  res.json(pauseState(feature));
 });
 
 router.get('/tests/run/:runId', (req, res) => {

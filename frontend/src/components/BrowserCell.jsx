@@ -1,7 +1,8 @@
 import styles from './BrowserCell.module.css'
 import { featureColor } from '../data/seedTestCases'
+import Icon from './Icon'
 
-export default function BrowserCell({ featureName, sessionStatus, activeFeatures, onFocus }) {
+export default function BrowserCell({ featureName, sessionStatus, activeFeatures, pauseState, onFocus, onLive, onTogglePause }) {
   const sess = sessionStatus || {}
   const isRunning = activeFeatures?.has(featureName)
   const color = featureColor(featureName)
@@ -16,6 +17,16 @@ export default function BrowserCell({ featureName, sessionStatus, activeFeatures
       <div className={styles.header} onClick={onFocus}>
         <div className={connClass} />
         <span className={styles.title} style={{ color }}>{featureName}</span>
+        {pauseState && <span className={styles.pauseTag}>{pauseState === 'paused' ? 'Paused' : 'Pausing…'}</span>}
+        <button className={styles.iconBtn} title="Live test case log, pause and redo with a hint"
+          onClick={(e) => { e.stopPropagation(); onLive() }}><Icon name="monitor_heart" size={14} /></button>
+        {isRunning && (
+          <button className={styles.iconBtn}
+            title={pauseState ? 'Resume this feature' : 'Pause this feature after its current test case'}
+            onClick={(e) => { e.stopPropagation(); onTogglePause() }}>
+            <Icon name={pauseState ? 'play_arrow' : 'pause'} size={14} />
+          </button>
+        )}
       </div>
       <div className={styles.screenshot}>
         {sess.connecting && !sess.screenshot && (
