@@ -79,3 +79,15 @@ test('redirect loop stops', async () => {
 test('invalid URL', async () => {
   assert.equal((await checkTargetUrl('not a url')).ok, false);
 });
+
+test('connects to the address it validated and sends the original Host header', async () => {
+  let seenHost;
+  const s = http.createServer((req, res) => { seenHost = req.headers.host; res.end(); });
+  await new Promise(r => s.listen(0, '127.0.0.1', r));
+  const port = s.address().port;
+  // "localhost" is resolved by the checker; the server must see Host: localhost:<port>.
+  const r = await checkTargetUrl(`http://localhost:${port}/`);
+  s.close();
+  assert.equal(r.ok, true);
+  assert.equal(seenHost, `localhost:${port}`);
+});

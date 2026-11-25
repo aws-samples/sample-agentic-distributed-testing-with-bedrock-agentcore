@@ -1,12 +1,13 @@
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 
 const TIMEOUT_MS = 5000;   // whole check, all redirect hops included
 const MAX_REDIRECTS = 5;
 
-// shortcut: the address is checked at lookup time, then fetch resolves again, so
-// DNS rebinding can slip past; upgrade to a pinned-IP dispatcher if this is ever
-// exposed beyond a trusted, authenticated operator.
+// The hostname is resolved once here, checked, and the request then connects to
+// that exact address, so a second DNS answer (rebinding) cannot change the target.
 // Loopback and private ranges stay allowed (the app under test is often local);
 // link-local is blocked because it hosts the cloud instance-metadata service.
 function isLinkLocal(ip) {
@@ -16,7 +17,7 @@ function isLinkLocal(ip) {
   return /^fe[89ab]/.test(v);
 }
 
-async function assertAllowed(url) {
+async function resolveAllowed(url) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw Object.assign(new Error('Only http and https URLs can be checked'), { reason: 'Only http and https URLs can be checked' });
   }
@@ -26,6 +27,29 @@ async function assertAllowed(url) {
     const reason = 'Link-local addresses (169.254.x.x, fe80::) are not allowed';
     throw Object.assign(new Error(reason), { reason });
   }
+  return { host, address: addrs[0].address };
+}
+
+// One GET to the pre-resolved address. The response body is never read.
+function requestOnce(url, { host, address }, signal) {
+  const lib = url.protocol === 'https:' ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = lib.request({
+      host: address,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: { Host: url.host },
+      servername: net.isIP(host) ? undefined : host, // SNI and certificate check use the hostname, not the IP
+      agent: false,
+      signal,
+    }, (res) => {
+      res.destroy();
+      resolve({ status: res.statusCode, location: res.headers.location });
+    });
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 function describeError(e) {
@@ -52,10 +76,9 @@ export async function checkTargetUrl(rawUrl) {
   try {
     let res;
     for (let hop = 0; ; hop++) {
-      await assertAllowed(url);
-      res = await fetch(url, { method: 'GET', redirect: 'manual', signal });
-      res.body?.cancel().catch(() => {});
-      const loc = res.headers.get('location');
+      const target = await resolveAllowed(url);
+      res = await requestOnce(url, target, signal);
+      const loc = res.location;
       if (res.status < 300 || res.status >= 400 || !loc) break;
       if (hop >= MAX_REDIRECTS) return { ...base, ok: false, status: res.status, responseTimeMs: Date.now() - started, finalUrl: url.href, reason: `Too many redirects (more than ${MAX_REDIRECTS})` };
       url = new URL(loc, url);
