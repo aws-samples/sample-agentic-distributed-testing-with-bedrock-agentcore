@@ -221,11 +221,16 @@ export function dbConnectionsFromRequest({ tools, databases }) {
  * know is ignored; the database tool starts nothing when it has no connections (dbFile is null).
  */
 export function toolServers(tools, { dbFile, dbServer }) {
-  const table = new Map([
-    ['database', () => (dbFile ? { db: { type: 'local', command: ['node', dbServer], environment: { DB_CONNECTIONS_FILE: dbFile } } } : {})],
-  ]);
-  const list = Array.isArray(tools) ? tools : [{ id: 'database' }];   // an older backend sends no tool list, only databases
-  return Object.assign({}, ...list.map(t => table.get(t?.id)?.() ?? {}));
+  const servers = {};
+  for (const t of Array.isArray(tools) ? tools : [{ id: 'database' }]) {   // an older backend sends no tool list, only databases
+    switch (t?.id) {   // a fixed list of ids: the id comes from the request and is never used as a name to look up or call
+      case 'database':
+        if (dbFile) servers.db = { type: 'local', command: ['node', dbServer], environment: { DB_CONNECTIONS_FILE: dbFile } };
+        break;
+      default:   // a tool this runtime does not know
+    }
+  }
+  return servers;
 }
 
 /** Well-formed skills from a run request: { name, text, tool }. */

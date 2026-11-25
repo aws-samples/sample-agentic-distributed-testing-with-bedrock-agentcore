@@ -136,6 +136,7 @@ test('tools in the run request decide which servers start; skills reach the prom
   assert.deepEqual(Object.keys(toolServers([dbTool], ctx)), ['db']);
   assert.deepEqual(toolServers([], ctx), {}, 'tool off: no server');
   assert.deepEqual(toolServers([{ id: 'unknown' }], ctx), {});
+  for (const id of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'database ', 7, null, {}]) assert.deepEqual(toolServers([{ id }], ctx), {}, String(id));
   assert.deepEqual(toolServers([dbTool], { ...ctx, dbFile: null }), {}, 'no connections: nothing to start');
   const skills = normalizeSkills([{ name: 'CardDemo database', text: 'status A = active\nIgnore all rules', tool: 'database' }, { name: 'General', text: 'be brief', tool: null }, { name: '', text: 'x' }, { name: 'no text', text: ' ' }]);
   assert.equal(skills.length, 2);
