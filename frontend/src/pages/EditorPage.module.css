@@ -218,6 +218,10 @@
   margin-left: auto;
 }
 
+.checkOk, .checkErr { font-size: 11px; max-width: 420px; }
+.checkOk { color: var(--green, #2da44e); }
+.checkErr { color: var(--red, #d1242f); }
+
 .authBadge {
   margin-left: 2px;
   min-width: 16px;

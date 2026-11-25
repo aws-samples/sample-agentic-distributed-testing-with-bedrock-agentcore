@@ -58,6 +58,7 @@ export default function EditorPage() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [targetUrl, setTargetUrl] = useState('')
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
+  const [urlCheck, setUrlCheck] = useState(null) // null | { loading } | result from the backend
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
   // Read-only mode while a test run is in progress
@@ -76,6 +77,17 @@ export default function EditorPage() {
       setTargetUrlDirty(false)
       setAuthSummary(summarizeAuth(cfg.auth))
     } catch { /* ignore */ }
+  }
+
+  const checkTargetHealth = async () => {
+    const url = targetUrl.trim()
+    if (!url) { setUrlCheck({ ok: false, reason: 'Enter a URL first' }); return }
+    setUrlCheck({ loading: true })
+    try {
+      setUrlCheck(await api.checkTargetUrl(url))
+    } catch (e) {
+      setUrlCheck({ ok: false, reason: 'Health check failed: ' + e.message })
+    }
   }
 
   const saveTargetUrl = async () => {
@@ -506,7 +518,7 @@ export default function EditorPage() {
           type="url"
           className={styles.targetInput}
           value={targetUrl}
-          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true) }}
+          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true); setUrlCheck(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter' && targetUrlDirty) saveTargetUrl() }}
           placeholder="https://your-app-under-test.example.com"
           disabled={readOnly}
@@ -519,6 +531,22 @@ export default function EditorPage() {
         >
           <Icon name="save" />{targetUrlDirty ? 'Save URL' : 'Saved'}
         </Btn>
+        <Btn
+          size="sm"
+          disabled={urlCheck?.loading}
+          onClick={checkTargetHealth}
+          title="Request the URL from the backend machine and report whether it is reachable"
+        >
+          <Icon name="monitor_heart" />{urlCheck?.loading ? 'Checking…' : 'Health check'}
+        </Btn>
+        {urlCheck && !urlCheck.loading && (
+          <span className={urlCheck.ok ? styles.checkOk : styles.checkErr} role="status">
+            {urlCheck.ok
+              ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
+              : `Not reachable: ${urlCheck.reason}`}
+            {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
+          </span>
+        )}
         <Btn
           size="sm"
           onClick={() => setAuthModalOpen(true)}

@@ -4,6 +4,7 @@ import { BedrockAgentCoreControlClient, GetAgentRuntimeCommand } from '@aws-sdk/
 import { config, featureList, sessions, saveConfig, AUTH_ROLES, bareModelId, ENV_NAME_RE, RESERVED_ENV_NAMES, ENV_LIMITS, normalizeEnvVars } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
+import { checkTargetUrl } from '../services/targetHealth.js';
 
 const router = Router();
 
@@ -258,6 +259,14 @@ router.post('/model/health-check', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, model: model.trim(), region, error: e.message?.slice(0, 120) });
   }
+});
+
+// Checks an (optionally unsaved) target URL from the backend machine. Never
+// changes config and never returns the response body.
+router.post('/config/target-url/health', async (req, res) => {
+  const { url } = req.body || {};
+  if (!url || typeof url !== 'string' || url.length > 2048) return res.status(400).json({ error: 'url required' });
+  res.json(await checkTargetUrl(url));
 });
 
 export default router;

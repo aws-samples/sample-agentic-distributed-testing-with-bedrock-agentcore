@@ -26,6 +26,7 @@ export function useApi() {
     updateModel: (model) => apiCall('PATCH', '/api/config/model', { model }),
     updateMode: (mode) => apiCall('PATCH', '/api/config/mode', { mode }),
     updateTargetUrl: (url) => apiCall('PATCH', '/api/config/target-url', { url }),
+    checkTargetUrl: (url) => apiCall('POST', '/api/config/target-url/health', { url }),
     updateRegions: (regions) => apiCall('PATCH', '/api/config/regions', regions),
     getKnownRegions: () => apiCall('GET', '/api/config/regions/known'),
     editWithAi: ({ mode = 'edit', testCase, feature, focus = [], instruction = '' }) =>
