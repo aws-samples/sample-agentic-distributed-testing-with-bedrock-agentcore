@@ -6,10 +6,9 @@ import { upsertRunRecord } from '../state/archive.js';
 
 const router = Router();
 
-router.post('/tests/run', (req, res) => {
-  const { testCases } = req.body;
-  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
-
+// Starts a run and returns its id. Shared by the UI route below and the
+// token-protected CI trigger (routes/ci.js).
+export function startRun(testCases) {
   const runId = `run-${Date.now()}`;
   testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
   stopFlags[runId] = false;
@@ -96,7 +95,13 @@ router.post('/tests/run', (req, res) => {
 
   activeRunPromises.set(runId, runPromise);
 
-  res.json({ runId });
+  return runId;
+}
+
+router.post('/tests/run', (req, res) => {
+  const { testCases } = req.body;
+  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
+  res.json({ runId: startRun(testCases) });
 });
 
 router.get('/tests/run/:runId', (req, res) => {

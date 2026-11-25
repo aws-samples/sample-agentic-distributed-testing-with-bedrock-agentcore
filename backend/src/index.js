@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { initWebSocket } from './services/websocket.js';
-import { config, featureList, testCasesByFeature, featureDescriptions, initEc2Region } from './state/store.js';
+import { config, featureList, testCasesByFeature, featureDescriptions, initEc2Region, activeRunPromises } from './state/store.js';
 import { assignTcIds, bddFields, scenarioName } from './services/tcIds.js';
 import { replaceAllFeaturesAndCases } from './state/db.js';
 import { requireAuth, authEnabled } from './middleware/auth.js';
@@ -19,6 +19,9 @@ import testRoutes     from './routes/tests.js';
 import yamlRoutes     from './routes/yaml.js';
 import analysisRoutes from './routes/analysis.js';
 import generateRoutes from './routes/generate.js';
+import { createCiRouter } from './routes/ci.js';
+import { startRun } from './routes/tests.js';
+import { runArchive } from './state/archive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -81,8 +84,14 @@ app.use('/api/import', express.text({ type: 'text/yaml', limit: '10mb' }));
 // unset (local dev). /api/health is excluded so health probes without a
 // browser session or token still get a 200. See middleware/auth.js.
 if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
-app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
+app.use('/api', (req, res, next) => (req.path === '/health' || req.path.startsWith('/ci/') ? next() : requireAuth(req, res, next)));
 
+// CI endpoints carry their own static-token check (routes/ci.js) instead of a
+// Cognito session, and stay disabled until CI_API_TOKEN is set.
+app.use('/api/ci', createCiRouter({
+  startRun, runArchive, testCasesByFeature,
+  isBusy: () => activeRunPromises.size > 0,
+}));
 app.use('/api', configRoutes);
 app.use('/api', featureRoutes);
 app.use('/api', sessionRoutes);
