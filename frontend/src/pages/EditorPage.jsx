@@ -10,6 +10,7 @@ import ImportModal from '../components/ImportModal'
 import { useApi } from '../context/useApi'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
+import Toast from '../components/Toast'
 import { buildAuthedWsUrl } from '../context/authFetch'
 import styles from './EditorPage.module.css'
 
@@ -543,14 +544,6 @@ export default function EditorPage() {
         >
           <Icon name="monitor_heart" />{urlCheck?.loading ? 'Checking…' : 'Health check'}
         </Btn>
-        {urlCheck && !urlCheck.loading && (
-          <span className={urlCheck.ok ? styles.checkOk : styles.checkErr} role="status">
-            {urlCheck.ok
-              ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
-              : `Not reachable: ${urlCheck.reason}`}
-            {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
-          </span>
-        )}
         <Btn
           size="sm"
           onClick={() => setAuthModalOpen(true)}
@@ -596,6 +589,14 @@ export default function EditorPage() {
         </div>
       </div>
 
+      {urlCheck && !urlCheck.loading && (
+        <Toast kind={urlCheck.ok ? 'success' : 'error'} onClose={() => setUrlCheck(null)}>
+          {urlCheck.ok
+            ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
+            : `Not reachable: ${urlCheck.reason}`}
+          {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
+        </Toast>
+      )}
       <ImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
