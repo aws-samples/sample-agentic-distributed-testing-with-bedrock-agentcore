@@ -33,6 +33,10 @@ export function useApi() {
     checkModelHealth: (model, region) => apiCall('POST', '/api/model/health-check', { model, region }),
     getEnvVars: () => apiCall('GET', '/api/config/env'),
     saveEnvVars: (variables) => apiCall('PUT', '/api/config/env', { variables }),
+    getDatabases: () => apiCall('GET', '/api/config/databases'),
+    saveDatabases: (connections) => apiCall('PUT', '/api/config/databases', { connections }),
+    testDatabase: (connection) => apiCall('POST', '/api/config/databases/test', { connection }),
+    loadDatabaseSchema: (connection) => apiCall('POST', '/api/config/databases/schema', { connection }),
     getAuth: () => apiCall('GET', '/api/config/auth'),
     updateAgent: ({ model, region }) => apiCall('PATCH', '/api/config/agent', { model, region }),
     requestAnalysis: (testCase, stepResults, failureDetails) =>

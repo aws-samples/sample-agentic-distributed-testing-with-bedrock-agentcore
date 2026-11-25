@@ -11,7 +11,7 @@ import { loadFeaturesAndCases, loadLegacyIdMap } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_FILE = path.join(__dirname, 'testResults.json');
-const CONFIG_FILE  = path.join(__dirname, 'config.json');
+const CONFIG_FILE  = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');   // CONFIG_PATH: tests
 
 function loadPersistedConfig() {
   try {
@@ -95,6 +95,33 @@ export function normalizeEnvVars(list) {
   })).filter(v => ENV_NAME_RE.test(v.name));
 }
 
+// Database connections the testing agent may read during a run (read-only unless a
+// connection opts in to writes). The password is a secret: it is served to nobody but the
+// runtime (in the run request) and never returned by any GET.
+export const DB_LIMITS = { count: 10, description: 4000 };
+export const DB_TYPES = ['mysql', 'postgres'];
+export const DB_SSL = ['off', 'require', 'verify'];
+export const DB_DEFAULT_PORT = { mysql: 3306, postgres: 5432 };
+/** Clean a list of connections. A password that is not a string keeps the saved one of the same name. */
+export function normalizeDbConnections(list, saved = []) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, DB_LIMITS.count).map(v => {
+    const name = String(v?.name || '').trim();
+    const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
+    return {
+      name, type,
+      host: String(v?.host || '').trim(),
+      port: Number(v?.port) || DB_DEFAULT_PORT[type],
+      database: String(v?.database || '').trim(),
+      user: String(v?.user || '').trim(),
+      password: typeof v?.password === 'string' ? v.password : String(saved.find(s => s.name === name)?.password || ''),
+      ssl: DB_SSL.includes(v?.ssl) ? v.ssl : 'off',
+      description: String(v?.description ?? '').slice(0, DB_LIMITS.description),
+      allowWrite: v?.allowWrite === true,
+    };
+  }).filter(v => ENV_NAME_RE.test(v.name));
+}
+
 // Bedrock model ids are stored bare ("global.anthropic.claude-sonnet-5"); the
 // runtimes add the "amazon-bedrock/" prefix OpenCode wants.
 export const bareModelId = (id) => String(id || '').trim().replace(/^amazon-bedrock\//, '');
@@ -117,6 +144,7 @@ export const config = {
   agentcoreRuntimeArn: _persisted.agentcoreRuntimeArn ?? process.env.AGENTCORE_RUNTIME_ARN ?? null,
   auth:         normalizeAuth(_persisted.auth),
   envVars:      normalizeEnvVars(_persisted.envVars),
+  dbConnections: normalizeDbConnections(_persisted.dbConnections),
 };
 
 // If no persisted browser region and no env override, try to match the EC2 host
@@ -138,6 +166,7 @@ export function saveConfig() {
         targetUrl:           config.targetUrl,
         auth:                config.auth,
         envVars:             config.envVars,
+        dbConnections:       config.dbConnections,
         bedrockModel:        config.bedrockModel,
         bedrockRegion:       config.bedrockRegion,
         agentModel:          config.agentModel,

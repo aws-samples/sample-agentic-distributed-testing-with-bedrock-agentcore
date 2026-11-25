@@ -22,9 +22,11 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
+import { normalizeConnections, buildDbSection, dbEvidence } from './db-util.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
+const DB_SERVER = join(__dirname, 'db-server.js');
 
 const PORT = process.env.PORT || 4020;
 // opencode uses Bedrock converse-stream; us-east-1 has the broadest model availability
@@ -344,7 +346,7 @@ async function getAwsCredentials() {
 
 // ─── Config & prompt builders ─────────────────────────────────────────────────
 
-function buildSystemPrompt(tc, targetUrl, pageNum, auth, env) {
+function buildSystemPrompt(tc, targetUrl, pageNum, auth, env, dbSection = '') {
   const numbered = (v) => (Array.isArray(v) ? v : [v])
     .filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join('\n');
   const backgroundText = (tc.background || '').trim();
@@ -389,7 +391,7 @@ In the test case, a reference like $${'{'}NAME} or "the NAME variable" means the
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
-IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${pageInstruction}${authSection}${envSection}
+IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${pageInstruction}${authSection}${envSection}${dbSection}
 
 RULES:
 1. Navigate to ${targetUrl} first using pageId: ${pageNum || 1}, then carry out the When steps
@@ -451,7 +453,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, browserWs, llm) {
+function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile) {
   // Connect to the browser-level WebSocket so chrome-devtools-mcp can call
   // browser-level commands (Target.getBrowserContexts, etc.).
   // Individual page routing is handled via pageId in tool calls.
@@ -481,6 +483,8 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
+      // Read-only database tools (db_list_tables, db_describe_table, db_query) when connections are configured
+      ...(dbFile ? { db: { type: 'local', command: ['node', DB_SERVER], environment: { DB_CONNECTIONS_FILE: dbFile } } } : {}),
       'chrome-devtools': {
         type: 'local',
         // Use globally-installed binary (avoids npx download on every run)
@@ -512,9 +516,9 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, dbFile) {
   const configPath = join(workDir, 'opencode.json');
-  const config = buildOpencodeConfig(assertResultFile, browserWs, llm);
+  const config = buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   // Log auth presence (usernames only, never passwords) so operators can verify
   // the agent received credentials when authentication is enabled
@@ -672,7 +676,7 @@ app.get('/health', (req, res) => {
  * Response: SSE lines — data: {"event": {...}}
  */
 app.post('/', async (req, res) => {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env } = req.body;
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env, databases } = req.body;
   if (action === 'run_test') {
     console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${(auth?.accounts || (auth?.username ? [auth] : [])).filter(a => a.username).map(a => (a.role || 'user') + ':' + a.username).join(',') || 'no'}`);
   }
@@ -765,7 +769,15 @@ app.post('/', async (req, res) => {
       return;
     }
 
-    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env) +
+    // Database connections for this run. Passwords go to the db tool server through a 0600 file
+    // that is deleted when the run ends, never into the prompt or onto a command line.
+    const dbs = normalizeConnections(databases);
+    let dbFile = null;
+    if (dbs.length) {
+      dbFile = join(workDir, 'db-connections.json');
+      writeFileSync(dbFile, JSON.stringify(dbs), { mode: 0o600 });
+    }
+    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env, buildDbSection(dbs)) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
@@ -779,6 +791,9 @@ app.post('/', async (req, res) => {
       // Forward step labels as action events
       if (ev.type === 'tool_use' && ev.part?.tool) {
         emitText(`[${ev.part.tool}] ${ev.part.state?.title || ''}`);
+        // Queries and their (truncated, password-masked) results go to the test case log as evidence
+        const evidence = dbEvidence(ev.part, dbs);
+        if (evidence) emitText(evidence);
       }
 
       // Extract screenshots from tool results
@@ -787,8 +802,9 @@ app.post('/', async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body));
+    }, browserWs, resolveModelAndRegion(req.body), dbFile);
 
+    if (dbFile) { try { unlinkSync(dbFile); } catch { /* ignore */ } }
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);
 

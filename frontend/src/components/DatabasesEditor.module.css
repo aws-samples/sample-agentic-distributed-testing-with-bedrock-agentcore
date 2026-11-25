@@ -1,0 +1,23 @@
+.wrap { display: flex; flex-direction: column; gap: 8px; }
+.empty { font-size: 12px; color: var(--text-muted); line-height: 1.5; padding: 2px 2px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.bad { border-color: var(--red); }
+.line { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.name { flex: 0 0 150px; width: 150px; min-width: 0; font-family: 'Courier New', monospace; text-transform: none; }
+.type { flex: 0 0 130px; }
+.host { flex: 1 1 160px; min-width: 0; }
+.port { flex: 0 0 80px; width: 80px; }
+.field { flex: 1 1 140px; min-width: 0; }
+.valueWrap { position: relative; flex: 1 1 140px; min-width: 0; }
+.pw { width: 100%; box-sizing: border-box; padding-right: 30px; }
+.eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 3px; display: flex; }
+.eye:hover { color: var(--text); }
+.del { background: none; border: 1px solid transparent; border-radius: 4px; padding: 3px; color: var(--text-muted); cursor: pointer; display: inline-flex; margin-left: auto; }
+.del:hover:not(:disabled) { color: var(--red); border-color: var(--border); }
+.desc { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; font-size: 12px; }
+.foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 11px; }
+.check { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); cursor: pointer; }
+.danger { color: var(--yellow); }
+.err { color: var(--red); margin-left: auto; }
+.okMsg { color: var(--green, #2e7d32); }
+.failMsg { color: var(--red); }

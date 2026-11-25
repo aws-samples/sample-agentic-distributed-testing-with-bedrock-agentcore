@@ -93,6 +93,8 @@ export async function invokeRuntime(tc, runId, sessionId) {
     region: config.agentRegion,
     // Context variables (name, value, when-to-use description) for the agent's prompt.
     env: config.envVars.map(({ name, value, description }) => ({ name, value, description })),
+    // Database connections for the agent's read-only db tools (passwords included: the runtime needs them).
+    databases: config.dbConnections,
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in

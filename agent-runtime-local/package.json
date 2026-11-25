@@ -5,10 +5,13 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test test/"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0",
     "ws": "^8.18.0"
   }
 }

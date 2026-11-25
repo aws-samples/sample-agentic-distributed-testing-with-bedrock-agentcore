@@ -18,12 +18,14 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket as WS } from 'ws';
+import { normalizeConnections, buildDbSection, dbEvidence } from './db-util.js';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
+const DB_SERVER = join(__dirname, 'db-server.js');
 
 const PORT           = process.env.PORT           || 8080;
 const BEDROCK_REGION = process.env.BEDROCK_REGION || process.env.AWS_REGION || 'ap-southeast-1';
@@ -273,7 +275,7 @@ async function getAwsCredentials() {
 
 // ─── Config & prompt builders ─────────────────────────────────────────────────
 
-function buildSystemPrompt(tc, targetUrl, auth, env) {
+function buildSystemPrompt(tc, targetUrl, auth, env, dbSection = '') {
   const numbered = (v) => (Array.isArray(v) ? v : [v])
     .filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join('\n');
   const backgroundText = (tc.background || '').trim();
@@ -314,7 +316,7 @@ In the test case, a reference like $${'{'}NAME} or "the NAME variable" means the
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
-IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${authSection}${envSection}
+IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${authSection}${envSection}${dbSection}
 
 RULES:
 1. Navigate to ${targetUrl} first, then carry out the When steps
@@ -363,7 +365,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
+function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile) {
   // AgentCore's WS endpoint requires SigV4-signed headers on the upgrade
   // request — chrome-devtools-mcp's --wsHeaders passes them through.
   const chromeMcpArgs = cdpWsUrl.startsWith('ws')
@@ -388,6 +390,8 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
+      // Read-only database tools (db_list_tables, db_describe_table, db_query) when connections are configured
+      ...(dbFile ? { db: { type: 'local', command: ['node', DB_SERVER], environment: { DB_CONNECTIONS_FILE: dbFile } } } : {}),
       'chrome-devtools': {
         type: 'local',
         command: [
@@ -405,9 +409,9 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, dbFile) {
   const configPath = join(workDir, 'opencode.json');
-  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm), null, 2));
+  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile), null, 2));
   const awsCreds = await getAwsCredentials();
   // Diagnostic: if getAwsCredentials() (classic EC2 IMDS) returns null, the
   // opencode child gets no explicit AWS creds beyond whatever's already in
@@ -565,7 +569,7 @@ app.post('/', async (req, res) => {
 });
 
 async function handleInvocation(req, res) {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env } = req.body;
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env, databases } = req.body;
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
@@ -631,7 +635,15 @@ async function handleInvocation(req, res) {
     }
 
     const assertResultFile = join(workDir, 'verdict.json');
-    const prompt = buildSystemPrompt(tc, targetUrl, auth, env) +
+    // Database connections for this run. Passwords go to the db tool server through a 0600 file
+    // that is deleted when the run ends, never into the prompt or onto a command line.
+    const dbs = normalizeConnections(databases);
+    let dbFile = null;
+    if (dbs.length) {
+      dbFile = join(workDir, 'db-connections.json');
+      writeFileSync(dbFile, JSON.stringify(dbs), { mode: 0o600 });
+    }
+    const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs)) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
@@ -643,14 +655,18 @@ async function handleInvocation(req, res) {
       }
       if (ev.type === 'tool_use' && ev.part?.tool) {
         emitText(`[${ev.part.tool}] ${ev.part.state?.title || ''}`);
+        // Queries and their (truncated, password-masked) results go to the test case log as evidence
+        const evidence = dbEvidence(ev.part, dbs);
+        if (evidence) emitText(evidence);
       }
       const ss = extractScreenshot(ev);
       if (ss) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body));
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile);
 
+    if (dbFile) { try { unlinkSync(dbFile); } catch { /* ignore */ } }
     // Emit final screenshot
     if (!lastScreenshot) {
       try { lastScreenshot = await agentCoreScreenshot(sessionName); } catch { /* ignore */ }

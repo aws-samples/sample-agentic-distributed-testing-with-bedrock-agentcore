@@ -4,6 +4,7 @@ import Btn from './Btn'
 import Icon from './Icon'
 import styles from './SettingsModal.module.css'
 import EnvVarsEditor, { validateEnvVars, cleanEnvVars } from './EnvVarsEditor'
+import DatabasesEditor, { validateDatabases, cleanDatabases, toRows } from './DatabasesEditor'
 import { ModelRegionPicker, MODEL_IDS, KNOWN_REGIONS_FALLBACK, toChoice, fromChoice } from './ModelRegionPicker'
 
 /**
@@ -28,6 +29,9 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const [envLimits, setEnvLimits] = useState({ value: 2000, description: 500 })
   const [envReserved, setEnvReserved] = useState(['TARGET_URL'])
   const [envSaved, setEnvSaved] = useState('[]')
+  const [dbRows, setDbRows] = useState([])
+  const [dbLimits, setDbLimits] = useState({ description: 4000 })
+  const [dbSaved, setDbSaved] = useState('[]')
   const [builtIn, setBuiltIn] = useState([])
   const [status, setStatus] = useState({ kind: 'loading' })      // loading | idle | saving | error
 
@@ -41,7 +45,8 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       api.getKnownRegions?.().catch(() => null),
       api.getEnvVars().catch(() => null),
       api.getAuth().catch(() => null),
-    ]).then(([cfg, regions, env, auth]) => {
+      api.getDatabases().catch(() => null),
+    ]).then(([cfg, regions, env, auth, dbs]) => {
       if (cancelled) return
       const known = regions?.regions?.length ? regions.regions : KNOWN_REGIONS_FALLBACK
       setKnownRegions(known)
@@ -54,6 +59,9 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       setEnvRows(rows); setEnvSaved(JSON.stringify(cleanEnvVars(rows)))
       if (env?.limits) setEnvLimits(env.limits)
       if (env?.reserved) setEnvReserved(env.reserved)
+      const dRows = toRows(dbs?.connections)
+      setDbRows(dRows); setDbSaved(JSON.stringify(cleanDatabases(dRows)))
+      if (dbs?.limits) setDbLimits(dbs.limits)
       const accts = (auth?.accounts || []).filter(a => a.username)
       setBuiltIn([
         { name: 'TARGET_URL', value: cfg.targetUrl, where: 'Test Editor → Target URL', description: 'The application under test; the agent always starts here.' },
@@ -72,8 +80,12 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const envInvalid = Object.keys(envErrors).length > 0
   const envDirty = JSON.stringify(cleanEnvVars(envRows)) !== envSaved
 
+  const dbErrors = validateDatabases(dbRows, dbLimits)
+  const dbInvalid = Object.keys(dbErrors).length > 0
+  const dbDirty = JSON.stringify(cleanDatabases(dbRows)) !== dbSaved
+
   const handleSave = async () => {
-    if (missing || envInvalid) return
+    if (missing || envInvalid || dbInvalid) return
     setStatus({ kind: 'saving' })
     try {
       // Only send what changed, so an unrelated save never rewrites a value.
@@ -82,6 +94,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         await api.updateAgent({ model: ids.aModel, region: ids.aRegion })
       }
       if (envDirty) await api.saveEnvVars(cleanEnvVars(envRows))
+      if (dbDirty) await api.saveDatabases(cleanDatabases(dbRows))
       let savedMode = currentMode
       if (mode !== currentMode) { await api.updateMode(mode); savedMode = mode }
       await onSave({ model: ids.pModel, mode: savedMode })
@@ -100,7 +113,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       footer={
         <>
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" disabled={busy || missing || envInvalid} onClick={handleSave}>Save</Btn>
+          <Btn variant="primary" disabled={busy || missing || envInvalid || dbInvalid} onClick={handleSave}>Save</Btn>
         </>
       }
     >
@@ -153,6 +166,14 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
             Named values handed to the agent on every run. Add a description saying <strong>when</strong> to use each one, so the agent knows whether it applies to a test.
           </div>
           <EnvVarsEditor rows={envRows} onChange={setEnvRows} builtIn={builtIn} errors={envErrors} disabled={busy} />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Database connections</label>
+          <div className={styles.hint} style={{ marginTop: 0 }}>
+            Lets the agent check stored data during a run (for example, that a transfer wrote its ledger rows). It can only <strong>read</strong>: SELECT, one statement, a read-only transaction, 200 rows and 15 s per query. Use a read-only database user on test or staging data. The password is stored in the backend config and sent to the runtime with each run; it is never shown again. In AgentCore mode the database must be reachable from the runtime's network.
+          </div>
+          <DatabasesEditor rows={dbRows} onChange={setDbRows} errors={dbErrors} disabled={busy} api={api} />
         </div>
 
         {mode === 'agentcore' && (
