@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkReadOnly, isUnsafeKey, writeDbCredentials, DISABLED_BUILTIN_TOOLS, maskSecrets, buildDbSection, dbEvidence, normalizeConnections } from '../src/db-util.js';
 
 const ok = (sql, t = 'postgres') => assert.equal(checkReadOnly(sql, t).ok, true, sql);
@@ -104,6 +106,25 @@ test('credentials file lives outside the working directory and is removed; log s
   assert.match(dbEvidence(part('bank'), cs), /SELECT 1\n\(result not logged/);
   assert.match(dbEvidence(part('b2'), cs), /"rows"/);
   for (const t of ['bash', 'write', 'edit']) assert.equal(DISABLED_BUILTIN_TOOLS[t], false, t);
+});
+
+test('the db tool server deletes the credentials file as soon as it has read it', async () => {
+  const { file, cleanup } = writeDbCredentials(normalizeConnections([{ name: 'bank', type: 'postgres', password: 'pw' }]));
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/db-server.js', import.meta.url))], {
+    env: { ...process.env, DB_CONNECTIONS_FILE: file }, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  try {
+    child.stdin.write('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
+    const out = await new Promise(r => child.stdout.once('data', d => r(String(d))));
+    assert.match(out, /Connection name: bank/, 'it loaded the connection');
+    assert.ok(!existsSync(file), 'file is gone once the server is up');
+  } finally { child.kill(); cleanup(); }
+});
+
+test('the local runtime image blocks file:// in Chromium', () => {
+  const policy = JSON.parse(readFileSync(new URL('../chromium-policy.json', import.meta.url), 'utf8'));
+  assert.ok(policy.URLBlocklist.includes('file://*'));
+  assert.match(readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8'), /chromium-policy\.json \/etc\/chromium\/policies\/managed\//);
 });
 
 test('rejects object keys that could pollute the prototype', () => {

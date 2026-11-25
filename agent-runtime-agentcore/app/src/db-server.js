@@ -14,7 +14,7 @@
  * on a command line.
  * MCP protocol: newline-delimited JSON over stdin/stdout.
  */
-import { readFileSync } from 'fs';
+import { readFileSync, unlinkSync } from 'fs';
 import { createInterface } from 'readline';
 import { checkReadOnly, normalizeConnections, maskSecrets } from './db-util.js';
 
@@ -24,7 +24,14 @@ const MAX_BYTES = 20000;       // size of one result
 const TIMEOUT_MS = Number(process.env.DB_TIMEOUT_MS) || 15000;
 
 let connections = [];
-try { connections = normalizeConnections(JSON.parse(readFileSync(process.env.DB_CONNECTIONS_FILE, 'utf8'))); } catch { /* none */ }
+// Read once, then delete: the passwords live only in this process's memory for the rest of the run.
+// shortcut: OpenCode starts this server, so there is no stdin or inherited pipe to receive them on;
+// a file that exists for the few seconds until the server starts is the closest thing. Use a
+// pipe if the tool server is ever started by the runtime itself.
+try {
+  connections = normalizeConnections(JSON.parse(readFileSync(process.env.DB_CONNECTIONS_FILE, 'utf8')));
+  unlinkSync(process.env.DB_CONNECTIONS_FILE);
+} catch { /* none, or already read */ }
 
 // ─── Query execution ──────────────────────────────────────────────────────────
 

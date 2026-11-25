@@ -60,7 +60,17 @@ const runLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: tr
 const CHROME_CDP_PORT = 9222;
 let chromiumProc = null;
 
+// The Dockerfile installs a managed policy that blocks file:// in this Chromium, so the agent's
+// browser cannot read the runtime's files. Outside the image there may be none: say so.
+const CHROMIUM_POLICY = '/etc/chromium/policies/managed/block-file.json';
+function warnIfFilesReadable() {
+  if (!existsSync(CHROMIUM_POLICY)) {
+    console.warn(`[chromium] ${CHROMIUM_POLICY} is missing: the agent's browser can open file:// URLs and read this machine's files. Use the Docker image, or install agent-runtime-local/chromium-policy.json there.`);
+  }
+}
+
 function startChromium() {
+  warnIfFilesReadable();
   const args = [
     '--no-sandbox',
     '--disable-dev-shm-usage',

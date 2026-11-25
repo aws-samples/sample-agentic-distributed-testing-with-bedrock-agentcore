@@ -18,6 +18,10 @@ RUN npm install --omit=dev
 
 COPY src/ src/
 
+# The agent's browser must not read this container's files (file:///tmp/, /proc/<pid>/environ):
+# managed Chromium policy blocks file:// (see the README, Database checks).
+COPY chromium-policy.json /etc/chromium/policies/managed/block-file.json
+
 # chrome-devtools-mcp will use CHROMIUM_PATH if set, or auto-detect chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium
 
