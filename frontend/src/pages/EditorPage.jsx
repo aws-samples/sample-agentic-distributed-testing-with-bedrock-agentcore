@@ -58,6 +58,7 @@ export default function EditorPage() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [targetUrl, setTargetUrl] = useState('')
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
+  const urlCheckSeq = useRef(0) // bumped on edit and on each check so late responses are dropped
   const [urlCheck, setUrlCheck] = useState(null) // null | { loading } | result from the backend
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
@@ -82,12 +83,15 @@ export default function EditorPage() {
   const checkTargetHealth = async () => {
     const url = targetUrl.trim()
     if (!url) { setUrlCheck({ ok: false, reason: 'Enter a URL first' }); return }
+    const seq = ++urlCheckSeq.current
     setUrlCheck({ loading: true })
+    let result
     try {
-      setUrlCheck(await api.checkTargetUrl(url))
+      result = await api.checkTargetUrl(url)
     } catch (e) {
-      setUrlCheck({ ok: false, reason: 'Health check failed: ' + e.message })
+      result = { ok: false, reason: 'Health check failed: ' + e.message }
     }
+    if (seq === urlCheckSeq.current) setUrlCheck(result)
   }
 
   const saveTargetUrl = async () => {
@@ -518,7 +522,7 @@ export default function EditorPage() {
           type="url"
           className={styles.targetInput}
           value={targetUrl}
-          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true); setUrlCheck(null) }}
+          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true); urlCheckSeq.current++; setUrlCheck(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter' && targetUrlDirty) saveTargetUrl() }}
           placeholder="https://your-app-under-test.example.com"
           disabled={readOnly}

@@ -1,7 +1,8 @@
-import { test, after } from 'node:test';
+import { test, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
+import dns from 'node:dns/promises';
 import { checkTargetUrl } from '../src/services/targetHealth.js';
 
 // A link-local address (built from parts); the checker must refuse it without connecting.
@@ -90,4 +91,26 @@ test('connects to the address it validated and sends the original Host header', 
   s.close();
   assert.equal(r.ok, true);
   assert.equal(seenHost, `localhost:${port}`);
+});
+
+test('IPv4-mapped IPv6 and AWS IPv6 metadata-range addresses are blocked', async () => {
+  const mapped = `::ffff:${LINK_LOCAL}`;               // URL normalises this to a hex form
+  const awsV6 = ['fd00', 'ec2', '', '1'].join(':');    // inside the /32
+  for (const host of [mapped, awsV6, 'fe80::1']) {
+    const r = await checkTargetUrl(`http://[${host}]/`);
+    assert.equal(r.ok, false, host);
+    assert.match(r.reason, /Link-local/, host);
+  }
+  const ok = await checkTargetUrl(`http://[::ffff:127.0.0.1]:${srv.address().port}/`);
+  assert.equal(ok.ok, true); // mapped loopback stays allowed
+});
+
+test('a hung DNS lookup is cut off by the timeout', async () => {
+  const m = mock.method(dns, 'lookup', () => new Promise(() => {}));
+  const t = Date.now();
+  const r = await checkTargetUrl('http://hung.example/', { timeoutMs: 200 });
+  m.mock.restore();
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /Timed out/);
+  assert.ok(Date.now() - t < 2000);
 });

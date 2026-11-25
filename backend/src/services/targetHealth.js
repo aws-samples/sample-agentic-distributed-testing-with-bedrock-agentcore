@@ -10,21 +10,35 @@ const MAX_REDIRECTS = 5;
 // that exact address, so a second DNS answer (rebinding) cannot change the target.
 // Loopback and private ranges stay allowed (the app under test is often local);
 // link-local is blocked because it hosts the cloud instance-metadata service.
+// BlockList matches IPv4-mapped IPv6 (::ffff:a.b.c.d, including the hex form URL
+// produces) against its IPv4 rules; the third rule is the AWS IPv6 metadata range.
+const blocked = new net.BlockList();
+blocked.addSubnet('169.254.0.0', 16, 'ipv4');
+blocked.addSubnet('fe80::', 10, 'ipv6');
+blocked.addSubnet(['fd00', 'ec2', ''].join(':') + ':', 32, 'ipv6');
 function isLinkLocal(ip) {
-  if (net.isIPv4(ip)) return ip.startsWith('169.254.');
-  const v = ip.toLowerCase().replace(/^::ffff:/, '');
-  if (net.isIPv4(v)) return v.startsWith('169.254.');
-  return /^fe[89ab]/.test(v);
+  return blocked.check(ip, net.isIPv4(ip) ? 'ipv4' : 'ipv6');
 }
 
-async function resolveAllowed(url) {
+// dns.lookup ignores AbortSignal, so race it against the signal.
+function abortable(promise, signal) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const fail = () => reject(signal.reason);
+      if (signal.aborted) fail(); else signal.addEventListener('abort', fail, { once: true });
+    }),
+  ]);
+}
+
+async function resolveAllowed(url, signal) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw Object.assign(new Error('Only http and https URLs can be checked'), { reason: 'Only http and https URLs can be checked' });
   }
   const host = url.hostname.replace(/^\[|\]$/g, '');
-  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
+  const addrs = net.isIP(host) ? [{ address: host }] : await abortable(dns.lookup(host, { all: true }), signal);
   if (addrs.some(a => isLinkLocal(a.address))) {
-    const reason = 'Link-local addresses (169.254.x.x, fe80::) are not allowed';
+    const reason = 'Link-local and cloud-metadata addresses are not allowed';
     throw Object.assign(new Error(reason), { reason });
   }
   return { host, address: addrs[0].address };
@@ -67,16 +81,16 @@ function describeError(e) {
 
 // GET the URL and report reachability. Redirects are followed manually (each hop
 // re-validated); the response body is never read or returned.
-export async function checkTargetUrl(rawUrl) {
+export async function checkTargetUrl(rawUrl, { timeoutMs = TIMEOUT_MS } = {}) {
   const base = { checkedFrom: 'backend' };
   let url;
   try { url = new URL(String(rawUrl).trim()); } catch { return { ...base, ok: false, reason: 'Invalid URL' }; }
-  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const signal = AbortSignal.timeout(timeoutMs);
   const started = Date.now();
   try {
     let res;
     for (let hop = 0; ; hop++) {
-      const target = await resolveAllowed(url);
+      const target = await resolveAllowed(url, signal);
       res = await requestOnce(url, target, signal);
       const loc = res.location;
       if (res.status < 300 || res.status >= 400 || !loc) break;
