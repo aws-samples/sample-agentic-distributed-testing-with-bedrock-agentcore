@@ -11,7 +11,9 @@ import { initWebSocket } from './services/websocket.js';
 import { config, featureList, testCasesByFeature, featureDescriptions, initEc2Region } from './state/store.js';
 import { assignTcIds, bddFields, scenarioName } from './services/tcIds.js';
 import { replaceAllFeaturesAndCases } from './state/db.js';
+import rateLimit from 'express-rate-limit';
 import { requireAuth, authEnabled } from './middleware/auth.js';
+import { HOST, corsOptions, apiGate, logStartupSecurity } from './security.js';
 import configRoutes   from './routes/config.js';
 import featureRoutes   from './routes/features.js';
 import sessionRoutes  from './routes/sessions.js';
@@ -73,15 +75,18 @@ initEc2Region().catch(() => {});
 const app  = express();
 const PORT = process.env.PORT || 4010;
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use('/api/import', express.text({ type: 'text/yaml', limit: '10mb' }));
 
-// Cognito auth gate — no-op when COGNITO_USER_POOL_ID/COGNITO_CLIENT_ID are
-// unset (local dev). /api/health is excluded so health probes without a
-// browser session or token still get a 200. See middleware/auth.js.
+// Rate limit for every /api route (several read or write files and the database).
+app.use('/api', rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false }));
+
+// Access gate: X-API-Key and/or Cognito, and refusal of changes when bound to a
+// non-loopback HOST with neither. /api/health is excluded so health probes still
+// get a 200. See security.js and middleware/auth.js.
 if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
-app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
+app.use('/api', apiGate({ cognito: requireAuth, cognitoEnabled: authEnabled }));
 
 app.use('/api', configRoutes);
 app.use('/api', featureRoutes);
@@ -94,8 +99,9 @@ app.use('/api', generateRoutes);
 const server = http.createServer(app);
 initWebSocket(server);
 
-server.listen(PORT, () => {
-  console.log(`Agentic Test Runner backend  port=${PORT}`);
+server.listen(PORT, HOST, () => {
+  logStartupSecurity(authEnabled);
+  console.log(`Agentic Test Runner backend  ${HOST}:${PORT}`);
   console.log(`Mode: ${config.agentMode}  Model: ${config.bedrockModel}`);
   console.log(`Target: ${config.targetUrl}`);
   console.log(`Features: ${featureList.join(', ')}`);

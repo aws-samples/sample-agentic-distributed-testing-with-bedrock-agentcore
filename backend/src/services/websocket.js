@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { config, featureList, sessions, testResultsCache, testRuns, stopFlags, activeFeatures } from '../state/store.js';
 import { authEnabled, verifyWsToken } from '../middleware/auth.js';
+import { wsHandshakeStatus } from '../security.js';
 
 let wss;
 const wsClients = new Set();
@@ -19,14 +20,12 @@ export function initWebSocket(server) {
     const { pathname, searchParams } = new URL(req.url, `http://${req.headers.host}`);
     if (pathname !== '/ws') return; // let other upgrade listeners (if any) handle it
 
-    if (authEnabled) {
-      const token = searchParams.get('token') || '';
-      const valid = await verifyWsToken(token);
-      if (!valid) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
+    const tokenOk = authEnabled ? await verifyWsToken(searchParams.get('token') || '') : true;
+    const rejected = wsHandshakeStatus(req, { cognitoEnabled: authEnabled, tokenOk });
+    if (rejected) {
+      socket.write(`HTTP/1.1 ${rejected} ${rejected === 403 ? 'Forbidden' : 'Unauthorized'}\r\n\r\n`);
+      socket.destroy();
+      return;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

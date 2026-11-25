@@ -241,6 +241,9 @@ Every script has `--destroy`, which removes what that script created:
 | `S3_SNAPSHOT_BUCKET` | — | S3 bucket for evidence snapshots shown on the Analysis page. Leave unset to disable snapshot capture entirely |
 | `S3_SNAPSHOT_REGION` | `ap-southeast-1` | Region of the snapshot bucket |
 | `PORT` | `4010` | Backend HTTP port (set by docker-compose; rarely overridden) |
+| `HOST` | `127.0.0.1` | Interface the backend listens on. **Default is loopback only.** Set `0.0.0.0` (or an address) to allow other machines; see "API access and exposure" below |
+| `API_KEY` | — | Shared secret. When set, every `/api/*` call except `/api/health` (and the WebSocket) must send it as the `X-API-Key` header |
+| `CORS_ORIGINS` | — | Extra browser origins (comma-separated) allowed to call the API cross-origin, on top of `http://localhost:5173`, `:5175` and the `127.0.0.1` equivalents. The UI is same-origin and needs none |
 | `LOCAL_RUNTIME_URL` | `http://localhost:4020` | Where the backend reaches `agent-runtime-local` (local mode only) |
 
 Most of these can also be changed at runtime from the frontend's Settings modal (the platform's and the agent's model and region, agent mode, target URL, authentication) — the backend persists your choices to `backend/src/state/config.json` so they survive a restart. Env vars only supply the initial defaults.
@@ -282,6 +285,16 @@ The CDK stack packages `agent-runtime-agentcore/app/` (Dockerfile + package.json
 **Observability:** the runtime container is instrumented with the AWS Distro for OpenTelemetry (see `agent-runtime-agentcore/app/Dockerfile`), so spans reach CloudWatch (GenAI Observability / Transaction Search) in addition to the runtime logs. "Tracing enabled" on the runtime only sets up delivery; the spans come from this instrumentation, so redeploy after changing it. CloudWatch Transaction Search must be enabled in the account.
 
 ## Security & Compliance
+
+### API access and exposure
+
+- **Loopback by default.** The backend listens on `127.0.0.1:4010`. The Docker setup is unaffected, because nginx (UI on :5175) runs on the host network and proxies to `127.0.0.1:4010`. To reach the API directly from another machine, set `HOST=0.0.0.0` in `.env`.
+- **Non-loopback `HOST` needs a key.** With a non-loopback `HOST` and neither `API_KEY` nor Cognito configured, the backend logs a warning at start-up and refuses every mutating call (POST, PUT, PATCH, DELETE) with 403; reads still work. Set `API_KEY` to enable changes. When `API_KEY` is set (on any `HOST`), requests need `X-API-Key: <key>` or a Cognito token. The browser UI does not send a key, so with `API_KEY` set put a reverse proxy in front that adds the header (nginx: `proxy_set_header X-API-Key <key>;` in the `/api/` and `/ws` locations), or use Cognito.
+- **The UI port is still open.** nginx forwards to the backend from loopback, so anyone who can reach :5175 can use the API. Restrict it with the instance's security group, or put authentication in front.
+- **CORS** is an allow-list (see `CORS_ORIGINS`) instead of `*`. A WebSocket handshake with a foreign `Origin` is refused.
+- **Secrets are not served.** `GET /api/config/auth` returns `passwordSet` and a masked password; `GET /api/config/env` masks the value of variables marked secret. Saving the masked value back keeps the stored one. The UI's eye button, or `POST /api/config/auth/reveal {role}` and `POST /api/config/env/reveal {name}`, reveal a value, behind the same gate. `/api/health` reports `runtimeConfigured` instead of the AgentCore runtime ARN (which contains the AWS account id).
+- **Target URL** must be `http` or `https` (also when set by YAML import). Private and link-local addresses are accepted with a `warning` in the response.
+- `/api/*` is rate limited to 600 requests per minute per client.
 
 This is sample code, for non-production usage. You should work with your security and legal teams to meet your organizational security, regulatory, and compliance requirements before deployment. In particular: the bundled CardDemo sample app and its `USER0001` / `PASSWORD` demo credentials (`sample-app/README.md`) exist purely to give the test runner something to exercise — do not reuse them, or this repo's Docker deployment patterns as-is, for anything handling real user data.
 

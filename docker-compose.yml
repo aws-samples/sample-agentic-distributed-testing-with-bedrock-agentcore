@@ -10,6 +10,10 @@ services:
     network_mode: host
     environment:
       PORT: "4010"
+      # Loopback by default; see README "API access and exposure".
+      HOST: "${HOST:-127.0.0.1}"
+      API_KEY: "${API_KEY:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
       TARGET_URL: "${TARGET_URL:-http://localhost:8020}"
       BEDROCK_MODEL: "${BEDROCK_MODEL:-global.anthropic.claude-sonnet-4-6}"
       BROWSER_REGION: "${BROWSER_REGION:-ap-southeast-1}"

@@ -4,6 +4,7 @@ import { config, featureList, testCasesByFeature, featureDescriptions } from '..
 import { broadcast } from '../services/websocket.js';
 import { assignTcIds, bddFields, scenarioName } from '../services/tcIds.js';
 import { replaceAllFeaturesAndCases } from '../state/db.js';
+import { checkTargetUrl } from '../services/targetUrl.js';
 
 const router = Router();
 
@@ -70,7 +71,13 @@ router.post('/import', (req, res) => {
       }
     }
   }
-  if (doc.targetUrl) { try { new URL(doc.targetUrl); config.targetUrl = doc.targetUrl; } catch { /* ignore */ } }
+  // An invalid or non-http(s) targetUrl in the file is skipped, not applied.
+  if (doc.targetUrl) {
+    const checked = checkTargetUrl(doc.targetUrl);
+    if (checked.ok) config.targetUrl = String(doc.targetUrl);
+    else summary.targetUrlSkipped = checked.error;
+    if (checked.warning) summary.targetUrlWarning = checked.warning;
+  }
   replaceAllFeaturesAndCases(featureList, testCasesByFeature, featureDescriptions);
   broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList });
   broadcast({ type: 'cases_updated', feature: null });

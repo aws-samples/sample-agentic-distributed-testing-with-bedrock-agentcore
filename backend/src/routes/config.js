@@ -4,6 +4,8 @@ import { BedrockAgentCoreControlClient, GetAgentRuntimeCommand } from '@aws-sdk/
 import { config, featureList, sessions, saveConfig, AUTH_ROLES, bareModelId, ENV_NAME_RE, RESERVED_ENV_NAMES, ENV_LIMITS, normalizeEnvVars } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
+import { MASK, maskedAccounts, maskedEnvVars, resolveEnvVars } from '../services/secrets.js';
+import { checkTargetUrl } from '../services/targetUrl.js';
 
 const router = Router();
 
@@ -30,7 +32,7 @@ router.get('/health', (req, res) => {
     browserRegion:    config.browserRegion,
     features:          featureList,
     runtime:          config.agentMode === 'local' ? 'opencode-local' : 'agentcore-runtime',
-    runtimeArn:       config.agentMode === 'agentcore' ? config.agentcoreRuntimeArn : null,
+    runtimeConfigured: config.agentMode === 'agentcore' ? !!config.agentcoreRuntimeArn : true,
     localRuntimeUrl:  config.agentMode === 'local' ? LOCAL_URL : null,
     sessions: Object.fromEntries(Object.entries(sessions).map(([id, s]) => [id, { connected: s.connected, action: s.action }])),
   });
@@ -74,7 +76,16 @@ router.patch('/config/agent', (req, res) => {
 // (never from GET /config) and never cached.
 router.get('/config/env', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ variables: config.envVars, limits: ENV_LIMITS, reserved: RESERVED_ENV_NAMES });
+  res.json({ variables: maskedEnvVars(config.envVars), limits: ENV_LIMITS, reserved: RESERVED_ENV_NAMES });
+});
+
+// Explicit reveal of one secret value, behind the same access gate as every other call.
+router.post('/config/env/reveal', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const name = String(req.body?.name || '');
+  const found = config.envVars.find(v => v.name === name);
+  if (!found) return res.status(404).json({ error: 'No such variable' });
+  res.json({ name, value: found.value });
 });
 
 // Replaces the whole list. Validated as a whole so the saved list is never half-applied.
@@ -93,9 +104,11 @@ router.put('/config/env', (req, res) => {
     if (String(v?.value ?? '').length > ENV_LIMITS.value) return res.status(400).json({ error: `${where} (${name}): the value is longer than ${ENV_LIMITS.value} characters` });
     if (String(v?.description ?? '').length > ENV_LIMITS.description) return res.status(400).json({ error: `${where} (${name}): the description is longer than ${ENV_LIMITS.description} characters` });
   }
-  config.envVars = normalizeEnvVars(list);
+  const resolved = resolveEnvVars(list, config.envVars);   // MASK on a secret keeps the stored value
+  if (resolved.error) return res.status(400).json({ error: resolved.error });
+  config.envVars = normalizeEnvVars(resolved.list);
   saveConfig();
-  res.json({ variables: config.envVars });
+  res.json({ variables: maskedEnvVars(config.envVars) });
 });
 
 router.patch('/config/model', (req, res) => {
@@ -132,30 +145,35 @@ router.get('/config/regions/known', (req, res) => {
 router.patch('/config/target-url', (req, res) => {
   const { url } = req.body;
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' });
-  try { new URL(url); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
+  const checked = checkTargetUrl(url);
+  if (!checked.ok) return res.status(400).json({ error: checked.error });
   config.targetUrl = url;
   saveConfig();
   broadcast({ type: 'config', targetUrl: config.targetUrl, features: featureList });
-  res.json({ targetUrl: config.targetUrl });
+  res.json({ targetUrl: config.targetUrl, ...(checked.warning ? { warning: checked.warning } : {}) });
 });
 
 // Never echo passwords — only whether one is stored.
 function authView() {
   return {
     enabled: !!config.auth.enabled,
-    accounts: config.auth.accounts.map(a => ({ role: a.role, username: a.username, passwordSet: !!a.password })),
+    accounts: maskedAccounts(config.auth.accounts),
   };
 }
 
-// The Authentication dialog shows the real passwords (masked, with a show toggle),
-// so this one endpoint returns them. They are NOT in GET /config, which is read
-// all over the UI. Never cached.
+// Passwords are masked (MASK + passwordSet). Sending MASK back on a save keeps the stored one.
 router.get('/config/auth', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({
-    enabled: !!config.auth.enabled,
-    accounts: config.auth.accounts.map(a => ({ role: a.role, username: a.username, password: a.password })),
-  });
+  res.json(authView());
+});
+
+// Explicit reveal of one account's password, behind the same access gate as every other call.
+router.post('/config/auth/reveal', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const role = req.body?.role;
+  const acc = AUTH_ROLES.includes(role) ? config.auth.accounts.find(a => a.role === role) : null;
+  if (!acc) return res.status(400).json({ error: `role must be one of ${AUTH_ROLES.join(', ')}` });
+  res.json({ role, password: acc.password });
 });
 
 // Update authentication for the target app. Body:
@@ -174,7 +192,7 @@ router.patch('/config/auth', (req, res) => {
       if (!AUTH_ROLES.includes(inc?.role)) return res.status(400).json({ error: `role must be one of ${AUTH_ROLES.join(', ')}` });
       const cur = next.accounts.find(a => a.role === inc.role);
       if (typeof inc.username === 'string') cur.username = inc.username.trim();
-      if (inc.password !== undefined) cur.password = String(inc.password);
+      if (inc.password !== undefined && inc.password !== MASK) cur.password = String(inc.password);
     }
   }
   config.auth = next;
@@ -218,7 +236,7 @@ async function checkAgentcoreRuntime() {
   // region, which is authoritative for where the runtime lives.
   const [, , , region, , resource] = arn.split(':');
   const runtimeId = resource?.split('/')[1];
-  if (!region || !runtimeId) return { ok: false, detail: `Malformed runtime ARN: ${arn}` };
+  if (!region || !runtimeId) return { ok: false, detail: 'Malformed runtime ARN' };
   const note = region !== config.browserRegion ? ` (note: AgentCore region setting is ${config.browserRegion}, runtime is in ${region})` : '';
   try {
     const client = new BedrockAgentCoreControlClient({ region });

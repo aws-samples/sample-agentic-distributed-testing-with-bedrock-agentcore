@@ -3,6 +3,8 @@ import Icon from './Icon'
 import Btn from './Btn'
 import styles from './EnvVarsEditor.module.css'
 
+// The backend returns this in place of a stored secret; sending it back keeps the stored one.
+const MASK = '••••••••'
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 
 /** Problems with a list of variables, keyed by row index. Empty object = fine. */
@@ -39,6 +41,20 @@ export default function EnvVarsEditor({ rows, onChange, builtIn, errors, disable
   const [shown, setShown] = useState({})           // row index -> value revealed
   const set = (i, patch) => onChange(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)))
   const remove = (i) => { onChange(rows.filter((_, k) => k !== i)); setShown({}) }
+  // Showing a stored (masked) secret asks the backend to reveal it.
+  const toggleShown = async (i) => {
+    const r = rows[i]
+    if (!shown[i] && r.secret && r.value === MASK) {
+      try {
+        const res = await fetch('/api/config/env/reveal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: r.name.trim() }),
+        })
+        if (res.ok) set(i, { value: (await res.json()).value })
+        else return
+      } catch { return }
+    }
+    setShown(s => ({ ...s, [i]: !s[i] }))
+  }
   const add = () => onChange([...rows, { name: '', value: '', description: '', secret: false }])
 
   return (
@@ -75,7 +91,7 @@ export default function EnvVarsEditor({ rows, onChange, builtIn, errors, disable
               />
               {r.secret && (
                 <button type="button" className={styles.eye} title={shown[i] ? 'Hide' : 'Show'}
-                  onClick={() => setShown(s => ({ ...s, [i]: !s[i] }))}>
+                  onClick={() => toggleShown(i)}>
                   <Icon name={shown[i] ? 'visibility_off' : 'visibility'} size={16} />
                 </button>
               )}

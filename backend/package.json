@@ -5,7 +5,8 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-agentcore": "^3.996.0",
@@ -19,6 +20,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.5",
     "js-yaml": "^4.3.2",
     "ws": "^8.18.0"
   }

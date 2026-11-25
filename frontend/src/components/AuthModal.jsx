@@ -9,6 +9,9 @@ const ROLES = [
   { role: 'user', label: 'Regular user', icon: 'person', hint: 'Used for ordinary user flows, and the default when a test case does not say.' },
 ]
 
+// The backend returns this in place of a stored password; sending it back keeps the stored one.
+const MASK = '••••••••'
+
 const blank = () => Object.fromEntries(ROLES.map(r => [r.role, { username: '', password: '', show: false }]))
 
 /**
@@ -40,6 +43,24 @@ export default function AuthModal({ open, onClose, readOnly, onSaved }) {
   }, [open])
 
   const setField = (role, patch) => setRows(r => ({ ...r, [role]: { ...r[role], ...patch } }))
+
+  // Showing a stored (masked) password asks the backend to reveal it.
+  const toggleShow = async (role) => {
+    const row = rows[role]
+    if (!row.show && row.password === MASK) {
+      try {
+        const res = await fetch('/api/config/auth/reveal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }),
+        })
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        const { password } = await res.json()
+        return setField(role, { password, show: true })
+      } catch (e) {
+        return setStatus({ kind: 'error', error: `Couldn't reveal the password: ${e.message}` })
+      }
+    }
+    setField(role, { show: !row.show })
+  }
 
   const save = async () => {
     setStatus({ kind: 'saving' })
@@ -118,7 +139,7 @@ export default function AuthModal({ open, onClose, readOnly, onSaved }) {
                       autoComplete="new-password"
                       placeholder="Password"
                     />
-                    <button type="button" className={styles.eye} onClick={() => setField(role, { show: !row.show })} title={row.show ? 'Hide' : 'Show'}>
+                    <button type="button" className={styles.eye} onClick={() => toggleShow(role)} title={row.show ? 'Hide' : 'Show'}>
                       <Icon name={row.show ? 'visibility_off' : 'visibility'} size={16} />
                     </button>
                   </div>

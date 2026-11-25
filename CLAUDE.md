@@ -27,7 +27,7 @@ Never put the app's URL or a username/password in a test case. Write "the target
 
 ## Context variables
 
-Settings → Testing AI agent has user-defined context variables (`config.envVars`: name, value, description, secret flag). They go to the runtime in every run request as `env` and both runtimes render them in a `CONTEXT VARIABLES:` prompt section next to the built-in `TARGET_URL`; the description tells the agent *when* to use each one. Values are served only from `GET/PUT /api/config/env` (never `GET /api/config`), names are validated server-side and `TARGET_URL` is reserved. Prompt text treats values as data, not instructions.
+Settings → Testing AI agent has user-defined context variables (`config.envVars`: name, value, description, secret flag). They go to the runtime in every run request as `env` and both runtimes render them in a `CONTEXT VARIABLES:` prompt section next to the built-in `TARGET_URL`; the description tells the agent *when* to use each one. Values are served only from `GET/PUT /api/config/env` (never `GET /api/config`), and secret ones are masked there (`••••••••`; saving the mask keeps the stored value; `POST /api/config/env/reveal` returns one), names are validated server-side and `TARGET_URL` is reserved. Prompt text treats values as data, not instructions.
 
 ## Agent Modes
 
