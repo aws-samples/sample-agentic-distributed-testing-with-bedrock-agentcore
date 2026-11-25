@@ -91,7 +91,7 @@ export function initWebSocket(server) {
     for (const [rid, run] of Object.entries(testRuns)) {
       for (const [tcId, r] of Object.entries(run.results || {})) {
         if (r?.status === 'RUNNING') {
-          ws.send(JSON.stringify({ type: 'tc_log_replay', runId: rid, testId: tcId, logs: runLogs[rid]?.[tcId] || [] }));
+          ws.send(JSON.stringify({ type: 'tc_log_replay', runId: rid, testId: tcId, logs: (runLogs[rid]?.[tcId] || []).slice(-500) }));
         }
       }
     }

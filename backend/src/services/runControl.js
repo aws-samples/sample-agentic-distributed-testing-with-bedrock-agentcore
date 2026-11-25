@@ -7,6 +7,8 @@
 
 export const HINT_MAX = 1000;
 export const REDO_MAX_CASES = 50;
+// The runtime wraps the hint in <hint> tags; a hint must not be able to close them early.
+export const HINT_TAG_RE = /<\s*\/?\s*hint\s*>/gi;
 
 // A feature is in `pausedFeatures` from the moment a human asks to pause. It is
 // also in `heldFeatures` once its run loop is actually idle at a test-case
@@ -46,11 +48,12 @@ export async function holdWhilePaused(feature, isStopped, { onHold, onRelease, p
 // The hint is free text from a human. It is sent to the runtime as data (the
 // runtime prompt says so); here we only bound it and strip control characters.
 export function normalizeHint(x) {
-  return String(x ?? '')
+  let t = String(x ?? '')
     // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .trim()
-    .slice(0, HINT_MAX);
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
+  // Repeat until stable: removing "</hint>" from "<</hint>/hint>" must not leave a new tag.
+  for (let prev; prev !== t;) { prev = t; t = t.replace(HINT_TAG_RE, ''); }
+  return t.trim().slice(0, HINT_MAX);
 }
 
 /**

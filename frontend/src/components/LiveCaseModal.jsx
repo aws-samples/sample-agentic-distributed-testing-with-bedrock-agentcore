@@ -55,7 +55,7 @@ export default function LiveCaseModal({ feature, testCases, testResults, tcLogs,
     <Modal open onClose={onClose} width={1000} title={`${feature} — live test case`}>
       <div className={styles.wrap}>
         <div className={styles.toolbar}>
-          <select className={styles.select} value={shownId || ''} onChange={(e) => setPicked(e.target.value || null)}>
+          <select className={styles.select} aria-label="Test case to show" value={shownId || ''} onChange={(e) => setPicked(e.target.value || null)}>
             {tcs.map(tc => <option key={tc.id} value={tc.id}>{tc.id} · {testResults[tc.id]?.status || 'PENDING'} · {tc.title}</option>)}
           </select>
           {running && (
@@ -65,7 +65,7 @@ export default function LiveCaseModal({ feature, testCases, testResults, tcLogs,
             </Btn>
           )}
         </div>
-        {pauseState === 'pausing' && <div className={styles.note}>Waiting for the running test case to finish; it cannot be interrupted inside the agent.</div>}
+        {pauseState === 'pausing' && <div className={styles.note} role="status">Waiting for the running test case to finish; it cannot be interrupted inside the agent.</div>}
 
         <div className={styles.panel}><TcEvidencePanel tc={panelTc} liveScreenshot={sessionStatus?.screenshot} /></div>
 
@@ -75,12 +75,12 @@ export default function LiveCaseModal({ feature, testCases, testResults, tcLogs,
           <div className={styles.checks}>
             {failed.map(tc => (
               <label key={tc.id} className={styles.check}>
-                <input type="checkbox" checked={checked.has(tc.id)} onChange={() => toggle(tc.id)} />
+                <input type="checkbox" aria-label={`Redo ${tc.id}`} checked={checked.has(tc.id)} onChange={() => toggle(tc.id)} />
                 <span>{tc.id} · {tc.title}</span>
               </label>
             ))}
           </div>
-          <textarea className={styles.hint} rows={2} maxLength={1000} value={hint} onChange={(e) => setHint(e.target.value)}
+          <textarea className={styles.hint} aria-label="Hint for the agent" rows={2} maxLength={1000} value={hint} onChange={(e) => setHint(e.target.value)}
             placeholder="Tell the agent what it got wrong, e.g. “The Transfer button is under the Accounts menu”" />
           <div className={styles.redoRow}>
             <Btn variant="primary" disabled={!canRedo} onClick={submit}
@@ -88,7 +88,7 @@ export default function LiveCaseModal({ feature, testCases, testResults, tcLogs,
               <Icon name="replay" />Redo {ids.length || ''} with hint
             </Btn>
             {running && <span className={styles.note}>The feature is still running. Redo is available once it has finished.</span>}
-            {error && <span className={styles.err}>{error}</span>}
+            {error && <span className={styles.err} role="alert">{error}</span>}
           </div>
           <div className={styles.note}>The hint is passed to the agent as information, and is saved in run history. The earlier result is kept.</div>
         </div>

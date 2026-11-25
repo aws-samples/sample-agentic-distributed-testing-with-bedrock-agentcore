@@ -4,6 +4,8 @@ import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
 import { holdWhilePaused, clearPause } from './runControl.js';
+import { createSseStream } from './sseParser.js';
+import { redactSecrets } from './redact.js';
 
 // Per-region client cache so live region changes from Settings are picked up
 // without restarting the container.
@@ -25,72 +27,36 @@ function getRuntimeArn() {
   return config.agentcoreRuntimeArn;
 }
 
-// Stateful SSE parser: feedLine() takes one line as it arrives (so the live log can
-// follow the agent), finish() returns the verdict once the stream has ended.
-function createSseParser(sessionId, runId, tcId, logEntry) {
-  const textParts = [];
-  let assertResult = null;
-
-  function feedLine(line) {
-    if (!line.startsWith('data: ')) return;
-    try {
-      const ev = JSON.parse(line.slice(6))?.event;
-      if (!ev) return;
-
-      if (ev.screenshot?.data) {
-        const sess = sessions[sessionId];
-        if (sess) { sess.screenshot = ev.screenshot.data; broadcast({ type: 'screenshot', sessionId, data: ev.screenshot.data, action: sess.action || '' }); }
-        if (runId && tcId) recordFrame(runId, tcId, ev.screenshot.data, sess?.action);
-        return;
-      }
-
-      const imgSource = ev.contentBlockStart?.start?.image?.source;
-      if (imgSource?.type === 'base64' && imgSource.data) {
-        const sess = sessions[sessionId];
-        if (sess) { sess.screenshot = imgSource.data; broadcast({ type: 'screenshot', sessionId, data: imgSource.data, action: sess.action || '' }); }
-        if (runId && tcId) recordFrame(runId, tcId, imgSource.data, sess?.action);
-      }
-
-      const textDelta = ev.contentBlockDelta?.delta?.text;
-      if (textDelta) { textParts.push(textDelta); broadcast({ type: 'step_detail', sessionId, action: textDelta, kind: 'text' }); logEntry?.(textDelta, 'text'); }
-
-      const toolStart = ev.contentBlockStart?.start?.toolUse;
-      if (toolStart?.name && toolStart.name !== 'assert_pass' && toolStart.name !== 'assert_fail') {
-        broadcast({ type: 'step_detail', sessionId, action: `→ ${toolStart.name}`, kind: 'tool' });
-        logEntry?.(`→ ${toolStart.name}`, 'tool');
-      }
-      if (toolStart?.name === 'assert_pass') assertResult = { passed: true, reason: '' };
-      else if (toolStart?.name === 'assert_fail') assertResult = { passed: false, reason: '' };
-
-      const inputDelta = ev.contentBlockDelta?.delta?.toolUse?.input;
-      if (inputDelta && assertResult) assertResult.reason += inputDelta;
-    } catch { /* skip */ }
-  }
-
-  function finish() {
-    if (assertResult) {
-      try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
-      return assertResult;
-    }
-
-    const text = textParts.join('');
-    if (!text) return { passed: false, reason: 'No result from runtime' };
-    try {
-      const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
-      if (m) { const p = JSON.parse(m[0]); return { passed: p.passed, reason: p.reason || text.slice(-200) }; }
-    } catch { /* ignore */ }
-    const tail = text.slice(-500).toLowerCase();
-    if (tail.includes('pass') || tail.includes('success') || tail.includes('verified')) return { passed: true, reason: text.slice(-200) };
-    return { passed: false, reason: text.slice(-200) };
-  }
-
-  return { feedLine, finish };
+// Where parsed SSE events go: the feature's browser cell (screenshots), the live
+// step feed, and the per-test-case log. Step text is redacted before it leaves.
+function makeSseSink(sessionId, runId, tcId, logEntry) {
+  return {
+    screenshot(data) {
+      const sess = sessions[sessionId];
+      if (sess) { sess.screenshot = data; broadcast({ type: 'screenshot', sessionId, data, action: sess.action || '' }); }
+      if (runId && tcId) recordFrame(runId, tcId, data, sess?.action);
+    },
+    step(action, kind) {
+      broadcast({ type: 'step_detail', sessionId, action: redactSecrets(action, currentSecrets()), kind });
+      logEntry?.(action, kind);
+    },
+  };
 }
 
+// Rebuilds a verdict from a whole captured stream (local mode, where the live log is
+// fed by invokeLocalRuntime's onLine callback instead).
 function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
-  const p = createSseParser(sessionId, runId, tcId, logEntry);
-  for (const line of rawText.split('\n')) p.feedLine(line);
-  return p.finish();
+  const stream = createSseStream(makeSseSink(sessionId, runId, tcId, logEntry));
+  stream.write(new TextEncoder().encode(rawText));
+  return stream.end();
+}
+
+// Passwords of the configured accounts and the values of secret context variables.
+function currentSecrets() {
+  return [
+    ...(config.auth?.accounts || []).map(a => a.password),
+    ...(config.envVars || []).filter(v => v.secret).map(v => v.value),
+  ];
 }
 
 export async function invokeRuntime(tc, runId, sessionId, hint = '') {
@@ -125,7 +91,8 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   const tcLog = runLogs[runId][tc.id];
 
   const logEntry = (msg, kind = 'info') => {
-    const entry = { ts: new Date().toLocaleTimeString(), msg, kind };
+    // Redacted before it is stored, broadcast to every WebSocket client, replayed or archived.
+    const entry = { ts: new Date().toLocaleTimeString(), msg: redactSecrets(msg, currentSecrets()), kind };
     tcLog.push(entry);
     // Live per-test-case log for the Runner's detail view; replayed on reconnect (websocket.js).
     broadcast({ type: 'tc_log', runId, testId: tc.id, sessionId, entry });
@@ -148,7 +115,7 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
             return;
           }
           const t = ev.contentBlockDelta?.delta?.text;
-          if (t) { broadcast({ type: 'step_detail', sessionId, action: t, kind: 'text' }); logEntry(t, 'text'); }
+          if (t) { broadcast({ type: 'step_detail', sessionId, action: redactSecrets(t, currentSecrets()), kind: 'text' }); logEntry(t, 'text'); }
           const tool = ev.contentBlockStart?.start?.toolUse?.name;
           if (tool) { broadcast({ type: 'step_detail', sessionId, action: `→ ${tool}`, kind: 'tool' }); logEntry(`→ ${tool}`, 'tool'); }
         } catch { /* skip */ }
@@ -162,22 +129,12 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
       const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
       const response = await getAgentCoreClient().send(cmd);
-      // Parse as the chunks arrive so the live log follows the agent. A chunk can end
-      // mid-line, so only complete lines are fed.
-      const parser = createSseParser(sessionId, runId, tc.id, logEntry);
-      const decoder = new TextDecoder();
-      let buf = '';
+      // Parse as the chunks arrive so the live log follows the agent.
+      const stream = createSseStream(makeSseSink(sessionId, runId, tc.id, logEntry));
       if (response.response) {
-        for await (const chunk of response.response) {
-          buf += decoder.decode(new Uint8Array(Object.values(chunk)), { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) parser.feedLine(line);
-        }
+        for await (const chunk of response.response) stream.write(new Uint8Array(Object.values(chunk)));
       }
-      buf += decoder.decode();
-      if (buf) parser.feedLine(buf);
-      return parser.finish();
+      return stream.end();
     }
     // Local mode already logged text/tool events live via the onLine callback above;
     // parseSSE gets no logEntry here so they are not logged twice.
@@ -235,6 +192,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
     try {
       const result = await invokeRuntime(tc, runId, sessionId, hints[tc.id]?.hint);
       const status = result.passed ? 'PASS' : 'FAIL';
+      result.reason = redactSecrets(result.reason, currentSecrets());
       // Upload buffered evidence frames to S3; tucked into testRuns so the
       // archive builder can pick them up when the run completes.
       const snapshots = await flushTcSnapshots(runId, tc.id);

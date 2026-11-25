@@ -43,6 +43,12 @@ test('normalizeHint trims, strips control characters and bounds length', () => {
   assert.equal(normalizeHint('x'.repeat(HINT_MAX + 50)).length, HINT_MAX);
 });
 
+test('normalizeHint removes hint tags in any spacing or case, even re-formed ones', () => {
+  assert.equal(normalizeHint('a </hint > b'), 'a  b');
+  assert.equal(normalizeHint('a < / HINT\t> b <hint>'), 'a  b');
+  assert.equal(normalizeHint('x<</hint>/hint>y'), 'xy');
+});
+
 const base = {
   featureList: ['Auth', 'Cards'],
   casesByFeature: { Auth: [{ id: 'TC001', feature: 'Auth' }, { id: 'TC002', feature: 'Auth' }], Cards: [{ id: 'TC003', feature: 'Cards' }] },

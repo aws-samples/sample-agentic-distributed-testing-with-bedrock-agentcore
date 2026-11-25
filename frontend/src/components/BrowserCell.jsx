@@ -17,12 +17,14 @@ export default function BrowserCell({ featureName, sessionStatus, activeFeatures
       <div className={styles.header} onClick={onFocus}>
         <div className={connClass} />
         <span className={styles.title} style={{ color }}>{featureName}</span>
-        {pauseState && <span className={styles.pauseTag}>{pauseState === 'paused' ? 'Paused' : 'Pausing…'}</span>}
+        {pauseState && <span className={styles.pauseTag} role="status">{pauseState === 'paused' ? 'Paused' : 'Pausing…'}</span>}
         <button className={styles.iconBtn} title="Live test case log, pause and redo with a hint"
+          aria-label={`Open live test case view for ${featureName}`}
           onClick={(e) => { e.stopPropagation(); onLive() }}><Icon name="monitor_heart" size={14} /></button>
         {isRunning && (
           <button className={styles.iconBtn}
             title={pauseState ? 'Resume this feature' : 'Pause this feature after its current test case'}
+            aria-label={`${pauseState ? 'Resume' : 'Pause'} ${featureName}`}
             onClick={(e) => { e.stopPropagation(); onTogglePause() }}>
             <Icon name={pauseState ? 'play_arrow' : 'pause'} size={14} />
           </button>

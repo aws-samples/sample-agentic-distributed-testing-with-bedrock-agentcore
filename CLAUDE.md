@@ -33,6 +33,8 @@ Settings → Testing AI agent has user-defined context variables (`config.envVar
 
 The Runner's feature cell has a live view (`LiveCaseModal`, reusing `TcEvidencePanel`) fed by `tc_log` WebSocket events (`runLogs[runId][tcId]`, replayed as `tc_log_replay` on reconnect). Pause is per feature (`services/runControl.js`) and holds at the next test case boundary; a case already running inside the agent is not interrupted. `POST /api/tests/redo` reruns chosen cases of an idle feature as a new run with a human `hint` in the run payload; both runtimes render it as data in a `HUMAN HINT` prompt section. The new case records `hint` + `retryOf`, the earlier case records `retries`, and Analysis shows both. Backend tests: `npm test --workspace backend`.
 
+The live log is broadcast to every WebSocket client, so `services/redact.js` masks the configured Authentication passwords and secret context variables in the log, the step feed and verdict reasons before they are stored, broadcast, replayed (last 500 entries per case) or archived. It is an exact-match filter: a secret split across two streamed text deltas, or re-encoded by the agent, is not caught, and screenshots are not redacted. Don't give the agent secrets you are not willing to see in the log. The SSE parser lives in `services/sseParser.js` so it can be tested without the database.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
