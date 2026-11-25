@@ -12,7 +12,7 @@
  * Bound to a non-loopback HOST with neither Cognito nor an API key, read calls
  * still work and every mutating call (POST/PUT/PATCH/DELETE) is refused.
  */
-import { createHash, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 
 export const HOST = (process.env.HOST || '127.0.0.1').trim();
 export const API_KEY = process.env.API_KEY || '';
@@ -37,7 +37,9 @@ export const corsOptions = {
 
 export function keyMatches(provided, expected = API_KEY) {
   if (!expected || typeof provided !== 'string') return false;
-  return timingSafeEqual(createHash('sha256').update(provided).digest(), createHash('sha256').update(expected).digest());
+  // shortcut: a length mismatch returns early, so the key's length (not its content) can leak.
+  const a = Buffer.from(provided), b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
