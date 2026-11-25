@@ -49,6 +49,12 @@ test('normalizeHint removes hint tags in any spacing or case, even re-formed one
   assert.equal(normalizeHint('x<</hint>/hint>y'), 'xy');
 });
 
+test('normalizeHint stays fast on a long run of spaces after "<"', () => {
+  const t0 = Date.now();
+  normalizeHint('<' + ' '.repeat(100000));
+  assert.ok(Date.now() - t0 < 200);
+});
+
 const base = {
   featureList: ['Auth', 'Cards'],
   casesByFeature: { Auth: [{ id: 'TC001', feature: 'Auth' }, { id: 'TC002', feature: 'Auth' }], Cards: [{ id: 'TC003', feature: 'Cards' }] },

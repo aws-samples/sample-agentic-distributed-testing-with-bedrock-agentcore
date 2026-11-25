@@ -7,8 +7,9 @@
 
 export const HINT_MAX = 1000;
 export const REDO_MAX_CASES = 50;
+// Whitespace runs are bounded ({0,16}) so the pattern cannot backtrack polynomially on hostile input.
 // The runtime wraps the hint in <hint> tags; a hint must not be able to close them early.
-export const HINT_TAG_RE = /<\s*\/?\s*hint\s*>/gi;
+export const HINT_TAG_RE = /<\s{0,16}\/?\s{0,16}hint\s{0,16}>/gi;
 
 // A feature is in `pausedFeatures` from the moment a human asks to pause. It is
 // also in `heldFeatures` once its run loop is actually idle at a test-case
@@ -48,7 +49,7 @@ export async function holdWhilePaused(feature, isStopped, { onHold, onRelease, p
 // The hint is free text from a human. It is sent to the runtime as data (the
 // runtime prompt says so); here we only bound it and strip control characters.
 export function normalizeHint(x) {
-  let t = String(x ?? '')
+  let t = String(x ?? '').slice(0, HINT_MAX * 2)   // bound the work before any regex runs
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
   // Repeat until stable: removing "</hint>" from "<</hint>/hint>" must not leave a new tag.
