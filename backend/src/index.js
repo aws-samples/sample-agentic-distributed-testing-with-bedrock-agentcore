@@ -80,18 +80,19 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use('/api/import', express.text({ type: 'text/yaml', limit: '10mb' }));
 
-// Cognito auth gate — no-op when COGNITO_USER_POOL_ID/COGNITO_CLIENT_ID are
-// unset (local dev). /api/health is excluded so health probes without a
-// browser session or token still get a 200. See middleware/auth.js.
-if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
-app.use('/api', (req, res, next) => (req.path === '/health' || req.path.startsWith('/ci/') ? next() : requireAuth(req, res, next)));
-
 // CI endpoints carry their own static-token check (routes/ci.js) instead of a
 // Cognito session, and stay disabled until CI_API_TOKEN is set.
 app.use('/api/ci', createCiRouter({
   startRun, runArchive, testCasesByFeature,
   isBusy: () => activeRunPromises.size > 0,
 }));
+
+// Cognito auth gate — no-op when COGNITO_USER_POOL_ID/COGNITO_CLIENT_ID are
+// unset (local dev). /api/health is excluded so health probes without a
+// browser session or token still get a 200. See middleware/auth.js.
+if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
+app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
+
 app.use('/api', configRoutes);
 app.use('/api', featureRoutes);
 app.use('/api', sessionRoutes);

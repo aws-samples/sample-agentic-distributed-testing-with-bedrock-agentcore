@@ -14,7 +14,11 @@ import { ciVerdict, toJUnit, toHtml } from '../services/reports.js';
 const RUN_ID_RE = /^run-\d{1,20}$/;
 const MAX_NAMES = 100;
 
-const digest = s => crypto.createHash('sha256').update(String(s)).digest();
+// Constant-time compare; only the length can leak, not the content.
+const same = (a, b) => {
+  const x = Buffer.from(a), y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
 
 export function createCiRouter({ startRun, runArchive, testCasesByFeature, isBusy, getSecret = () => process.env.CI_API_TOKEN || '' }) {
   const router = Router();
@@ -27,7 +31,7 @@ export function createCiRouter({ startRun, runArchive, testCasesByFeature, isBus
     if (!secret) return res.status(503).json({ error: 'CI API disabled: set CI_API_TOKEN' });
     const header = req.headers.authorization || '';
     const given = header.startsWith('Bearer ') ? header.slice(7) : '';
-    if (!crypto.timingSafeEqual(digest(given), digest(secret))) return res.status(401).json({ error: 'Unauthorized' });
+    if (!same(given, secret)) return res.status(401).json({ error: 'Unauthorized' });
     next();
   });
 
