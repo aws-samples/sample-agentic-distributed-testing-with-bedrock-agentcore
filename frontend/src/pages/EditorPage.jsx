@@ -10,6 +10,7 @@ import ImportModal from '../components/ImportModal'
 import { useApi } from '../context/useApi'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
+import Toast from '../components/Toast'
 import { buildAuthedWsUrl } from '../context/authFetch'
 import styles from './EditorPage.module.css'
 
@@ -58,6 +59,8 @@ export default function EditorPage() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [targetUrl, setTargetUrl] = useState('')
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
+  const urlCheckSeq = useRef(0) // bumped on edit and on each check so late responses are dropped
+  const [urlCheck, setUrlCheck] = useState(null) // null | { loading } | result from the backend
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
   // Read-only mode while a test run is in progress
@@ -76,6 +79,20 @@ export default function EditorPage() {
       setTargetUrlDirty(false)
       setAuthSummary(summarizeAuth(cfg.auth))
     } catch { /* ignore */ }
+  }
+
+  const checkTargetHealth = async () => {
+    const url = targetUrl.trim()
+    if (!url) { setUrlCheck({ ok: false, reason: 'Enter a URL first' }); return }
+    const seq = ++urlCheckSeq.current
+    setUrlCheck({ loading: true })
+    let result
+    try {
+      result = await api.checkTargetUrl(url)
+    } catch (e) {
+      result = { ok: false, reason: 'Health check failed: ' + e.message }
+    }
+    if (seq === urlCheckSeq.current) setUrlCheck(result)
   }
 
   const saveTargetUrl = async () => {
@@ -506,7 +523,7 @@ export default function EditorPage() {
           type="url"
           className={styles.targetInput}
           value={targetUrl}
-          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true) }}
+          onChange={(e) => { setTargetUrl(e.target.value); setTargetUrlDirty(true); urlCheckSeq.current++; setUrlCheck(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter' && targetUrlDirty) saveTargetUrl() }}
           placeholder="https://your-app-under-test.example.com"
           disabled={readOnly}
@@ -518,6 +535,14 @@ export default function EditorPage() {
           onClick={saveTargetUrl}
         >
           <Icon name="save" />{targetUrlDirty ? 'Save URL' : 'Saved'}
+        </Btn>
+        <Btn
+          size="sm"
+          disabled={urlCheck?.loading}
+          onClick={checkTargetHealth}
+          title="Request the URL from the backend machine and report whether it is reachable"
+        >
+          <Icon name="monitor_heart" />{urlCheck?.loading ? 'Checking…' : 'Health check'}
         </Btn>
         <Btn
           size="sm"
@@ -564,6 +589,14 @@ export default function EditorPage() {
         </div>
       </div>
 
+      {urlCheck && !urlCheck.loading && (
+        <Toast kind={urlCheck.ok ? 'success' : 'error'} onClose={() => setUrlCheck(null)}>
+          {urlCheck.ok
+            ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
+            : `Not reachable: ${urlCheck.reason}`}
+          {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
+        </Toast>
+      )}
       <ImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}

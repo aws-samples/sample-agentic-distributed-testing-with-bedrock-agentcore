@@ -29,6 +29,10 @@ Never put the app's URL or a username/password in a test case. Write "the target
 
 Settings → Testing AI agent has user-defined context variables (`config.envVars`: name, value, description, secret flag). They go to the runtime in every run request as `env` and both runtimes render them in a `CONTEXT VARIABLES:` prompt section next to the built-in `TARGET_URL`; the description tells the agent *when* to use each one. Values are served only from `GET/PUT /api/config/env` (never `GET /api/config`), names are validated server-side and `TARGET_URL` is reserved. Prompt text treats values as data, not instructions.
 
+## Target URL health check
+
+`POST /api/config/target-url/health` (body `{url}`, behind the `/api` auth gate) backs the Editor's Health check button. It checks a saved or unsaved URL from the backend machine (not from AgentCore Browser), never changes config, and returns `{ok, status, responseTimeMs, finalUrl, reason, checkedFrom}` with no response body. Logic is in `backend/src/services/targetHealth.js`: http/https only, 5 s total timeout (including DNS), up to 5 manually followed redirects each re-validated, and the request connects to the address it resolved and validated. Link-local addresses (including IPv4-mapped IPv6 and the AWS IPv6 metadata range) are blocked. Loopback and private ranges are allowed on purpose, because the app under test is usually local or on a private network. Tests: `cd backend && npm test`.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
