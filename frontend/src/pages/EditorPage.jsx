@@ -24,6 +24,12 @@ function nextTcId(allFeatures) {
   return `TC${String(max + 1).padStart(3, '0')}`
 }
 
+// The menu under a feature's "+". Blank first: writing by hand needs no AI call.
+const TC_ADD_CHOICES = [
+  { kind: 'blank', label: 'Blank scenario', icon: 'note_add', title: 'Add an empty scenario and write its steps yourself' },
+  { kind: 'ai', label: 'Draft with AI (uses Bedrock)', icon: 'auto_awesome', title: 'Describe the scenario and let the AI draft it (calls Amazon Bedrock)' },
+]
+
 // What the Authentication button shows: is a login configured, and for how many accounts.
 function summarizeAuth(a) {
   const count = (a?.accounts || []).filter(x => x.username).length
@@ -374,9 +380,46 @@ export default function EditorPage() {
     setFeatModalOpen(false)
   }
 
-  // "+" on a feature opens the Edit-with-AI modal in create mode; nothing is added
+  // "+" on a feature: "Blank scenario" adds an empty case straight away (no AI call);
+  // "Draft with AI" opens the Edit-with-AI modal in create mode, and nothing is added
   // until the user confirms the draft (handleAddTc below).
-  const handleStartAddTc = (featIdx) => setAddingToFeatIdx(featIdx)
+  const handleStartAddTc = (featIdx, kind) => {
+    if (kind === 'ai') { setAddingToFeatIdx(featIdx); return }
+    const titles = new Set((doc.features[featIdx]?.testCases || []).map(t => t.title))
+    let title = 'New scenario'
+    for (let n = 2; titles.has(title); n++) title = `New scenario ${n}`
+    // One empty row per section so the step editor opens ready to type into.
+    handleAddTc(featIdx, { title, given: [''], when: [''], then: [''] })
+    setStatusMsg(`Added "${title}" — write its steps, then Apply Changes`, 'ok')
+  }
+
+  // Copy a case into the same feature, right after the original, with a new id.
+  const handleDuplicateTc = (tcId) => {
+    if (selectedFeatIdx == null) return
+    const feat = doc.features[selectedFeatIdx]
+    const pos = (feat?.testCases || []).findIndex(t => t.id === tcId)
+    if (pos === -1) return
+    const orig = feat.testCases[pos]
+    const copy = {
+      id: nextTcId(doc.features),
+      title: `Copy of ${orig.title}`,
+      given: [...(orig.given || [])],
+      when: [...(orig.when || [])],
+      then: [...(orig.then || [])],
+    }
+    setDoc(prev => ({
+      ...prev,
+      features: prev.features.map((m, i) => {
+        if (i !== selectedFeatIdx) return m
+        const cases = [...(m.testCases || [])]
+        cases.splice(pos + 1, 0, copy)
+        return { ...m, testCases: cases }
+      }),
+    }))
+    setSelectedTcId(copy.id)
+    setDirty(true)
+    setStatusMsg(`Duplicated ${orig.id} as ${copy.id}`, 'ok')
+  }
 
   const handleAddTc = (featIdx, draft) => {
     setDoc(prev => {
@@ -481,6 +524,7 @@ export default function EditorPage() {
             tc={selectedTc}
             onApply={handleApplyTc}
             onDelete={handleDeleteTc}
+            onDuplicate={() => handleDuplicateTc(selectedTc.id)}
             readOnly={readOnly}
           />
         </>
@@ -496,7 +540,7 @@ export default function EditorPage() {
           <line x1="16" y1="17" x2="8" y2="17" />
         </svg>
         <div style={{ fontSize: 14 }}>Select a test case to edit</div>
-        <div style={{ fontSize: 12 }}>Use <strong>+</strong> on a feature to add one, or <strong>+ Add Feature</strong> to start a new group (it can draft test cases from a spec)</div>
+        <div style={{ fontSize: 12 }}>Use <strong>+</strong> on a feature to add a blank scenario or draft one with AI, or <strong>+ Add Feature</strong> to start a new group (it can draft test cases from a spec)</div>
       </div>
     )
   }
@@ -571,10 +615,11 @@ export default function EditorPage() {
             const idx = doc.features.findIndex(m => m.name === featName)
             if (idx !== -1) handleOpenEditFeat(idx)
           }}
-          onTcAdd={readOnly ? null : (featName) => {
+          onTcAdd={readOnly ? null : (featName, kind) => {
             const idx = doc.features.findIndex(m => m.name === featName)
-            if (idx !== -1) handleStartAddTc(idx)
+            if (idx !== -1) handleStartAddTc(idx, kind)
           }}
+          tcAddChoices={TC_ADD_CHOICES}
           onExpandAll={() => setExpandedFeatNames(new Set(doc.features.map(m => m.name)))}
           onCollapseAll={() => setExpandedFeatNames(new Set())}
           showExpandControls={true}

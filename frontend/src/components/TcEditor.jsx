@@ -29,7 +29,7 @@ const clean = (d) => ({
   then: d.then.map(s => s.trim()).filter(Boolean),
 })
 
-export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
+export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly = false }) {
   const [activeTab, setActiveTab] = useState('editor')   // 'editor' | 'gherkin'
   const [draft, setDraft] = useState(() => (tc ? toDraft(tc) : { title: '', given: [], when: [], then: [] }))
   const [gherkin, setGherkin] = useState(() => (tc ? toGherkin(tc) : ''))
@@ -170,6 +170,12 @@ export default function TcEditor({ tc, onApply, onDelete, readOnly = false }) {
           title={!canApply && !readOnly ? 'Fix the Gherkin errors first' : 'Describe what to change, or pick a preset, and review the AI\'s edit before saving'}>
           <Icon name="auto_awesome" />Edit with AI
         </Btn>
+        {onDuplicate && (
+          <Btn disabled={readOnly} onClick={onDuplicate}
+            title="Copy this test case (as last applied) into the same feature, right after it, with a new id">
+            <Icon name="content_copy" />Duplicate
+          </Btn>
+        )}
         <Btn variant="danger" disabled={readOnly} style={{ marginLeft: 'auto' }} onClick={onDelete}><Icon name="delete" />Delete TC</Btn>
       </div>
       <div className={styles.tabs}>

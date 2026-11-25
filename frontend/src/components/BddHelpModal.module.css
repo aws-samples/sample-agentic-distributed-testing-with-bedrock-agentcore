@@ -8,3 +8,5 @@
 .eg { color: var(--text-muted); font-style: italic; }
 .code { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.6; overflow-x: auto; }
 .body code { font-family: 'Courier New', Courier, monospace; background: var(--surface2); padding: 1px 4px; border-radius: 3px; }
+.phrase { width: 42%; }
+.warn { padding: 8px 10px; border: 1px solid var(--yellow); border-radius: 6px; background: var(--surface2); }

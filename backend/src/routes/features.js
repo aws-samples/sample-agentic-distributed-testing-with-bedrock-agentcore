@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { featureList, testCasesByFeature, featureDescriptions } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
 import { killSession } from '../services/sessions.js';
-import { nextTcId, normArray, bddFields } from '../services/tcIds.js';
+import { nextTcId, normArray, bddFields, isCurrentTcId } from '../services/tcIds.js';
 import { insertFeature, deleteFeature, upsertCase, deleteCase as deleteCaseRow } from '../state/db.js';
 
 const router = Router();
@@ -40,15 +40,43 @@ router.get('/features/:feature/cases', (req, res) => {
   res.json({ feature: feat, cases: testCasesByFeature[feat] || [] });
 });
 
+// Limits for a hand-written test case. Generous for real scenarios, small enough
+// that one request cannot store an unbounded blob.
+export const CASE_LIMITS = { title: 300, steps: 50, step: 2000 };
+
+// A Given / When / Then value from a request: a string or an array of strings.
+// Returns the step list, or null when the value has the wrong shape or size.
+function stepList(val) {
+  if (val === undefined || val === null) return [];
+  const list = Array.isArray(val) ? val : [val];
+  if (list.length > CASE_LIMITS.steps) return null;
+  if (!list.every(s => typeof s === 'string' && s.length <= CASE_LIMITS.step)) return null;
+  return list;
+}
+
+function caseIdInUse(id) {
+  return Object.values(testCasesByFeature).some(cases => cases.some(t => t.id === id));
+}
+
+// Create one test case in a feature (a blank or hand-written scenario; no AI call).
+// A client-supplied id is kept only when it is a free TC### id: ids are global,
+// and reusing one would overwrite a case in another feature.
 router.post('/features/:feature/cases', (req, res) => {
   const feat = decodeURIComponent(req.params.feature);
   if (!featureList.includes(feat)) return res.status(404).json({ error: 'Feature not found' });
-  const { id, title } = req.body;
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!title) return res.status(400).json({ error: 'title required' });
-  if (!testCasesByFeature[feat]) testCasesByFeature[feat] = [];
+  if (title.length > CASE_LIMITS.title) return res.status(400).json({ error: `title longer than ${CASE_LIMITS.title} characters` });
+  const given = stepList(body.given), when = stepList(body.when), then = stepList(body.then);
+  if (!given || !when || !then) {
+    return res.status(400).json({ error: `given, when and then must be strings or lists of up to ${CASE_LIMITS.steps} strings of at most ${CASE_LIMITS.step} characters` });
+  }
+  const id = isCurrentTcId(body.id) && !caseIdInUse(body.id) ? body.id : nextTcId();
+  if (!Array.isArray(testCasesByFeature[feat])) testCasesByFeature[feat] = [];
   const tc = {
-    id: id || nextTcId(), feature: feat, title: title.trim(), status: 'PENDING',
-    ...bddFields(req.body),
+    id, feature: feat, title, status: 'PENDING',
+    ...bddFields({ given, when, then }),
   };
   testCasesByFeature[feat].push(tc);
   upsertCase(tc);
