@@ -104,8 +104,13 @@ export function stopAgentcoreScreenPoller(sessionId) {
 
 // ─── Local runtime invoke ─────────────────────────────────────────────────────
 
-export async function invokeLocalRuntime(body, onLine) {
+// `signal` (optional) aborts the call and its response stream: per-case timeout or Stop.
+export async function invokeLocalRuntime(body, onLine, signal) {
   const ctrl = new AbortController();
+  if (signal) {
+    if (signal.aborted) ctrl.abort(signal.reason);
+    else signal.addEventListener('abort', () => ctrl.abort(signal.reason), { once: true });
+  }
   activeAborts.add(ctrl);
   let resp;
   try {

@@ -94,6 +94,18 @@ export default function TcEvidencePanel({ tc }) {
           )}
         </section>
 
+        {/* Every attempt when the case was retried after an ERROR (#40) */}
+        {tc.attempts?.length > 1 && (
+          <section className={styles.section}>
+            <div className={styles.sectionLabel}>ATTEMPTS ({tc.attempts.length})</div>
+            {tc.attempts.map(a => (
+              <div key={a.n} className={styles.verdictReason}>
+                #{a.n} <span className={`status-badge status-${a.status}`}>{a.status}</span> {a.reason}
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Evidence snapshots from S3 */}
         <section className={styles.section}>
           <div className={styles.sectionLabel}>
@@ -197,6 +209,8 @@ function statusLabel(status) {
   const iconName = (
     status === 'PASS'    ? 'check_circle' :
     status === 'FAIL'    ? 'cancel' :
+    status === 'ERROR'   ? 'error' :
+    status === 'SKIPPED' ? 'block' :
     status === 'RUNNING' ? 'progress_activity' :
                            'radio_button_unchecked'
   )

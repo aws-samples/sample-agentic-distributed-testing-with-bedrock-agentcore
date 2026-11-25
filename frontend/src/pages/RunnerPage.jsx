@@ -168,7 +168,7 @@ export default function RunnerPage() {
 
   // Stats
   const allTcs = Object.values(state.testCases).flat()
-  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0
+  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0, statError = 0
   for (const tc of allTcs) {
     const r = state.testResults[tc.id]
     const s = r ? r.status : 'PENDING'
@@ -176,6 +176,7 @@ export default function RunnerPage() {
     else if (s === 'RUNNING') statRunning++
     else if (s === 'PASS') statPass++
     else if (s === 'FAIL') statFail++
+    else if (s === 'ERROR') statError++
   }
 
   // Filtered TCs for left panel
@@ -364,6 +365,10 @@ export default function RunnerPage() {
         <span className={`${styles.statValue} ${styles.statFail}`}>{statFail}</span>
         <span> fail</span>
       </div>
+      <div className={styles.statItem} title="Infrastructure error: no verdict from the agent">
+        <span className={`${styles.statValue} ${styles.statError}`}>{statError}</span>
+        <span> error</span>
+      </div>
     </div>
   )
 
@@ -404,6 +409,10 @@ export default function RunnerPage() {
           className={`${styles.filterBtn}${filterStatus === 'FAIL' ? ' ' + styles.filterBtnActive : ''}`}
           onClick={() => setFilterStatus('FAIL')}
         >Fail</button>
+        <button
+          className={`${styles.filterBtn}${filterStatus === 'ERROR' ? ' ' + styles.filterBtnActive : ''}`}
+          onClick={() => setFilterStatus('ERROR')}
+        >Error</button>
       </div>
     </>
   )

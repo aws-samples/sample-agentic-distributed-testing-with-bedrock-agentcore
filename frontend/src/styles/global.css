@@ -95,6 +95,8 @@ a { text-decoration: none; }
 .status-RUNNING { background: rgba(210,153,34,0.2); color: var(--yellow); animation: pulse 1s infinite; }
 .status-PASS { background: rgba(63,185,80,0.2); color: var(--green); }
 .status-FAIL { background: rgba(248,81,73,0.2); color: var(--red); }
+.status-ERROR { background: rgba(219,109,40,0.2); color: var(--orange); }
+.status-SKIPPED { background: rgba(125,133,144,0.2); color: var(--text-muted); }
 
 /* ── Form inputs ── */
 .form-input {

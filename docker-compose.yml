@@ -25,6 +25,9 @@ services:
       # to disable snapshot capture entirely — see .env.example.
       S3_SNAPSHOT_BUCKET: "${S3_SNAPSHOT_BUCKET:-}"
       S3_SNAPSHOT_REGION: "${S3_SNAPSHOT_REGION:-ap-southeast-1}"
+      # Per-test-case limits — see .env.example.
+      CASE_TIMEOUT_MS: "${CASE_TIMEOUT_MS:-600000}"
+      CASE_MAX_RETRIES: "${CASE_MAX_RETRIES:-1}"
     volumes:
       # Persists the SQLite DB (test cases, run archive) plus config.json /
       # testResults.json across container rebuilds, not just restarts.

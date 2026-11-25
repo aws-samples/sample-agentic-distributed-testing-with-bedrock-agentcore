@@ -38,6 +38,7 @@
 .statRun { color: var(--yellow); }
 .statPass { color: var(--green); }
 .statFail { color: var(--red); }
+.statError { color: var(--orange); }
 
 /* Filter buttons */
 .filterBtn {

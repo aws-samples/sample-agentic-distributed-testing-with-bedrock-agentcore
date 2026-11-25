@@ -3,6 +3,8 @@ import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeF
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
+import { verdictFromAgentOutput, isThrottle } from './verdict.js';
+import { runCaseWithAttempts } from './caseAttempts.js';
 
 // Per-region client cache so live region changes from Settings are picked up
 // without restarting the container.
@@ -64,23 +66,13 @@ function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
     } catch { /* skip */ }
   }
 
-  if (assertResult) {
-    try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
-    return assertResult;
-  }
-
-  const text = textParts.join('');
-  if (!text) return { passed: false, reason: 'No result from runtime' };
-  try {
-    const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
-    if (m) { const p = JSON.parse(m[0]); return { passed: p.passed, reason: p.reason || text.slice(-200) }; }
-  } catch { /* ignore */ }
-  const tail = text.slice(-500).toLowerCase();
-  if (tail.includes('pass') || tail.includes('success') || tail.includes('verified')) return { passed: true, reason: text.slice(-200) };
-  return { passed: false, reason: text.slice(-200) };
+  // Only an assert_pass / assert_fail call is a verdict; anything else is ERROR (#40).
+  return verdictFromAgentOutput(assertResult, textParts.join(''));
 }
 
-export async function invokeRuntime(tc, runId, sessionId) {
+// Returns { status: 'PASS'|'FAIL'|'ERROR', reason, throttled? };
+// `signal` aborts the agent call (per-case timeout or Stop, see caseAttempts.js).
+export async function invokeRuntime(tc, runId, sessionId, signal) {
   const payload = {
     action: 'run_test',
     // The Feature's Background (its description) is shared setup that applies
@@ -133,7 +125,7 @@ export async function invokeRuntime(tc, runId, sessionId) {
           const tool = ev.contentBlockStart?.start?.toolUse?.name;
           if (tool) { broadcast({ type: 'step_detail', sessionId, action: `→ ${tool}`, kind: 'tool' }); logEntry(`→ ${tool}`, 'tool'); }
         } catch { /* skip */ }
-      });
+      }, signal);
     } else {
       // Reuse the same runtimeSessionId minted at connect time (see
       // makeRuntimeSessionId in services/sessions.js) so every test case in
@@ -142,14 +134,15 @@ export async function invokeRuntime(tc, runId, sessionId) {
       // its own container with its own abandoned browser session.
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
       const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
-      const response = await getAgentCoreClient().send(cmd);
+      const response = await getAgentCoreClient().send(cmd, { abortSignal: signal });
       if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
     }
     // Local mode already logged text/tool events live via the onLine callback above;
     // only pass logEntry here for agentcore mode, where parseSSE is the sole log source.
     return parseSSE(rawText, sessionId, runId, tc.id, config.agentMode === 'local' ? null : logEntry);
   } catch (e) {
-    return { passed: false, reason: `Runtime error: ${e.message}` };
+    // Infrastructure error (runtime exception, throttling, S3...): ERROR, not FAIL.
+    return { status: 'ERROR', reason: `Runtime error: ${e.message}`, throttled: isThrottle(e) };
   }
 }
 
@@ -160,10 +153,11 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
     await ensureSession(sessionId);
   } catch (e) {
     for (const tc of testCases) {
+      // Infrastructure, not the product: ERROR, kept out of the FAIL count.
       const failReason = `Session failed: ${e.message}`;
-      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: failReason, runId });
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message };
-      saveTestResult(tc.id, 'FAIL', failReason);
+      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'ERROR', reason: failReason, runId });
+      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'ERROR', reason: failReason };
+      saveTestResult(tc.id, 'ERROR', failReason);
     }
     onProgress?.();
     activeFeatures.delete(feature);
@@ -172,7 +166,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
 
   for (const tc of testCases) {
     if (stopFlags[runId]) {
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'PENDING' };
+      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'SKIPPED', reason: 'Run stopped before this case' };
       broadcast({ type: 'test_skipped', testId: tc.id, sessionId, runId });
       continue;
     }
@@ -191,20 +185,30 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
     // concurrent connection to the same AgentCore Browser session 429s.
     if (sess) sess.testRunning = true;
     try {
-      const result = await invokeRuntime(tc, runId, sessionId);
-      const status = result.passed ? 'PASS' : 'FAIL';
+      // Per-case timeout, Stop and bounded retries for ERROR; every attempt is kept.
+      const result = await runCaseWithAttempts(signal => invokeRuntime(tc, runId, sessionId, signal), {
+        timeoutMs: config.caseTimeoutMs,
+        maxRetries: config.caseMaxRetries,
+        isStopped: () => !!stopFlags[runId],
+        onAttempt: (n) => {
+          if (n === 1) return;
+          runLogs[runId]?.[tc.id]?.push({ ts: new Date().toLocaleTimeString(), msg: `Retry: attempt ${n} of ${config.caseMaxRetries + 1}`, kind: 'info' });
+          broadcast({ type: 'action', sessionId, text: `[${tc.id}] Retrying (attempt ${n})...`, testId: tc.id });
+        },
+      });
+      const { status, attempts } = result;
       // Upload buffered evidence frames to S3; tucked into testRuns so the
       // archive builder can pick them up when the run completes.
       const snapshots = await flushTcSnapshots(runId, tc.id);
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status, reason: result.reason, snapshots };
+      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status, reason: result.reason, snapshots, attempts };
       broadcast({ type: 'test_result', testId: tc.id, sessionId, status, reason: result.reason, runId });
       saveTestResult(tc.id, status, result.reason || '');
       console.log(`[${feature}] ${tc.id}: ${status} — ${(result.reason || '').slice(0, 80)} (${snapshots.length} snapshots)`);
     } catch (e) {
       const snapshots = await flushTcSnapshots(runId, tc.id);
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message, snapshots };
-      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: e.message, runId });
-      saveTestResult(tc.id, 'FAIL', e.message);
+      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'ERROR', reason: e.message, snapshots };
+      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'ERROR', reason: e.message, runId });
+      saveTestResult(tc.id, 'ERROR', e.message);
     }
     if (sess) { sess.testRunning = false; sess.action = ''; }
     onProgress?.();

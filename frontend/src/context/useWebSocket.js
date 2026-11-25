@@ -115,7 +115,7 @@ export function useWebSocket(onLog) {
           break
 
         case 'test_skipped':
-          dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'PENDING' } })
+          dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'SKIPPED' } })
           break
 
         case 'action':
