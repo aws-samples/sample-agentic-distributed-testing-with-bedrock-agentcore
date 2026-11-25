@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { checkReadOnly, maskSecrets, buildDbSection, dbEvidence, normalizeConnections } from '../src/db-util.js';
+import { checkReadOnly, isUnsafeKey, maskSecrets, buildDbSection, dbEvidence, normalizeConnections } from '../src/db-util.js';
 
 const ok = (sql, t = 'postgres') => assert.equal(checkReadOnly(sql, t).ok, true, sql);
 const bad = (sql, t = 'postgres') => assert.equal(checkReadOnly(sql, t).ok, false, sql);
@@ -72,4 +72,12 @@ test('both runtimes ship identical db helper files', () => {
     assert.equal(readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'),
       readFileSync(new URL(`../../agent-runtime-agentcore/app/src/${f}`, import.meta.url), 'utf8'), f);
   }
+});
+
+test('rejects object keys that could pollute the prototype', () => {
+  for (const k of ['__proto__', 'constructor', 'prototype']) assert.equal(isUnsafeKey(k), true, k);
+  for (const k of ['default', 'Feature_1', 'proto']) assert.equal(isUnsafeKey(k), false, k);
+  const tabs = Object.create(null);
+  tabs['__proto__'] = { x: 1 };
+  assert.equal(Object.prototype.x, undefined);
 });

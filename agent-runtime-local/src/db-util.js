@@ -82,6 +82,9 @@ export function checkReadOnly(sql, type) {
 
 // ─── Connections, masking, prompt, evidence ───────────────────────────────────
 
+/** Names that must never be used as an object key taken from a request (prototype pollution). */
+export const isUnsafeKey = (k) => ['__proto__', 'constructor', 'prototype'].includes(String(k));
+
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /** Keep only well-formed connections from a run request. */

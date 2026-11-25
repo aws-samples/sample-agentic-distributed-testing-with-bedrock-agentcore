@@ -14,6 +14,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { spawn } from 'child_process';
 import { mkdtempSync, readFileSync, unlinkSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -22,7 +23,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
-import { normalizeConnections, buildDbSection, dbEvidence } from './db-util.js';
+import { normalizeConnections, buildDbSection, dbEvidence, isUnsafeKey } from './db-util.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
@@ -48,6 +49,9 @@ const CHROME_DEVTOOLS_URL = process.env.CHROME_DEVTOOLS_URL || '';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+// Rate limit for the endpoint that starts a test run (it writes files and spawns OpenCode).
+// shortcut: per-IP in-memory counter, 120/min is far above one backend's sequential use; use a shared store if the runtime is ever scaled out behind one address.
+const runLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 // ─── Persistent Chromium ──────────────────────────────────────────────────────
 // We launch one shared Chromium instance that opencode connects to.
@@ -99,7 +103,7 @@ async function waitForChromium(retries = 20) {
 
 // ─── Per-session tab management ───────────────────────────────────────────────
 // One dedicated Chromium tab per session (feature). Keyed by session name.
-const sessionTabs = {};   // sessionName → { targetId, wsUrl }
+const sessionTabs = Object.create(null);   // no prototype, so a session name like "__proto__" is just a key; sessionName → { targetId, wsUrl }
 
 async function cdpHttp(path) {
   return new Promise((resolve, reject) => {
@@ -675,7 +679,7 @@ app.get('/health', (req, res) => {
  * Request: { action: 'init'|'run_test'|'health', testCase?, targetUrl }
  * Response: SSE lines — data: {"event": {...}}
  */
-app.post('/', async (req, res) => {
+app.post('/', runLimiter, async (req, res) => {
   const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env, databases } = req.body;
   if (action === 'run_test') {
     console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${(auth?.accounts || (auth?.username ? [auth] : [])).filter(a => a.username).map(a => (a.role || 'user') + ':' + a.username).join(',') || 'no'}`);
@@ -690,6 +694,13 @@ app.post('/', async (req, res) => {
   }
   function emitText(text) {
     emit({ contentBlockDelta: { delta: { text } } });
+  }
+
+  // sessionName becomes an object key below: refuse names that could pollute Object.prototype.
+  if (isUnsafeKey(sessionName)) {
+    emitText(JSON.stringify({ error: 'Invalid sessionName' }));
+    res.end();
+    return;
   }
 
   if (action === 'health') {

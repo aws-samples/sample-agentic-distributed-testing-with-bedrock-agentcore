@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.5",
     "mysql2": "^3.11.0",
     "pg": "^8.13.0",
     "ws": "^8.18.0"

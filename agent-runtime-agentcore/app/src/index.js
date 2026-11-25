@@ -10,6 +10,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { spawn } from 'child_process';
 import { mkdtempSync, readFileSync, unlinkSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -46,6 +47,9 @@ const BEDROCK_MODEL = BEDROCK_MODEL_RAW.startsWith('amazon-bedrock/')
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+// Rate limit for the endpoint that starts a test run (it writes files and spawns OpenCode).
+// shortcut: per-IP in-memory counter, 120/min is far above one backend's sequential use; use a shared store if the runtime is ever scaled out behind one address.
+const runLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 // ─── AgentCore Browser session pool ──────────────────────────────────────────
 // One managed browser session per sessionName, lazily provisioned. A Browser
@@ -560,11 +564,11 @@ app.get('/ping', (req, res) => {
   res.json({ status: 'Healthy', time_of_last_update: Math.floor(Date.now() / 1000) });
 });
 
-app.post('/invocations', async (req, res) => {
+app.post('/invocations', runLimiter, async (req, res) => {
   return handleInvocation(req, res);
 });
 
-app.post('/', async (req, res) => {
+app.post('/', runLimiter, async (req, res) => {
   return handleInvocation(req, res);
 });
 
