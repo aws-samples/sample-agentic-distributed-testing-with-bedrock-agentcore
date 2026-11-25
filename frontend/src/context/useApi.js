@@ -38,6 +38,10 @@ export function useApi() {
     saveDatabases: (connections) => apiCall('PUT', '/api/config/databases', { connections }),
     testDatabase: (connection) => apiCall('POST', '/api/config/databases/test', { connection }),
     loadDatabaseSchema: (connection) => apiCall('POST', '/api/config/databases/schema', { connection }),
+    getTools: () => apiCall('GET', '/api/config/tools'),
+    saveTools: (tools) => apiCall('PUT', '/api/config/tools', { tools }),
+    getSkills: () => apiCall('GET', '/api/config/skills'),
+    saveSkills: (skills) => apiCall('PUT', '/api/config/skills', { skills }),
     getAuth: () => apiCall('GET', '/api/config/auth'),
     updateAgent: ({ model, region }) => apiCall('PATCH', '/api/config/agent', { model, region }),
     requestAnalysis: (testCase, stepResults, failureDetails) =>

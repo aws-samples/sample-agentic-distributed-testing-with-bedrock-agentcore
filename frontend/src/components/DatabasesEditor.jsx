@@ -5,12 +5,13 @@ import styles from './DatabasesEditor.module.css'
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 const DEFAULT_PORT = { postgres: 5432, mysql: 3306 }
+const SQLITE_HINT = '/sample-app-data/carddemo.db'
 
 let nextKey = 0   // stable React key per row, so removing a row never moves another row's typed state
 
 export const blankConnection = () => ({
   key: ++nextKey, name: '', type: 'postgres', host: '', port: '', database: '', user: '', password: '', hasPassword: false,
-  passwordChanged: false, ssl: 'require', sslCa: '', description: '', logResults: true, orig: null,
+  passwordChanged: false, ssl: 'require', sslCa: '', description: '', logResults: true, sample: false, orig: null,
 })
 
 /** Rows from GET /api/config/databases (which never carries a password). */
@@ -20,7 +21,7 @@ export const toRows = (connections) => (connections || []).map(c => ({
 }))
 
 /** Problems keyed by row index. Empty object = fine. An untouched blank row is ignored. */
-export function validateDatabases(rows, limits = { description: 4000 }) {
+export function validateDatabases(rows) {
   const errors = {}
   const seen = new Set()
   rows.forEach((r, i) => {
@@ -28,13 +29,13 @@ export function validateDatabases(rows, limits = { description: 4000 }) {
     if (!name && !r.host && !r.database && !r.user) return
     if (!NAME_RE.test(name)) errors[i] = 'Give it a name: letters, digits and _ only, starting with a letter or _'
     else if (seen.has(name.toLowerCase())) errors[i] = `${name} is already used above`
+    else if (r.type === 'sqlite') { if (!r.database.trim()) errors[i] = 'The path of the SQLite file is required' }
     else if (!r.host.trim()) errors[i] = 'Host is required'
     else if (r.port !== '' && !(Number(r.port) > 0 && Number(r.port) < 65536)) errors[i] = 'Port must be 1-65535'
     else if (!r.database.trim()) errors[i] = 'Database is required'
     else if (!r.user.trim()) errors[i] = 'User is required'
     else if (r.orig && r.hasPassword && !r.passwordChanged
       && (r.orig.type !== r.type || r.orig.host !== r.host.trim() || r.orig.port !== String(r.port) || r.orig.user !== r.user.trim())) errors[i] = 'The server or login changed: re-enter the password'
-    else if (r.description.length > limits.description) errors[i] = `Description is over ${limits.description} characters`
     seen.add(name.toLowerCase())
   })
   return errors
@@ -49,9 +50,9 @@ export const cleanDatabases = (rows) => rows.filter(r => r.name.trim() || r.host
 
 /**
  * Database connections the testing agent can read during a run (read-only by default).
- * rows: see blankConnection. api: { testDatabase, loadDatabaseSchema }.
+ * rows: see blankConnection. api: { testDatabase, loadDatabaseSchema }. addSkill({ name, text }) receives a loaded schema draft.
  */
-export default function DatabasesEditor({ rows, onChange, errors, disabled, api }) {
+export default function DatabasesEditor({ rows, onChange, errors, disabled, api, addSkill }) {
   const [shown, setShown] = useState({})        // row index -> password revealed
   const [result, setResult] = useState({})      // row index -> { busy, ok, message }
   const set = (i, patch) => onChange(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)))
@@ -68,8 +69,8 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
     try {
       const out = kind === 'test' ? await api.testDatabase(toConnection(r)) : await api.loadDatabaseSchema(toConnection(r))
       if (kind === 'schema' && out.ok) {
-        set(i, { description: r.description.trim() ? `${r.description.trim()}\n\n${out.draft}` : out.draft })
-        setRes(i, { ok: true, message: 'Schema added to the description. Edit it to explain what the data means.' })
+        addSkill({ name: `${r.name.trim()} schema`, text: out.draft })
+        setRes(i, { ok: true, message: 'Schema added as a new skill (Skills tab). Edit it to explain what the data means.' })
       } else setRes(i, { ok: out.ok, message: out.message })
     } catch (e) { setRes(i, { ok: false, message: e.message }) }
   }
@@ -78,12 +79,13 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
     <div className={styles.wrap}>
       {rows.length === 0 && (
         <div className={styles.empty}>
-          No database connections yet. Add one so the agent can check what the application stored (balances, ledger rows, audit records). Use a <strong>read-only database user</strong> on test or staging data, never production.
+          No database connections. Add one so the agent can check what the application stored (balances, ledger rows, audit records). Use a <strong>read-only database user</strong> on test or staging data, never production. Notes on what the tables mean go in the Skills tab.
         </div>
       )}
 
       {rows.map((r, i) => {
         const res = result[i]
+        const lite = r.type === 'sqlite'
         return (
           <div key={r.key} className={`${styles.card} ${errors?.[i] ? styles.bad : ''}`}>
             <div className={styles.line}>
@@ -93,15 +95,27 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
                 onChange={(e) => set(i, { type: e.target.value })}>
                 <option value="postgres">PostgreSQL</option>
                 <option value="mysql">MySQL</option>
+                <option value="sqlite">SQLite (file, read-only)</option>
               </select>
-              <input className={`form-input ${styles.host}`} value={r.host} placeholder="host" spellCheck={false} disabled={disabled}
-                aria-label={`Connection ${i + 1} host`} onChange={(e) => set(i, { host: e.target.value })} />
-              <input className={`form-input ${styles.port}`} value={r.port} placeholder={String(DEFAULT_PORT[r.type])} inputMode="numeric" disabled={disabled}
-                aria-label={`Connection ${i + 1} port`} onChange={(e) => set(i, { port: e.target.value.replace(/\D/g, '') })} />
+              {lite ? (
+                <input className={`form-input ${styles.host}`} value={r.database} placeholder={SQLITE_HINT} spellCheck={false} disabled={disabled}
+                  aria-label={`Connection ${i + 1} SQLite file`} onChange={(e) => set(i, { database: e.target.value })} />
+              ) : (<>
+                <input className={`form-input ${styles.host}`} value={r.host} placeholder="host" spellCheck={false} disabled={disabled}
+                  aria-label={`Connection ${i + 1} host`} onChange={(e) => set(i, { host: e.target.value })} />
+                <input className={`form-input ${styles.port}`} value={r.port} placeholder={String(DEFAULT_PORT[r.type])} inputMode="numeric" disabled={disabled}
+                  aria-label={`Connection ${i + 1} port`} onChange={(e) => set(i, { port: e.target.value.replace(/\D/g, '') })} />
+              </>)}
               <button type="button" className={styles.del} title="Remove connection" aria-label={`Remove ${r.name || 'connection'}`}
                 disabled={disabled} onClick={() => remove(i)}><Icon name="close" size={16} /></button>
             </div>
-            <div className={styles.line}>
+            {r.sample && (
+              <div className={styles.sample} role="note">
+                <strong>Sample database.</strong> This is the CardDemo app's own database, opened read-only. It needs no password and works in Local Runtime mode only (the SQLite file is on this machine). Delete it if you do not need it; it will not come back.
+              </div>
+            )}
+            {lite && <div className={styles.hint}>The file must be inside the allowed folder (<code>/sample-app-data</code>, or <code>DB_SQLITE_DIRS</code>). It is opened read-only; the sample app can keep writing to it.</div>}
+            {!lite && <div className={styles.line}>
               <input className={`form-input ${styles.field}`} value={r.database} placeholder="database" spellCheck={false} disabled={disabled}
                 aria-label={`Connection ${i + 1} database`} onChange={(e) => set(i, { database: e.target.value })} />
               <input className={`form-input ${styles.field}`} value={r.user} placeholder="user (read-only)" spellCheck={false} autoComplete="off" disabled={disabled}
@@ -121,15 +135,12 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
                 <option value="verify">TLS (verify certificate)</option>
                 <option value="off">TLS off (plain text)</option>
               </select>
-            </div>
-            {r.ssl === 'verify' && (
+            </div>}
+            {!lite && r.ssl === 'verify' && (
               <textarea className={`form-input ${styles.desc}`} rows={3} value={r.sslCa} disabled={disabled} spellCheck={false}
                 placeholder="CA certificate (PEM) to verify the server with. Leave empty to use the system trust store."
                 aria-label={`Connection ${i + 1} CA certificate`} onChange={(e) => set(i, { sslCa: e.target.value })} />
             )}
-            <textarea className={`form-input ${styles.desc}`} rows={4} value={r.description} disabled={disabled}
-              placeholder="What does this database hold? How do the tables relate? What do status codes mean? Example queries. The agent reads this as notes (data), not instructions."
-              aria-label={`Connection ${i + 1} description`} onChange={(e) => set(i, { description: e.target.value })} />
             <div className={styles.foot}>
               <Btn size="sm" disabled={disabled || !!res?.busy || !!errors?.[i] || !r.name.trim()} onClick={() => run(i, 'test')}>
                 {res?.busy === 'test' ? 'Testing…' : 'Test connection'}

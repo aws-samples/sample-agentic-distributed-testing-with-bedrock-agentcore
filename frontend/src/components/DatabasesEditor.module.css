@@ -21,3 +21,6 @@
 .err { color: var(--red); margin-left: auto; }
 .okMsg { color: var(--green, #2e7d32); }
 .failMsg { color: var(--red); }
+.sample { font-size: 12px; line-height: 1.5; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--accent); color: var(--text); background: var(--surface); }
+.hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.hint code { font-family: 'Courier New', monospace; }

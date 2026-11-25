@@ -4,11 +4,15 @@ import Btn from './Btn'
 import Icon from './Icon'
 import styles from './SettingsModal.module.css'
 import EnvVarsEditor, { validateEnvVars, cleanEnvVars } from './EnvVarsEditor'
-import DatabasesEditor, { validateDatabases, cleanDatabases, toRows } from './DatabasesEditor'
+import { validateDatabases, cleanDatabases, toRows } from './DatabasesEditor'
+import ToolsEditor from './ToolsEditor'
+import SkillsEditor, { blankSkill, toSkillRows, cleanSkills, validateSkills } from './SkillsEditor'
 import { ModelRegionPicker, MODEL_IDS, KNOWN_REGIONS_FALLBACK, toChoice, fromChoice } from './ModelRegionPicker'
 
 /**
- * Two sections:
+ * Three tabs: General, Tools (the agent's tools, each with its own settings; Database today) and
+ * Skills (reusable notes for the agent). One Save button saves all of them.
+ * General has two sections:
  *   Orchestration platform — theme, and the Bedrock model + region the platform
  *     itself uses for Edit with AI, drafting test cases from a spec and checks.
  *   Testing AI agent — which runtime drives the browser (AgentCore or local), and
@@ -30,8 +34,13 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const [envReserved, setEnvReserved] = useState(['TARGET_URL'])
   const [envSaved, setEnvSaved] = useState('[]')
   const [dbRows, setDbRows] = useState([])
-  const [dbLimits, setDbLimits] = useState({ description: 4000 })
   const [dbSaved, setDbSaved] = useState('[]')
+  const [tab, setTab] = useState('general')                      // general | tools | skills
+  const [toolsOn, setToolsOn] = useState({})                     // { [toolId]: boolean }
+  const [toolsSaved, setToolsSaved] = useState('{}')
+  const [skillRows, setSkillRows] = useState([])
+  const [skillLimits, setSkillLimits] = useState({ name: 80, text: 4000 })
+  const [skillsSaved, setSkillsSaved] = useState('[]')
   const [builtIn, setBuiltIn] = useState([])
   const [status, setStatus] = useState({ kind: 'loading' })      // loading | idle | saving | error
 
@@ -40,13 +49,16 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
     let cancelled = false
     setStatus({ kind: 'loading' })
     setMode(currentMode || 'local')
+    setTab('general')
     Promise.all([
       api.getConfig(),
       api.getKnownRegions?.().catch(() => null),
       api.getEnvVars().catch(() => null),
       api.getAuth().catch(() => null),
       api.getDatabases().catch(() => null),
-    ]).then(([cfg, regions, env, auth, dbs]) => {
+      api.getTools().catch(() => null),
+      api.getSkills().catch(() => null),
+    ]).then(([cfg, regions, env, auth, dbs, tools, skills]) => {
       if (cancelled) return
       const known = regions?.regions?.length ? regions.regions : KNOWN_REGIONS_FALLBACK
       setKnownRegions(known)
@@ -61,7 +73,11 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       if (env?.reserved) setEnvReserved(env.reserved)
       const dRows = toRows(dbs?.connections)
       setDbRows(dRows); setDbSaved(JSON.stringify(cleanDatabases(dRows)))
-      if (dbs?.limits) setDbLimits(dbs.limits)
+      const on = Object.fromEntries((tools?.tools || []).map(t => [t.id, t.enabled]))
+      setToolsOn(on); setToolsSaved(JSON.stringify(on))
+      const sRows = toSkillRows(skills?.skills)
+      setSkillRows(sRows); setSkillsSaved(JSON.stringify(cleanSkills(sRows)))
+      if (skills?.limits) setSkillLimits(skills.limits)
       const accts = (auth?.accounts || []).filter(a => a.username)
       setBuiltIn([
         { name: 'TARGET_URL', value: cfg.targetUrl, where: 'Test Editor → Target URL', description: 'The application under test; the agent always starts here.' },
@@ -80,12 +96,19 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
   const envInvalid = Object.keys(envErrors).length > 0
   const envDirty = JSON.stringify(cleanEnvVars(envRows)) !== envSaved
 
-  const dbErrors = validateDatabases(dbRows, dbLimits)
+  const dbErrors = validateDatabases(dbRows)
   const dbInvalid = Object.keys(dbErrors).length > 0
   const dbDirty = JSON.stringify(cleanDatabases(dbRows)) !== dbSaved
 
+  const toolsDirty = JSON.stringify(toolsOn) !== toolsSaved
+  const skillErrors = validateSkills(skillRows, skillLimits)
+  const skillsInvalid = Object.keys(skillErrors).length > 0
+  const skillsDirty = JSON.stringify(cleanSkills(skillRows)) !== skillsSaved
+  const addSkill = ({ name, text }) => setSkillRows(rows => [...rows, blankSkill({ name: name.slice(0, skillLimits.name), text: text.slice(0, skillLimits.text), tool: 'database' })])
+  const toolCtx = { dbRows, setDbRows, dbErrors, addSkill }
+
   const handleSave = async () => {
-    if (missing || envInvalid || dbInvalid) return
+    if (missing || envInvalid || dbInvalid || skillsInvalid) return
     setStatus({ kind: 'saving' })
     try {
       // Only send what changed, so an unrelated save never rewrites a value.
@@ -95,6 +118,8 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       }
       if (envDirty) await api.saveEnvVars(cleanEnvVars(envRows))
       if (dbDirty) await api.saveDatabases(cleanDatabases(dbRows))
+      if (toolsDirty) await api.saveTools(Object.fromEntries(Object.entries(toolsOn).map(([id, enabled]) => [id, { enabled }])))
+      if (skillsDirty) await api.saveSkills(cleanSkills(skillRows))
       let savedMode = currentMode
       if (mode !== currentMode) { await api.updateMode(mode); savedMode = mode }
       await onSave({ model: ids.pModel, mode: savedMode })
@@ -113,10 +138,20 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
       footer={
         <>
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" disabled={busy || missing || envInvalid || dbInvalid} onClick={handleSave}>Save</Btn>
+          <Btn variant="primary" disabled={busy || missing || envInvalid || dbInvalid || skillsInvalid} onClick={handleSave}>Save</Btn>
         </>
       }
     >
+      <div className={styles.tabs} role="tablist" aria-label="Settings">
+        {[['general', 'General'], ['tools', 'Tools'], ['skills', 'Skills']].map(([id, label]) => (
+          <button key={id} type="button" role="tab" id={`settings-tab-${id}`} aria-selected={tab === id} aria-controls={`settings-panel-${id}`}
+            className={`${styles.tab} ${tab === id ? styles.tabOn : ''}`} onClick={() => setTab(id)}>
+            {label}{id === 'tools' && (dbInvalid) ? ' ⚠' : ''}{id === 'skills' && skillsInvalid ? ' ⚠' : ''}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general" hidden={tab !== 'general'} className={styles.tabPanel}>
       {/* ───────── Orchestration platform ───────── */}
       <section className={styles.section}>
         <h3 className={styles.sectionTitle}><Icon name="tune" size={16} />Orchestration platform</h3>
@@ -168,14 +203,6 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
           <EnvVarsEditor rows={envRows} onChange={setEnvRows} builtIn={builtIn} errors={envErrors} disabled={busy} />
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Database connections</label>
-          <div className={styles.hint} style={{ marginTop: 0 }}>
-            <strong>The database user must be read-only</strong> (only SELECT rights), on test or staging data, never production. The tools add their own checks (SELECT only, a read-only transaction, 200 rows and 15 s per query), but those are a safety net, not the permission boundary. Lets the agent check stored data during a run, for example that a transfer wrote its ledger rows. The password is stored in the backend config and sent to the runtime with each run; it is never shown again. In AgentCore mode the database must be reachable from the runtime's network.
-          </div>
-          <DatabasesEditor rows={dbRows} onChange={setDbRows} errors={dbErrors} disabled={busy} api={api} />
-        </div>
-
         {mode === 'agentcore' && (
           <div className={styles.field}>
             <label className={styles.label}>AgentCore Runtime &amp; Browser region</label>
@@ -184,6 +211,16 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
           </div>
         )}
       </section>
+      </div>
+
+      <div role="tabpanel" id="settings-panel-tools" aria-labelledby="settings-tab-tools" hidden={tab !== 'tools'} className={styles.tabPanel}>
+        <div className={styles.sectionSub}>Tools the testing agent can use during a run. Switch one off to stop the agent from getting it. Applies from the next test run.</div>
+        <ToolsEditor enabled={toolsOn} onToggle={(id, on) => setToolsOn(t => ({ ...t, [id]: on }))} ctx={toolCtx} disabled={busy} api={api} />
+      </div>
+
+      <div role="tabpanel" id="settings-panel-skills" aria-labelledby="settings-tab-skills" hidden={tab !== 'skills'} className={styles.tabPanel}>
+        <SkillsEditor rows={skillRows} onChange={setSkillRows} errors={skillErrors} disabled={busy} limits={skillLimits} />
+      </div>
 
       {status.kind === 'error' && <div className={styles.error} role="alert">{status.error}</div>}
     </Modal>
