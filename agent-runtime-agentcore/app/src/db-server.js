@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MCP stdio server giving the testing agent read-only access to the MySQL/PostgreSQL
+ * MCP stdio server giving the testing agent read-only access to the MySQL/PostgreSQL/SQLite
  * connections configured in Settings. Tools: db_list_tables, db_describe_table, db_query
  * (OpenCode shows them as db_list_tables, ...).
  *
@@ -10,13 +10,14 @@
  * There is no write mode. The strongest layer is still a database user that only has SELECT.
  *
  * Connections come from the JSON file named by DB_CONNECTIONS_FILE (written 0600 by the
- * runtime outside the agent's working directory, for this run only), so passwords never travel
- * on a command line.
+ * runtime outside the agent's working directory, removed when the run ends), so passwords never
+ * travel on a command line.
  * MCP protocol: newline-delimited JSON over stdin/stdout.
  */
-import { readFileSync, unlinkSync } from 'fs';
+import { readFileSync } from 'fs';
 import { createInterface } from 'readline';
-import { checkReadOnly, normalizeConnections, maskSecrets } from './db-util.js';
+import { checkReadOnly, normalizeConnections, maskSecrets, resolveSqlitePath } from './db-util.js';
+import { querySqlite } from './db-sqlite.js';
 
 const MAX_ROWS = Number(process.env.DB_MAX_ROWS) || 200;
 const MAX_CELL = 500;          // characters per value
@@ -24,14 +25,12 @@ const MAX_BYTES = 20000;       // size of one result
 const TIMEOUT_MS = Number(process.env.DB_TIMEOUT_MS) || 15000;
 
 let connections = [];
-// Read once, then delete: the passwords live only in this process's memory for the rest of the run.
-// shortcut: OpenCode starts this server, so there is no stdin or inherited pipe to receive them on;
-// a file that exists for the few seconds until the server starts is the closest thing. Use a
-// pipe if the tool server is ever started by the runtime itself.
+// The file stays until the runtime removes it at the end of the run (finally in index.js), so
+// connections survive OpenCode restarting this server mid-run. It is in a 0700 directory outside the
+// agent's working directory, the agent has no shell or file tools, and Chromium cannot open file://.
 try {
   connections = normalizeConnections(JSON.parse(readFileSync(process.env.DB_CONNECTIONS_FILE, 'utf8')));
-  unlinkSync(process.env.DB_CONNECTIONS_FILE);
-} catch { /* none, or already read */ }
+} catch { /* none configured */ }
 
 // ─── Query execution ──────────────────────────────────────────────────────────
 
@@ -140,15 +139,19 @@ export async function run(c, sql, params = [], { guard = true } = {}) {
     const g = checkReadOnly(sql, c.type);
     if (!g.ok) throw new Error(g.reason);
   }
-  const rows = await withConnection(c, (all, capped) => (guard ? capped(sql) : all(sql, params)));
+  const rows = c.type === 'sqlite'
+    ? await querySqlite(resolveSqlitePath(c.database), sql, params, FETCH, TIMEOUT_MS)
+    : await withConnection(c, (all, capped) => (guard ? capped(sql) : all(sql, params)));
   return shape(rows);
 }
 
 // ─── Schema introspection (fixed statements, parameterised) ───────────────────
 
 const PG = c => c.type === 'postgres';
+const LITE = c => c.type === 'sqlite';
 
 function listTables(c, schema) {
+  if (LITE(c)) return run(c, `SELECT 'main' AS "schema", name AS "table", type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name`, [], { guard: false });
   return PG(c)
     ? run(c, `SELECT table_schema AS "schema", table_name AS "table", table_type AS "type" FROM information_schema.tables
         WHERE table_schema NOT IN ('pg_catalog','information_schema') AND ($1::text IS NULL OR table_schema = $1) ORDER BY 1, 2`, [schema ?? null], { guard: false })
@@ -156,7 +159,15 @@ function listTables(c, schema) {
         WHERE table_schema = COALESCE(?, DATABASE()) ORDER BY 1, 2`, [schema ?? null], { guard: false });
 }
 
+async function describeSqliteTable(c, table) {
+  const columns = await run(c, `SELECT name, type, CASE WHEN "notnull" = 1 THEN 'NO' ELSE 'YES' END AS nullable, dflt_value AS "default", pk AS "key" FROM pragma_table_info(?) ORDER BY cid`, [table], { guard: false });
+  const keys = await run(c, `SELECT 'FOREIGN KEY' AS kind, "from" AS "column", "table" AS ref_table, "to" AS ref_column FROM pragma_foreign_key_list(?)`, [table], { guard: false });
+  if (!columns.returned) throw new Error(`No table named "${table}" was found. Use db_list_tables to see what exists.`);
+  return { columns: columns.rows, keys: keys.rows };
+}
+
 async function describeTable(c, table, schema) {
+  if (LITE(c)) return describeSqliteTable(c, table);
   const s = schema ?? null;
   const columns = PG(c)
     ? await run(c, `SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS "default" FROM information_schema.columns

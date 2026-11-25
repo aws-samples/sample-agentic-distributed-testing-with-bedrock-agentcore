@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket as WS } from 'ws';
-import { normalizeConnections, buildDbSection, dbEvidence, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
@@ -369,7 +369,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile) {
+function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList) {
   // AgentCore's WS endpoint requires SigV4-signed headers on the upgrade
   // request — chrome-devtools-mcp's --wsHeaders passes them through.
   const chromeMcpArgs = cdpWsUrl.startsWith('ws')
@@ -397,8 +397,8 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFi
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
-      // Read-only database tools (db_list_tables, db_describe_table, db_query) when connections are configured
-      ...(dbFile ? { db: { type: 'local', command: ['node', DB_SERVER], environment: { DB_CONNECTIONS_FILE: dbFile } } } : {}),
+      // One MCP server per enabled tool, e.g. the read-only database tools (db_list_tables, db_describe_table, db_query)
+      ...toolServers(toolList, { dbFile, dbServer: DB_SERVER }),
       'chrome-devtools': {
         type: 'local',
         command: [
@@ -416,9 +416,9 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFi
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, dbFile) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList) {
   const configPath = join(workDir, 'opencode.json');
-  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile), null, 2));
+  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList), null, 2));
   const awsCreds = await getAwsCredentials();
   // Diagnostic: if getAwsCredentials() (classic EC2 IMDS) returns null, the
   // opencode child gets no explicit AWS creds beyond whatever's already in
@@ -576,7 +576,7 @@ app.post('/', runLimiter, async (req, res) => {
 });
 
 async function handleInvocation(req, res) {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env, databases } = req.body;
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env, tools, skills, databases } = req.body;
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
@@ -645,10 +645,10 @@ async function handleInvocation(req, res) {
     // Database connections for this run. Passwords go to the db tool server through a 0600 file in
     // its own directory, outside the agent's working directory, that is removed when the run ends
     // (finally below); never into the prompt or onto a command line.
-    const dbs = normalizeConnections(databases);
+    const dbs = dbConnectionsFromRequest({ tools, databases });
     const dbCreds = dbs.length ? writeDbCredentials(dbs) : null;
     const dbFile = dbCreds?.file || null;
-    const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs)) +
+    const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
@@ -671,7 +671,7 @@ async function handleInvocation(req, res) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile);
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile, tools);
     } finally {
       dbCreds?.cleanup();
     }

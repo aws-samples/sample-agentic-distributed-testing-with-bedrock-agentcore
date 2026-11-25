@@ -23,7 +23,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
-import { normalizeConnections, buildDbSection, dbEvidence, isUnsafeKey, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, isUnsafeKey, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
@@ -467,7 +467,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile) {
+function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile, toolList) {
   // Connect to the browser-level WebSocket so chrome-devtools-mcp can call
   // browser-level commands (Target.getBrowserContexts, etc.).
   // Individual page routing is handled via pageId in tool calls.
@@ -500,8 +500,8 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile) {
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
-      // Read-only database tools (db_list_tables, db_describe_table, db_query) when connections are configured
-      ...(dbFile ? { db: { type: 'local', command: ['node', DB_SERVER], environment: { DB_CONNECTIONS_FILE: dbFile } } } : {}),
+      // One MCP server per enabled tool, e.g. the read-only database tools (db_list_tables, db_describe_table, db_query)
+      ...toolServers(toolList, { dbFile, dbServer: DB_SERVER }),
       'chrome-devtools': {
         type: 'local',
         // Use globally-installed binary (avoids npx download on every run)
@@ -533,9 +533,9 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, dbFile) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, dbFile, toolList) {
   const configPath = join(workDir, 'opencode.json');
-  const config = buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile);
+  const config = buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile, toolList);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   // Log auth presence (usernames only, never passwords) so operators can verify
   // the agent received credentials when authentication is enabled
@@ -693,7 +693,7 @@ app.get('/health', (req, res) => {
  * Response: SSE lines — data: {"event": {...}}
  */
 app.post('/', runLimiter, async (req, res) => {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env, databases } = req.body;
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env, tools, skills, databases } = req.body;
   if (action === 'run_test') {
     console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${(auth?.accounts || (auth?.username ? [auth] : [])).filter(a => a.username).map(a => (a.role || 'user') + ':' + a.username).join(',') || 'no'}`);
   }
@@ -796,10 +796,10 @@ app.post('/', runLimiter, async (req, res) => {
     // Database connections for this run. Passwords go to the db tool server through a 0600 file in
     // its own directory, outside the agent's working directory, that is removed when the run ends
     // (finally below); never into the prompt or onto a command line.
-    const dbs = normalizeConnections(databases);
+    const dbs = dbConnectionsFromRequest({ tools, databases });
     const dbCreds = dbs.length ? writeDbCredentials(dbs) : null;
     const dbFile = dbCreds?.file || null;
-    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env, buildDbSection(dbs)) +
+    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
@@ -826,7 +826,7 @@ app.post('/', runLimiter, async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body), dbFile);
+    }, browserWs, resolveModelAndRegion(req.body), dbFile, tools);
     } finally {
       dbCreds?.cleanup();
     }
