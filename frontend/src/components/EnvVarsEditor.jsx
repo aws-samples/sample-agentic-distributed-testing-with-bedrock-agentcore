@@ -1,3 +1,4 @@
+import { isShortSecret, SHORT_SECRET_WARNING } from '../utils/secrets'
 import { useState } from 'react'
 import Icon from './Icon'
 import Btn from './Btn'
@@ -93,6 +94,7 @@ export default function EnvVarsEditor({ rows, onChange, builtIn, errors, disable
               <input type="checkbox" checked={!!r.secret} disabled={disabled} onChange={(e) => set(i, { secret: e.target.checked })} />
               Mask the value here
             </label>
+            {r.secret && isShortSecret(r.value) && <span className={styles.warn} role="status">{SHORT_SECRET_WARNING}</span>}
             {!r.description.trim() && r.name.trim() && <span className={styles.warn}>No description: the agent will only use it if a test case names it.</span>}
             {errors?.[i] && <span className={styles.err} role="alert">{errors[i]}</span>}
           </div>

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { redactSecrets, REDACTED } from './redact.js';
+import { readFileSync } from 'node:fs';
+import { redactSecrets, REDACTED, MIN_SECRET_LENGTH } from './redact.js';
 
 test('redactSecrets masks every occurrence of each secret', () => {
   const out = redactSecrets('typed hunter2 then hunter2 and tok-123', ['hunter2', 'tok-123']);
@@ -23,4 +24,9 @@ test('redactSecrets treats secrets as literal text, not patterns', () => {
 test('redactSecrets skips secrets shorter than 6 characters', () => {
   assert.equal(redactSecrets('the pin 1234 and the word pass', ['1234', 'pass']), 'the pin 1234 and the word pass');
   assert.equal(redactSecrets('abcdef', ['abcdef']), REDACTED);
+});
+
+test('the frontend short-secret warning uses the same minimum length', () => {
+  const src = readFileSync(new URL('../../../frontend/src/utils/secrets.js', import.meta.url), 'utf8');
+  assert.equal(Number(src.match(/MIN_SECRET_LENGTH = (\d+)/)[1]), MIN_SECRET_LENGTH);
 });
