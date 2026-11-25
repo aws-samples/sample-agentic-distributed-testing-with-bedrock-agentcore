@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Backend tests
+        run: npm test --workspace backend
+      - name: Frontend build
+        run: npm run build --workspace frontend
+
+  agent-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: agent-runtime-local
+      # The pinned OpenCode version (ARG OPENCODE_VERSION in the runtime Dockerfiles): the test asks it
+      # to resolve the agent from the generated config and checks the shell and file tools are denied.
+      - name: Install the pinned OpenCode
+        run: |
+          version=$(sed -n 's/^ARG OPENCODE_VERSION=//p' agent-runtime-local/Dockerfile)
+          npm install -g "opencode-ai@${version}"
+      - name: Runtime tests
+        run: npm test
+        working-directory: agent-runtime-local
+        env:
+          OPENCODE_BIN: opencode

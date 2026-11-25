@@ -29,6 +29,9 @@ services:
       # Persists the SQLite DB (test cases, run archive) plus config.json /
       # testResults.json across container rebuilds, not just restarts.
       - backend-state:/app/backend/src/state
+      # The sample app's database volume, read-only: the default CardDemo connection (SQLite) tests
+      # and reads it from here. Name: SAMPLE_APP_DB_VOLUME (see the volumes section below).
+      - sample-app-data:/sample-app-data:ro
     restart: unless-stopped
 
   # Local agent runtime — OpenCode + chrome-devtools-mcp + local Chromium.
@@ -44,6 +47,9 @@ services:
       # Point to a Chrome instance with remote debugging enabled.
       # Leave blank to let chrome-devtools-mcp auto-launch Chrome.
       CHROME_DEVTOOLS_URL: "${CHROME_DEVTOOLS_URL:-}"
+    volumes:
+      # Same read-only mount, for the agent's database tool.
+      - sample-app-data:/sample-app-data:ro
     restart: unless-stopped
 
   frontend:
@@ -56,3 +62,10 @@ services:
 
 volumes:
   backend-state:
+  # The sample app's database volume (sample-app/docker-compose.yml `db-data`). Its real name depends
+  # on the Compose project name of the sample app, so it comes from SAMPLE_APP_DB_VOLUME.
+  # External: ./init-sample-volume.sh (run by `npm run build` and init-local-runtime.sh) creates it
+  # when missing; the sample app fills it.
+  sample-app-data:
+    external: true
+    name: "${SAMPLE_APP_DB_VOLUME:-sample-app_db-data}"
