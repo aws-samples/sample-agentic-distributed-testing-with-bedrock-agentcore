@@ -2,6 +2,7 @@ import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/clie
 import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeFeatures, featureDescriptions } from '../state/store.js';
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
+import { TOOLS, skillsForRun } from '../state/skills.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
 
 // Per-region client cache so live region changes from Settings are picked up
@@ -93,8 +94,12 @@ export async function invokeRuntime(tc, runId, sessionId) {
     region: config.agentRegion,
     // Context variables (name, value, when-to-use description) for the agent's prompt.
     env: config.envVars.map(({ name, value, description }) => ({ name, value, description })),
-    // Database connections for the agent's read-only db tools (passwords included: the runtime needs them).
-    databases: config.dbConnections,
+    // Enabled tools, each with its settings: the runtime starts one tool server per entry. The database
+    // tool carries its connections (passwords included: the runtime needs them) and starts nothing
+    // when there are none. SQLite files are on this machine's volume, so only the local runtime gets them.
+    tools: TOOLS.filter(t => config.tools[t.id]?.enabled).map(t => ({ id: t.id, config: t.id === 'database' ? { connections: config.dbConnections.filter(c => c.type !== 'sqlite' || config.agentMode === 'local') } : {} })),
+    // Skills: reusable instructions (global), sent as data. Those attached to a switched-off tool are left out.
+    skills: skillsForRun(config.skills, config.tools),
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in

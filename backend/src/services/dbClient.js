@@ -5,9 +5,29 @@
  * db-server.js.)
  */
 import net from 'node:net';
+import { realpathSync } from 'node:fs';
+import { sep } from 'node:path';
 import { resolveAllowedHost } from './netGuard.js';
 
 const TIMEOUT_MS = 8000;
+
+/** Directories a SQLite file may live in: DB_SQLITE_DIRS (colon-separated), default /sample-app-data. Same rule as the runtimes' db-util.js. */
+export const sqliteDirs = () => (process.env.DB_SQLITE_DIRS || '/sample-app-data').split(':').map(d => d.trim()).filter(Boolean);
+
+/** Real path of an existing file inside an allowed directory (symlinks resolved), else throws. */
+export function resolveSqlitePath(file, dirs = sqliteDirs()) {
+  let real;
+  try { real = realpathSync(String(file || '')); } catch { throw new Error('The SQLite file was not found.'); }
+  const ok = dirs.some(d => { let r; try { r = realpathSync(d); } catch { return false; } return real.startsWith(r.endsWith(sep) ? r : r + sep); });
+  if (!ok) throw new Error(`The SQLite file must be inside ${dirs.join(' or ')}.`);
+  return real;
+}
+
+async function withSqlite(c, fn) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(resolveSqlitePath(c.database), { readonly: true, fileMustExist: true });
+  try { return fn(db); } finally { db.close(); }
+}
 
 async function withConn(c, fn) {
   // Connect to the address that passed the link-local check; the certificate is still checked against the hostname.
@@ -52,6 +72,9 @@ export function safeMessage(e, c) {
 }
 
 export async function testConnection(c) {
+  if (c.type === 'sqlite') {
+    return withSqlite(c, (db) => `Connected (SQLite ${db.prepare('SELECT sqlite_version() AS v').get().v}, ${db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'").get().n} tables)`);
+  }
   const version = await withConn(c, async (q) => {
     const rows = await q(c.type === 'postgres' ? 'SELECT version() AS v' : 'SELECT VERSION() AS v');
     return String(rows[0]?.v || '').slice(0, 80);
@@ -61,7 +84,10 @@ export async function testConnection(c) {
 
 /** A starting point for the description: tables and columns from the live schema, for the tester to edit. */
 export async function schemaDraft(c) {
-  const rows = await withConn(c, (q) => q(c.type === 'postgres'
+  const rows = c.type === 'sqlite'
+    ? await withSqlite(c, (db) => db.prepare(`SELECT m.name AS t, p.name AS c, p.type AS d FROM sqlite_master m, pragma_table_info(m.name) p
+        WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid`).all())
+    : await withConn(c, (q) => q(c.type === 'postgres'
     ? `SELECT table_name AS t, column_name AS c, data_type AS d FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name, ordinal_position`
     : `SELECT table_name AS t, column_name AS c, data_type AS d FROM information_schema.columns

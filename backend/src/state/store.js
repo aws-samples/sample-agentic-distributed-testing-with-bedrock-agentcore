@@ -8,6 +8,7 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadFeaturesAndCases, loadLegacyIdMap } from './db.js';
+import { normalizeTools, normalizeSkills, applyDefaults } from './skills.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_FILE = path.join(__dirname, 'testResults.json');
@@ -99,9 +100,9 @@ export function normalizeEnvVars(list) {
 // the database user should be read-only too). The password is a secret: it is served to nobody but the
 // runtime (in the run request) and never returned by any GET.
 export const DB_LIMITS = { count: 10, description: 4000, ca: 20000 };
-export const DB_TYPES = ['mysql', 'postgres'];
+export const DB_TYPES = ['mysql', 'postgres', 'sqlite'];
 export const DB_SSL = ['off', 'require', 'verify'];
-export const DB_DEFAULT_PORT = { mysql: 3306, postgres: 5432 };
+export const DB_DEFAULT_PORT = { mysql: 3306, postgres: 5432, sqlite: 0 };
 const dbIdentity = (v) => {
   const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
   return [type, String(v?.host || '').trim(), Number(v?.port) || DB_DEFAULT_PORT[type], String(v?.user || '').trim()].join('|');
@@ -129,6 +130,10 @@ export function normalizeDbConnections(list, saved = []) {
     const name = String(v?.name || '').trim();
     const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
     const s = saved.find(x => x.name === name);
+    if (type === 'sqlite') {   // a file path in `database`; no server, login or TLS
+      return { name, type, host: '', port: 0, database: String(v?.database || '').trim(), user: '', password: '', ssl: 'off', sslCa: '',
+        description: String(v?.description ?? '').slice(0, DB_LIMITS.description), logResults: v?.logResults !== false, sample: !!v?.sample };
+    }
     return {
       name, type,
       host: String(v?.host || '').trim(),
@@ -140,6 +145,7 @@ export function normalizeDbConnections(list, saved = []) {
       sslCa: String(v?.sslCa || '').slice(0, DB_LIMITS.ca),   // a CA certificate is public: it may be served back
       description: String(v?.description ?? '').slice(0, DB_LIMITS.description),
       logResults: v?.logResults !== false,
+      sample: false,
     };
   }).filter(v => ENV_NAME_RE.test(v.name));
 }
@@ -167,7 +173,25 @@ export const config = {
   auth:         normalizeAuth(_persisted.auth),
   envVars:      normalizeEnvVars(_persisted.envVars),
   dbConnections: normalizeDbConnections(_persisted.dbConnections),
+  tools:        normalizeTools(_persisted.tools),
+  skills:       normalizeSkills(_persisted.skills),
+  // One-time changes already made to this config (see state/skills.js), so they never run twice.
+  flags:        { skillsMigrated: !!_persisted.flags?.skillsMigrated, cardDemoSeeded: !!_persisted.flags?.cardDemoSeeded },
 };
+
+// First start of this version: move connection descriptions into skills (config backed up first)
+// and add the CardDemo sample connection to an install that has no connections.
+{
+  const { state, changed } = applyDefaults(
+    { dbConnections: config.dbConnections, skills: config.skills, flags: config.flags },
+    () => { if (fs.existsSync(CONFIG_FILE)) fs.copyFileSync(CONFIG_FILE, `${CONFIG_FILE}.pre-skills-${Date.now()}.bak`); },
+  );
+  if (changed) {
+    Object.assign(config, state);
+    config.skills = normalizeSkills(config.skills);
+    queueMicrotask(() => saveConfig());
+  }
+}
 
 // If no persisted browser region and no env override, try to match the EC2 host
 export async function initEc2Region() {
@@ -189,6 +213,9 @@ export function saveConfig() {
         auth:                config.auth,
         envVars:             config.envVars,
         dbConnections:       config.dbConnections,
+        tools:               config.tools,
+        skills:              config.skills,
+        flags:               config.flags,
         bedrockModel:        config.bedrockModel,
         bedrockRegion:       config.bedrockRegion,
         agentModel:          config.agentModel,

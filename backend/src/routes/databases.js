@@ -30,7 +30,12 @@ function problem(list) {
     if (!ENV_NAME_RE.test(name)) return `${where}: the name must start with a letter or _ and use only letters, digits and _ (max 64)`;
     if (seen.has(name.toLowerCase())) return `${where}: ${name} appears twice`;
     seen.add(name.toLowerCase());
-    if (!DB_TYPES.includes(v?.type)) return `${where} (${name}): type must be mysql or postgres`;
+    if (!DB_TYPES.includes(v?.type)) return `${where} (${name}): type must be mysql, postgres or sqlite`;
+    if (v.type === 'sqlite') {
+      if (!String(v?.database || '').trim()) return `${where} (${name}): the SQLite file path is required`;
+      if (String(v?.description ?? '').length > DB_LIMITS.description) return `${where} (${name}): the description is longer than ${DB_LIMITS.description} characters`;
+      continue;
+    }
     if (!String(v?.host || '').trim()) return `${where} (${name}): host is required`;
     if (v?.port !== undefined && v.port !== '' && !(Number.isInteger(Number(v.port)) && Number(v.port) > 0 && Number(v.port) < 65536)) return `${where} (${name}): port must be 1-65535`;
     if (!String(v?.database || '').trim()) return `${where} (${name}): database is required`;
