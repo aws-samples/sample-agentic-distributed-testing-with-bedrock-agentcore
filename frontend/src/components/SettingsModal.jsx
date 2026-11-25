@@ -171,7 +171,7 @@ export default function SettingsModal({ open, onClose, currentModel, currentMode
         <div className={styles.field}>
           <label className={styles.label}>Database connections</label>
           <div className={styles.hint} style={{ marginTop: 0 }}>
-            Lets the agent check stored data during a run (for example, that a transfer wrote its ledger rows). It can only <strong>read</strong>: SELECT, one statement, a read-only transaction, 200 rows and 15 s per query. Use a read-only database user on test or staging data. The password is stored in the backend config and sent to the runtime with each run; it is never shown again. In AgentCore mode the database must be reachable from the runtime's network.
+            <strong>The database user must be read-only</strong> (only SELECT rights), on test or staging data, never production. The tools add their own checks (SELECT only, a read-only transaction, 200 rows and 15 s per query), but those are a safety net, not the permission boundary. Lets the agent check stored data during a run, for example that a transfer wrote its ledger rows. The password is stored in the backend config and sent to the runtime with each run; it is never shown again. In AgentCore mode the database must be reachable from the runtime's network.
           </div>
           <DatabasesEditor rows={dbRows} onChange={setDbRows} errors={dbErrors} disabled={busy} api={api} />
         </div>

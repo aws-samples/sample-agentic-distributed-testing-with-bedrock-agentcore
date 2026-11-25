@@ -95,29 +95,51 @@ export function normalizeEnvVars(list) {
   })).filter(v => ENV_NAME_RE.test(v.name));
 }
 
-// Database connections the testing agent may read during a run (read-only unless a
-// connection opts in to writes). The password is a secret: it is served to nobody but the
+// Database connections the testing agent may read during a run (read-only, no write mode;
+// the database user should be read-only too). The password is a secret: it is served to nobody but the
 // runtime (in the run request) and never returned by any GET.
-export const DB_LIMITS = { count: 10, description: 4000 };
+export const DB_LIMITS = { count: 10, description: 4000, ca: 20000 };
 export const DB_TYPES = ['mysql', 'postgres'];
 export const DB_SSL = ['off', 'require', 'verify'];
 export const DB_DEFAULT_PORT = { mysql: 3306, postgres: 5432 };
-/** Clean a list of connections. A password that is not a string keeps the saved one of the same name. */
+const dbIdentity = (v) => {
+  const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
+  return [type, String(v?.host || '').trim(), Number(v?.port) || DB_DEFAULT_PORT[type], String(v?.user || '').trim()].join('|');
+};
+/**
+ * The saved password may be reused (a request that sends no password) only for the same
+ * server and login: type, host, port and user unchanged. Returns the name of the first
+ * connection that omits its password but points somewhere else, or null.
+ */
+export function needsPasswordReentry(list, saved = []) {
+  for (const v of Array.isArray(list) ? list : []) {
+    if (typeof v?.password === 'string') continue;
+    const s = saved.find(x => x.name === String(v?.name || '').trim());
+    if (s?.password && dbIdentity(s) !== dbIdentity(v)) return s.name;
+  }
+  return null;
+}
+/**
+ * Clean a list of connections. A password that is not a string keeps the saved one of the
+ * same name, but only when host, port, user and type are unchanged (see needsPasswordReentry).
+ */
 export function normalizeDbConnections(list, saved = []) {
   if (!Array.isArray(list)) return [];
   return list.slice(0, DB_LIMITS.count).map(v => {
     const name = String(v?.name || '').trim();
     const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
+    const s = saved.find(x => x.name === name);
     return {
       name, type,
       host: String(v?.host || '').trim(),
       port: Number(v?.port) || DB_DEFAULT_PORT[type],
       database: String(v?.database || '').trim(),
       user: String(v?.user || '').trim(),
-      password: typeof v?.password === 'string' ? v.password : String(saved.find(s => s.name === name)?.password || ''),
-      ssl: DB_SSL.includes(v?.ssl) ? v.ssl : 'off',
+      password: typeof v?.password === 'string' ? v.password : (s && dbIdentity(s) === dbIdentity(v) ? String(s.password || '') : ''),
+      ssl: DB_SSL.includes(v?.ssl) ? v.ssl : 'require',
+      sslCa: String(v?.sslCa || '').slice(0, DB_LIMITS.ca),   // a CA certificate is public: it may be served back
       description: String(v?.description ?? '').slice(0, DB_LIMITS.description),
-      allowWrite: v?.allowWrite === true,
+      logResults: v?.logResults !== false,
     };
   }).filter(v => ENV_NAME_RE.test(v.name));
 }

@@ -5,12 +5,13 @@
  * (OpenCode shows them as db_list_tables, ...).
  *
  * Read-only enforcement, in layers: the statement check in db-util.js (single SELECT/WITH/
- * SHOW/DESCRIBE/EXPLAIN, no write keywords), a READ ONLY transaction that is always rolled
- * back, a row cap, a byte cap and a query timeout. A connection with allowWrite=true skips
- * the first two; it is off unless the tester turned it on in Settings.
+ * SHOW/DESCRIBE/EXPLAIN, no write keywords or side-effect functions), a READ ONLY transaction
+ * that is always rolled back, reading that stops at the row cap, a byte cap and a query timeout.
+ * There is no write mode. The strongest layer is still a database user that only has SELECT.
  *
  * Connections come from the JSON file named by DB_CONNECTIONS_FILE (written 0600 by the
- * runtime for this run only), so passwords never travel on a command line.
+ * runtime outside the agent's working directory, for this run only), so passwords never travel
+ * on a command line.
  * MCP protocol: newline-delimited JSON over stdin/stdout.
  */
 import { readFileSync } from 'fs';
@@ -27,21 +28,40 @@ try { connections = normalizeConnections(JSON.parse(readFileSync(process.env.DB_
 
 // ─── Query execution ──────────────────────────────────────────────────────────
 
-async function withConnection(c, readOnly, fn) {
-  const ssl = c.ssl === 'off' ? undefined : { rejectUnauthorized: c.ssl === 'verify' };
+function tlsOptions(c) {
+  if (c.ssl === 'off') return undefined;
+  if (c.ssl === 'verify') return { rejectUnauthorized: true, ...(c.sslCa ? { ca: c.sslCa } : {}) };
+  return { rejectUnauthorized: false };   // 'require': encrypted, certificate not checked
+}
+
+// The fetch size used when the caller wants the result capped while reading.
+const FETCH = MAX_ROWS + 1;
+
+/**
+ * Open a read-only session and hand `fn` two functions: all(sql, params) reads a whole (small,
+ * fixed) result; capped(sql) reads at most MAX_ROWS + 1 rows and stops there.
+ */
+async function withConnection(c, fn) {
+  const ssl = tlsOptions(c);
   if (c.type === 'postgres') {
     const { default: pg } = await import('pg');
     const client = new pg.Client({
       host: c.host, port: c.port || 5432, database: c.database, user: c.user, password: c.password,
       ssl: ssl || false, connectionTimeoutMillis: 8000, query_timeout: TIMEOUT_MS + 2000,
-      statement_timeout: TIMEOUT_MS,
-      ...(readOnly ? { options: '-c default_transaction_read_only=on' } : {}),
+      statement_timeout: TIMEOUT_MS, options: '-c default_transaction_read_only=on',
     });
     await client.connect();
     try {
-      await client.query(readOnly ? 'BEGIN READ ONLY' : 'BEGIN');
-      const r = await fn((sql, params) => client.query(sql, params).then(x => (Array.isArray(x) ? x[x.length - 1] : x).rows));
-      return r;
+      await client.query('BEGIN READ ONLY');
+      const all = (sql, params) => client.query(sql, params).then(x => (Array.isArray(x) ? x[x.length - 1] : x).rows);
+      // A server-side cursor stops the server at the cap. Only plain queries can be declared
+      // (not SHOW/EXPLAIN/DESCRIBE, which are small anyway).
+      const capped = async (sql) => {
+        if (!/^\s*(select|with|values|table)\b/i.test(sql)) return all(sql, []);
+        await client.query(`DECLARE _agent_q NO SCROLL CURSOR FOR\n${sql.replace(/;\s*$/, '')}\n`);
+        return (await client.query(`FETCH ${FETCH} FROM _agent_q`)).rows;
+      };
+      return await fn(all, capped);
     } finally {
       await client.query('ROLLBACK').catch(() => {});
       await client.end().catch(() => {});
@@ -52,19 +72,35 @@ async function withConnection(c, readOnly, fn) {
     host: c.host, port: c.port || 3306, database: c.database || undefined, user: c.user, password: c.password,
     ssl, connectTimeout: 8000, multipleStatements: false,
   });
+  let aborted = false;
   try {
-    if (readOnly) {
-      await conn.query('SET SESSION TRANSACTION READ ONLY');
-      await conn.query(`SET SESSION MAX_EXECUTION_TIME=${TIMEOUT_MS}`).catch(() => {});   // MariaDB lacks it; client timeout still applies
-      await conn.query('START TRANSACTION READ ONLY');
-    }
-    return await fn(async (sql, params) => {
+    await conn.query('SET SESSION TRANSACTION READ ONLY');
+    await conn.query(`SET SESSION MAX_EXECUTION_TIME=${TIMEOUT_MS}`).catch(() => {});   // MariaDB lacks it; the client timeout still applies
+    await conn.query('START TRANSACTION READ ONLY');
+    const all = async (sql, params) => {
       const [rows] = await conn.query({ sql, values: params, timeout: TIMEOUT_MS });
-      return Array.isArray(rows) ? rows : [{ affectedRows: rows.affectedRows }];
+      return Array.isArray(rows) ? rows : [];
+    };
+    // Stream the rows and stop reading at the cap instead of loading the whole result.
+    const capped = (sql) => new Promise((resolve, reject) => {
+      const rows = [];
+      const q = conn.connection.query({ sql, timeout: TIMEOUT_MS });
+      q.on('error', (e) => { if (!aborted) reject(e); });   // after the cap, the abandoned query's own timer may still fire
+      const stream = q.stream();
+      stream.on('data', (r) => {
+        rows.push(r);
+        if (rows.length >= FETCH) { aborted = true; stream.destroy(); conn.destroy(); resolve(rows); }
+      });
+      stream.on('end', () => resolve(rows));
+      stream.on('error', (e) => (aborted ? resolve(rows) : reject(e)));
     });
+    return await fn(all, capped);
   } finally {
-    await conn.query('ROLLBACK').catch(() => {});
-    await conn.end().catch(() => {});
+    if (aborted) conn.destroy();                       // the server is still sending: drop the connection (nothing to roll back)
+    else {
+      await conn.query('ROLLBACK').catch(() => {});
+      await conn.end().catch(() => {});
+    }
   }
 }
 
@@ -88,23 +124,22 @@ function shape(rows) {
     if (bytes > MAX_BYTES) { truncated = true; break; }
     out.push(row);
   }
-  return { rowCount: rows.length, returned: out.length, truncated, rows: out };
+  return { returned: out.length, truncated, rows: out };
 }
 
+/** `guard: false` is for this file's own fixed, parameterised introspection statements only. */
 export async function run(c, sql, params = [], { guard = true } = {}) {
-  const readOnly = !c.allowWrite;
-  if (readOnly && guard) {
+  if (guard) {
     const g = checkReadOnly(sql, c.type);
     if (!g.ok) throw new Error(g.reason);
   }
-  const rows = await withConnection(c, readOnly, q => q(sql, params));
+  const rows = await withConnection(c, (all, capped) => (guard ? capped(sql) : all(sql, params)));
   return shape(rows);
 }
 
 // ─── Schema introspection (fixed statements, parameterised) ───────────────────
 
 const PG = c => c.type === 'postgres';
-const ph = (c, i) => (PG(c) ? `$${i}` : '?');
 
 function listTables(c, schema) {
   return PG(c)
@@ -130,7 +165,7 @@ async function describeTable(c, table, schema) {
         ORDER BY tc.constraint_type, tc.constraint_name, kcu.ordinal_position`, [s, table], { guard: false })
     : await run(c, `SELECT constraint_name AS name, column_name AS \`column\`, referenced_table_name AS ref_table, referenced_column_name AS ref_column
         FROM information_schema.key_column_usage WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY constraint_name, ordinal_position`, [s, table], { guard: false });
-  if (!columns.rowCount) throw new Error(`No table named "${table}" was found. Use db_list_tables to see what exists.`);
+  if (!columns.returned) throw new Error(`No table named "${table}" was found. Use db_list_tables to see what exists.`);
   return { columns: columns.rows, keys: keys.rows };
 }
 

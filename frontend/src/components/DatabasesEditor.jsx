@@ -6,13 +6,18 @@ import styles from './DatabasesEditor.module.css'
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 const DEFAULT_PORT = { postgres: 5432, mysql: 3306 }
 
+let nextKey = 0   // stable React key per row, so removing a row never moves another row's typed state
+
 export const blankConnection = () => ({
-  name: '', type: 'postgres', host: '', port: '', database: '', user: '', password: '', hasPassword: false,
-  passwordChanged: false, ssl: 'off', description: '', allowWrite: false,
+  key: ++nextKey, name: '', type: 'postgres', host: '', port: '', database: '', user: '', password: '', hasPassword: false,
+  passwordChanged: false, ssl: 'require', sslCa: '', description: '', logResults: true, orig: null,
 })
 
 /** Rows from GET /api/config/databases (which never carries a password). */
-export const toRows = (connections) => (connections || []).map(c => ({ ...blankConnection(), ...c, port: c.port ?? '', password: '' }))
+export const toRows = (connections) => (connections || []).map(c => ({
+  ...blankConnection(), ...c, port: c.port ?? '', password: '',
+  orig: { type: c.type, host: c.host, port: String(c.port ?? ''), user: c.user },   // the server the saved password belongs to
+}))
 
 /** Problems keyed by row index. Empty object = fine. An untouched blank row is ignored. */
 export function validateDatabases(rows, limits = { description: 4000 }) {
@@ -27,6 +32,8 @@ export function validateDatabases(rows, limits = { description: 4000 }) {
     else if (r.port !== '' && !(Number(r.port) > 0 && Number(r.port) < 65536)) errors[i] = 'Port must be 1-65535'
     else if (!r.database.trim()) errors[i] = 'Database is required'
     else if (!r.user.trim()) errors[i] = 'User is required'
+    else if (r.orig && r.hasPassword && !r.passwordChanged
+      && (r.orig.type !== r.type || r.orig.host !== r.host.trim() || r.orig.port !== String(r.port) || r.orig.user !== r.user.trim())) errors[i] = 'The server or login changed: re-enter the password'
     else if (r.description.length > limits.description) errors[i] = `Description is over ${limits.description} characters`
     seen.add(name.toLowerCase())
   })
@@ -35,7 +42,7 @@ export function validateDatabases(rows, limits = { description: 4000 }) {
 
 /** The connection as the API wants it; the password is sent only when it was typed. */
 export const toConnection = (r) => {
-  const { hasPassword, passwordChanged, password, port, ...rest } = r
+  const { key, orig, hasPassword, passwordChanged, password, port, ...rest } = r
   return { ...rest, name: r.name.trim(), port: port === '' ? undefined : Number(port), ...(passwordChanged ? { password } : {}) }
 }
 export const cleanDatabases = (rows) => rows.filter(r => r.name.trim() || r.host || r.database || r.user).map(toConnection)
@@ -48,7 +55,10 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
   const [shown, setShown] = useState({})        // row index -> password revealed
   const [result, setResult] = useState({})      // row index -> { busy, ok, message }
   const set = (i, patch) => onChange(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)))
-  const remove = (i) => { onChange(rows.filter((_, k) => k !== i)); setShown({}); setResult({}) }
+  const remove = (i) => {
+    if (!window.confirm(`Remove the connection ${rows[i].name.trim() || i + 1}? It is deleted when you press Save.`)) return
+    onChange(rows.filter((_, k) => k !== i)); setShown({}); setResult({})
+  }
   const add = () => onChange([...rows, blankConnection()])
   const setRes = (i, v) => setResult(s => ({ ...s, [i]: v }))
 
@@ -75,7 +85,7 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
       {rows.map((r, i) => {
         const res = result[i]
         return (
-          <div key={i} className={`${styles.card} ${errors?.[i] ? styles.bad : ''}`}>
+          <div key={r.key} className={`${styles.card} ${errors?.[i] ? styles.bad : ''}`}>
             <div className={styles.line}>
               <input className={`form-input ${styles.name}`} value={r.name} placeholder="name" spellCheck={false} disabled={disabled}
                 aria-label={`Connection ${i + 1} name`} onChange={(e) => set(i, { name: e.target.value })} />
@@ -100,17 +110,23 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
                 <input className={`form-input ${styles.pw}`} value={r.password} disabled={disabled} autoComplete="new-password" spellCheck={false}
                   type={shown[i] ? 'text' : 'password'} placeholder={r.hasPassword && !r.passwordChanged ? '•••••• (saved)' : 'password'}
                   aria-label={`Connection ${i + 1} password`} onChange={(e) => set(i, { password: e.target.value, passwordChanged: true })} />
-                <button type="button" className={styles.eye} title={shown[i] ? 'Hide' : 'Show'} onClick={() => setShown(s => ({ ...s, [i]: !s[i] }))}>
+                <button type="button" className={styles.eye} title={shown[i] ? 'Hide password' : 'Show password'}
+                  aria-label={`Show password for connection ${i + 1}`} aria-pressed={!!shown[i]} onClick={() => setShown(s => ({ ...s, [i]: !s[i] }))}>
                   <Icon name={shown[i] ? 'visibility_off' : 'visibility'} size={16} />
                 </button>
               </div>
               <select className={`form-input ${styles.type}`} value={r.ssl} disabled={disabled} aria-label={`Connection ${i + 1} SSL`}
                 onChange={(e) => set(i, { ssl: e.target.value })}>
-                <option value="off">SSL off</option>
-                <option value="require">SSL (no cert check)</option>
-                <option value="verify">SSL (verify cert)</option>
+                <option value="require">TLS (encrypted, cert not checked)</option>
+                <option value="verify">TLS (verify certificate)</option>
+                <option value="off">TLS off (plain text)</option>
               </select>
             </div>
+            {r.ssl === 'verify' && (
+              <textarea className={`form-input ${styles.desc}`} rows={3} value={r.sslCa} disabled={disabled} spellCheck={false}
+                placeholder="CA certificate (PEM) to verify the server with. Leave empty to use the system trust store."
+                aria-label={`Connection ${i + 1} CA certificate`} onChange={(e) => set(i, { sslCa: e.target.value })} />
+            )}
             <textarea className={`form-input ${styles.desc}`} rows={4} value={r.description} disabled={disabled}
               placeholder="What does this database hold? How do the tables relate? What do status codes mean? Example queries. The agent reads this as notes (data), not instructions."
               aria-label={`Connection ${i + 1} description`} onChange={(e) => set(i, { description: e.target.value })} />
@@ -122,10 +138,10 @@ export default function DatabasesEditor({ rows, onChange, errors, disabled, api 
                 {res?.busy === 'schema' ? 'Loading…' : 'Load schema'}
               </Btn>
               <label className={styles.check}>
-                <input type="checkbox" checked={r.allowWrite} disabled={disabled} onChange={(e) => set(i, { allowWrite: e.target.checked })} />
-                Allow writes
+                <input type="checkbox" checked={r.logResults} disabled={disabled} onChange={(e) => set(i, { logResults: e.target.checked })} />
+                Show query results in the test case log
               </label>
-              {r.allowWrite && <span className={styles.danger}>The agent may change data on this connection. Test data only.</span>}
+              {r.logResults && <span className={styles.danger}>Results are copied into the run log, which is stored and broadcast.</span>}
               {res && !res.busy && <span className={res.ok ? styles.okMsg : styles.failMsg} role="status">{res.message}</span>}
               {errors?.[i] && <span className={styles.err} role="alert">{errors[i]}</span>}
             </div>

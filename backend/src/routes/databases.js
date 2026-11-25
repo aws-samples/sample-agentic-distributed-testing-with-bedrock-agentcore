@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { config, saveConfig, ENV_NAME_RE, DB_LIMITS, DB_TYPES, DB_SSL, normalizeDbConnections } from '../state/store.js';
+import { config, saveConfig, ENV_NAME_RE, DB_LIMITS, DB_TYPES, DB_SSL, normalizeDbConnections, needsPasswordReentry } from '../state/store.js';
 import { testConnection, schemaDraft, safeMessage } from '../services/dbClient.js';
 
 const router = Router();
@@ -13,6 +13,12 @@ router.get('/config/databases', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ connections: config.dbConnections.map(view), limits: DB_LIMITS, types: DB_TYPES });
 });
+
+// The saved password is never sent to a different server or login than the one it was saved for.
+function reenter(list) {
+  const name = needsPasswordReentry(list, config.dbConnections);
+  return name ? `${name}: the host, port, user or type changed, so re-enter the password` : null;
+}
 
 /** First problem in a list of connections, or null. */
 function problem(list) {
@@ -30,6 +36,7 @@ function problem(list) {
     if (!String(v?.database || '').trim()) return `${where} (${name}): database is required`;
     if (!String(v?.user || '').trim()) return `${where} (${name}): user is required`;
     if (v?.ssl !== undefined && !DB_SSL.includes(v.ssl)) return `${where} (${name}): ssl must be ${DB_SSL.join(', ')}`;
+    if (String(v?.sslCa ?? '').length > DB_LIMITS.ca) return `${where} (${name}): the CA certificate is longer than ${DB_LIMITS.ca} characters`;
     if (String(v?.description ?? '').length > DB_LIMITS.description) return `${where} (${name}): the description is longer than ${DB_LIMITS.description} characters`;
   }
   return null;
@@ -39,7 +46,7 @@ function problem(list) {
 router.put('/config/databases', (req, res) => {
   const list = req.body?.connections;
   if (!Array.isArray(list)) return res.status(400).json({ error: 'connections must be an array' });
-  const err = problem(list);
+  const err = problem(list) || reenter(list);
   if (err) return res.status(400).json({ error: err });
   config.dbConnections = normalizeDbConnections(list, config.dbConnections);
   saveConfig();
@@ -50,7 +57,7 @@ router.put('/config/databases', (req, res) => {
 // password falls back to the saved connection of the same name.
 function fromBody(req, res) {
   const c = req.body?.connection;
-  const err = problem(c ? [c] : []) || (c ? null : 'connection required');
+  const err = problem(c ? [c] : []) || (c ? reenter([c]) : 'connection required');
   if (err) { res.status(400).json({ error: err }); return null; }
   return normalizeDbConnections([c], config.dbConnections)[0];
 }

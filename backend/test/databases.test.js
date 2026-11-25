@@ -60,6 +60,38 @@ test('an update without a password keeps the saved one; a string replaces it', a
   await call('PUT', '/config/databases', { connections: [conn] });
 });
 
+test('the saved password is reused only for the same host, port, user and type', async () => {
+  await call('PUT', '/config/databases', { connections: [conn] });
+  const { password, ...noPw } = conn;
+  for (const change of [{ host: 'evil.example' }, { port: 5555 }, { user: 'other' }, { type: 'mysql' }]) {
+    for (const [path, body] of [
+      ['/config/databases/test', { connection: { ...noPw, ...change } }],
+      ['/config/databases/schema', { connection: { ...noPw, ...change } }],
+      ['/config/databases', { connections: [{ ...noPw, ...change }] }],
+    ]) {
+      const r = await call(path.endsWith('databases') ? 'PUT' : 'POST', path, body);
+      assert.equal(r.status, 400, `${path} ${JSON.stringify(change)}`);
+      assert.match(r.body.error, /re-enter the password/);
+    }
+  }
+  assert.equal(config.dbConnections[0].host, '127.0.0.1', 'a rejected save changes nothing');
+  assert.equal(config.dbConnections[0].password, 'hunter2-secret');
+  // Supplying the password again is fine, and so is a change of description only.
+  assert.equal((await call('PUT', '/config/databases', { connections: [{ ...conn, host: 'db.internal', password: 'pw-for-new-host' }] })).status, 200);
+  assert.equal(config.dbConnections[0].password, 'pw-for-new-host');
+  assert.equal((await call('PUT', '/config/databases', { connections: [{ ...conn, host: 'db.internal', password: undefined, description: 'x' }] })).status, 200);
+  assert.equal(config.dbConnections[0].password, 'pw-for-new-host');
+  await call('PUT', '/config/databases', { connections: [conn] });
+});
+
+test('Test connection refuses link-local and metadata addresses', async () => {
+  for (const host of ['169.254.169.254', '::ffff:169.254.169.254', 'fe80::1', 'fd00:ec2::254']) {
+    const r = await call('POST', '/config/databases/test', { connection: { ...conn, host } });
+    assert.equal(r.body.ok, false, host);
+    assert.match(r.body.message, /not allowed/, host);
+  }
+});
+
 test('validates the whole list', async () => {
   for (const bad of [
     { ...conn, name: '1bad' }, { ...conn, type: 'oracle' }, { ...conn, host: '' }, { ...conn, port: 70000 },

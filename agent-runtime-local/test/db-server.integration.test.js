@@ -66,6 +66,14 @@ else {
       const q = await callTool('query', { connection: c.name, sql: gen });
       assert.equal(q.returned, 200);
       assert.equal(q.truncated, true);
+      // Reading stops at the cap: a result of hundreds of millions of rows comes back at once.
+      const huge = c.type === 'postgres'
+        ? 'SELECT a.x FROM generate_series(1, 1000) a(x), generate_series(1, 1000) b(x), generate_series(1, 1000) d(x)'
+        : 'WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < 1000) SELECT a.n FROM s a, s b, s d';
+      const t1 = Date.now();
+      const h = await callTool('query', { connection: c.name, sql: huge });
+      assert.equal(h.returned, 200);
+      assert.ok(Date.now() - t1 < 8000, 'stopped at the cap instead of reading everything');
       const slow = c.type === 'postgres' ? 'SELECT pg_sleep(30)' : 'SELECT SLEEP(30)';
       const t0 = Date.now();
       await callTool('query', { connection: c.name, sql: slow }).catch(() => {});

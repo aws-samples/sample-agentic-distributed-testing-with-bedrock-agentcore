@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket as WS } from 'ws';
-import { normalizeConnections, buildDbSection, dbEvidence } from './db-util.js';
+import { normalizeConnections, buildDbSection, dbEvidence, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
@@ -387,7 +387,10 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFi
     tools: {
       'chrome-devtools_new_page': false,
       'chrome-devtools_close_page': false,
+      // With database credentials in play the agent gets no shell or file tools (see db-util.js)
+      ...(dbFile ? DISABLED_BUILTIN_TOOLS : {}),
     },
+    ...(dbFile ? { permission: DENIED_PERMISSIONS } : {}),
     mcp: {
       assert: {
         type: 'local',
@@ -639,21 +642,21 @@ async function handleInvocation(req, res) {
     }
 
     const assertResultFile = join(workDir, 'verdict.json');
-    // Database connections for this run. Passwords go to the db tool server through a 0600 file
-    // that is deleted when the run ends, never into the prompt or onto a command line.
+    // Database connections for this run. Passwords go to the db tool server through a 0600 file in
+    // its own directory, outside the agent's working directory, that is removed when the run ends
+    // (finally below); never into the prompt or onto a command line.
     const dbs = normalizeConnections(databases);
-    let dbFile = null;
-    if (dbs.length) {
-      dbFile = join(workDir, 'db-connections.json');
-      writeFileSync(dbFile, JSON.stringify(dbs), { mode: 0o600 });
-    }
+    const dbCreds = dbs.length ? writeDbCredentials(dbs) : null;
+    const dbFile = dbCreds?.file || null;
     const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs)) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
 
     const { url: cdpWsUrl, headers: cdpWsHeaders } = await getCdpWebSocket(sessionName);
-    const verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
+    let verdict;
+    try {
+    verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
       if (ev.type === 'text' && ev.part?.text) {
         emitText(ev.part.text);
       }
@@ -669,8 +672,9 @@ async function handleInvocation(req, res) {
         emit({ screenshot: { data: ss } });
       }
     }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile);
-
-    if (dbFile) { try { unlinkSync(dbFile); } catch { /* ignore */ } }
+    } finally {
+      dbCreds?.cleanup();
+    }
     // Emit final screenshot
     if (!lastScreenshot) {
       try { lastScreenshot = await agentCoreScreenshot(sessionName); } catch { /* ignore */ }

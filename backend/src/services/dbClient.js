@@ -4,14 +4,21 @@
  * rolls back. (The agent's own tools, with the statement guard, live in the runtimes'
  * db-server.js.)
  */
+import net from 'node:net';
+import { resolveAllowedHost } from './netGuard.js';
+
 const TIMEOUT_MS = 8000;
 
 async function withConn(c, fn) {
-  const ssl = c.ssl === 'off' ? undefined : { rejectUnauthorized: c.ssl === 'verify' };
+  // Connect to the address that passed the link-local check; the certificate is still checked against the hostname.
+  const address = await resolveAllowedHost(c.host);
+  const servername = net.isIP(c.host) ? undefined : c.host;
+  const ssl = c.ssl === 'off' ? undefined
+    : { rejectUnauthorized: c.ssl === 'verify', servername, ...(c.ssl === 'verify' && c.sslCa ? { ca: c.sslCa } : {}) };
   if (c.type === 'postgres') {
     const { default: pg } = await import('pg');
     const client = new pg.Client({
-      host: c.host, port: c.port, database: c.database, user: c.user, password: c.password,
+      host: address, port: c.port, database: c.database, user: c.user, password: c.password,
       ssl: ssl || false, connectionTimeoutMillis: TIMEOUT_MS, statement_timeout: TIMEOUT_MS, query_timeout: TIMEOUT_MS + 2000,
     });
     await client.connect();
@@ -25,7 +32,7 @@ async function withConn(c, fn) {
   }
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({
-    host: c.host, port: c.port, database: c.database || undefined, user: c.user, password: c.password,
+    host: address, port: c.port, database: c.database || undefined, user: c.user, password: c.password,
     ssl, connectTimeout: TIMEOUT_MS, multipleStatements: false,
   });
   try {
