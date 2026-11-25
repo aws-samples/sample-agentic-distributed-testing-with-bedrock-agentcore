@@ -35,6 +35,10 @@ The Runner's feature cell has a live view (`LiveCaseModal`, reusing `TcEvidenceP
 
 The live log is broadcast to every WebSocket client, so `services/redact.js` masks the configured Authentication passwords and secret context variables in the log, the step feed and verdict reasons before they are stored, broadcast, replayed (last 500 entries per case) or archived. It is an exact-match filter that skips secrets shorter than 6 characters (so a short value can't mangle ordinary words; the Authentication dialog and the secret-variable editor warn "will not be hidden in logs" for such values, using `frontend/src/utils/secrets.js`, which must match `MIN_SECRET_LENGTH` in `redact.js`): a secret split across two streamed text deltas, or re-encoded by the agent, is not caught, and screenshots are not redacted. Don't give the agent secrets you are not willing to see in the log. The SSE parser lives in `services/sseParser.js` so it can be tested without the database.
 
+## Target URL health check
+
+`POST /api/config/target-url/health` (body `{url}`, behind the `/api` auth gate) backs the Editor's Health check button. It checks a saved or unsaved URL from the backend machine (not from AgentCore Browser), never changes config, and returns `{ok, status, responseTimeMs, finalUrl, reason, checkedFrom}` with no response body. Logic is in `backend/src/services/targetHealth.js`: http/https only, 5 s total timeout (including DNS), up to 5 manually followed redirects each re-validated, and the request connects to the address it resolved and validated. Link-local addresses (including IPv4-mapped IPv6 and the AWS IPv6 metadata range) are blocked. Loopback and private ranges are allowed on purpose, because the app under test is usually local or on a private network. Tests: `cd backend && npm test`.
+
 ## Agent Modes
 
 The orchestration platform is one app that can drive either runtime — selectable at runtime in Settings (`AGENT_MODE` is just the initial default). Both modes use OpenCode as the agent framework. The only difference is how Chrome is provisioned:
