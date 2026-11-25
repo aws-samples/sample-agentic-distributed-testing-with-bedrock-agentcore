@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, activeRunPromises, featureList, activeFeatures } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
-import { runFeatureTests } from '../services/runner.js';
+import { runFeatureTests, enqueueRedo } from '../services/runner.js';
 import { upsertRunRecord, runArchive } from '../state/archive.js';
 import { pausedFeatures, pauseState, planRedo, addRetry } from '../services/runControl.js';
 
 const router = Router();
 
 // Starts a run of `testCases`, one parallel session per feature, and returns its runId.
-// `hints` ({ [tcId]: { hint, retryOf } }) is set only for a redo-with-hint run.
-function startRun(testCases, hints = {}) {
+// `hints` ({ [tcId]: { hint, retryOf } }) is set only for a redo-with-hint run. `queued` is a redo of
+// a paused feature: its cases go onto the feature's live loop instead of starting a second one.
+function startRun(testCases, hints = {}, queued = false) {
   const runId = `run-${Date.now()}`;
   testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
   stopFlags[runId] = false;
@@ -86,12 +87,14 @@ function startRun(testCases, hints = {}) {
 
   broadcast({ type: 'run_start', runId, features: Object.keys(byFeature) });
 
-  const runPromise = Promise.all(Object.entries(byFeature).map(([feat, tcs]) => runFeatureTests(feat, tcs, runId, persistProgress, hints)))
+  const runOne = queued ? enqueueRedo : runFeatureTests;
+  const runPromise = Promise.all(Object.entries(byFeature).map(([feat, tcs]) => runOne(feat, tcs, runId, persistProgress, hints)))
     .then(() => {
       const record = buildRunRecord(new Date().toISOString());
       upsertRunRecord(record);
       delete runLogs[runId]; // free memory after archiving
-      broadcast({ type: 'run_complete', runId, stopped: record.stopped, features: Object.keys(byFeature) });
+      // A queued redo finishes inside a feature that is still paused and running: it clears no feature.
+      broadcast({ type: 'run_complete', runId, stopped: record.stopped, features: queued ? [] : Object.keys(byFeature) });
       broadcast({ type: 'run_archive_updated', runId });
     })
     .catch(e => console.error('Run error:', e))
@@ -113,12 +116,13 @@ router.post('/tests/run', (req, res) => {
 
 // Redo failed (or suspicious) cases of one feature with a human hint added to the agent's
 // prompt. Runs as a new run so the earlier result stays in history; the new case links back
-// (retryOf) and the earlier case gets a retries entry, so Analysis shows both.
+// (retryOf) and the earlier case gets a retries entry, so Analysis shows both. While the feature
+// is paused, finished cases are accepted too and run in its session before it resumes.
 router.post('/tests/redo', (req, res) => {
   const { feature, testCaseIds, hint } = req.body || {};
   const plan = planRedo({ feature, testCaseIds, hint, featureList, casesByFeature: testCasesByFeature, archive: runArchive, activeFeatures });
   if (plan.error) return res.status(plan.status).json({ error: plan.error });
-  const runId = startRun(plan.testCases, plan.hints);
+  const runId = startRun(plan.testCases, plan.hints, plan.queued);
   const ts = new Date().toISOString();
   for (const tc of plan.testCases) {
     const { hint: text, retryOf } = plan.hints[tc.id];

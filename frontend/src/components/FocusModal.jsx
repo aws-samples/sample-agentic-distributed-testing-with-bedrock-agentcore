@@ -25,7 +25,8 @@ export default function FocusModal({ featureName, testCases, testResults, sessio
   const failed = tcs.filter(tc => statusOf(tc.id) === 'FAIL')
   const ids = failed.filter(tc => checked.has(tc.id)).map(tc => tc.id)
   const runningIds = tcs.filter(tc => statusOf(tc.id) === 'RUNNING').map(tc => tc.id)
-  const canRedo = !running && ids.length > 0 && hint.trim() && !busy
+  // A running feature takes a redo only while it is held (paused); it runs before the feature resumes.
+  const canRedo = (!running || pauseState === 'paused') && ids.length > 0 && hint.trim() && !busy
 
   const toggle = (id) => setChecked(prev => {
     const next = new Set(prev)
@@ -53,10 +54,11 @@ export default function FocusModal({ featureName, testCases, testResults, sessio
         placeholder="Tick the failed cases above, then tell the agent what it got wrong, e.g. “The Transfer button is under the Accounts menu”" />
       <div className={styles.redoRow}>
         <Btn variant="primary" size="sm" disabled={!canRedo} onClick={submit}
-          title={running ? 'Available once this feature has finished (Stop the run to end it after the current case)' : ''}>
+          title={canRedo || !running ? '' : 'Pause this feature, or wait until it has finished (Stop the run to end it after the current case)'}>
           <Icon name="replay" />Redo {ids.length || ''} with hint
         </Btn>
-        {running && <span className={styles.note}>The feature is still running. Redo is available once it has finished.</span>}
+        {running && pauseState !== 'paused' && <span className={styles.note}>The feature is still running. Pause it to redo now, or wait until it has finished.</span>}
+        {running && pauseState === 'paused' && <span className={styles.note}>The redo runs now; the feature stays paused afterwards.</span>}
         {error && <span className={styles.err} role="alert">{error}</span>}
       </div>
       <div className={styles.note}>The hint is passed to the agent as information and saved in run history. The earlier result is kept.</div>

@@ -17,6 +17,10 @@ export const HINT_TAG_RE = /<\s{0,16}\/?\s{0,16}hint\s{0,16}>/gi;
 export const pausedFeatures = new Set();
 export const heldFeatures = new Set();
 
+// feature -> redo jobs waiting for the feature's run loop (runner.js). A key exists only while
+// that loop is alive, so a redo can be queued onto it while the feature is paused.
+export const redoQueues = new Map();
+
 export function pauseState(feature) {
   return { feature, paused: pausedFeatures.has(feature), holding: heldFeatures.has(feature) };
 }
@@ -62,6 +66,7 @@ export function normalizeHint(x) {
  * definitions come from `casesByFeature`, never from the request body.
  * Returns { error, status } or { testCases, hints }; hints[tcId] = { hint, retryOf }
  * where retryOf is the newest archived run that has a PASS/FAIL result for that case.
+ * `queued` is true when the feature is paused and the redo must go onto its live run loop.
  */
 export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeature, archive, activeFeatures }) {
   const text = normalizeHint(hint);
@@ -70,16 +75,24 @@ export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeatu
   if (!Array.isArray(testCaseIds) || !testCaseIds.length || testCaseIds.length > REDO_MAX_CASES) {
     return { status: 400, error: `testCaseIds must list 1-${REDO_MAX_CASES} test cases` };
   }
-  if (activeFeatures.has(feature)) {
-    return { status: 409, error: pausedFeatures.has(feature)
-      ? `${feature} is paused. Resume it and let it finish, or Stop the run, then redo.`
-      : `${feature} is still running. Let it finish or Stop the run, then redo.` };
+  // A running feature takes a redo only while paused: the redo joins the feature's own loop
+  // (same session) and runs before the held loop resumes.
+  const queued = activeFeatures.has(feature);
+  if (queued) {
+    if (!pausedFeatures.has(feature)) return { status: 409, error: `${feature} is still running. Pause it, let it finish or Stop the run, then redo.` };
+    if (!redoQueues.has(feature)) return { status: 409, error: `${feature} is still starting. Try again in a moment.` };
   }
   const cases = casesByFeature[feature] || [];
   const testCases = [];
   for (const id of new Set(testCaseIds)) {
     const tc = cases.find(c => c.id === id);
     if (!tc) return { status: 400, error: `${id} is not a test case of ${feature}` };
+    // Only a finished case, by its newest record (a case that is running, not reached yet or
+    // already waiting for a redo reads RUNNING / PENDING there).
+    const latest = queued && archive.map(r => (r.features?.[feature]?.cases || []).find(c => c.id === id)).find(Boolean);
+    if (queued && latest?.status !== 'PASS' && latest?.status !== 'FAIL') {
+      return { status: 409, error: `${id} has not finished (or already has a redo queued). While paused, only finished cases can be redone.` };
+    }
     testCases.push(tc);
   }
   const hints = {};
@@ -87,7 +100,7 @@ export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeatu
     const prior = archive.find(r => (r.features?.[feature]?.cases || []).some(c => c.id === tc.id && (c.status === 'PASS' || c.status === 'FAIL')));
     hints[tc.id] = { hint: text, retryOf: prior?.runId || null };
   }
-  return { testCases, hints };
+  return { testCases, hints, queued };
 }
 
 // Records on an archived/in-memory run record that one of its cases was retried
