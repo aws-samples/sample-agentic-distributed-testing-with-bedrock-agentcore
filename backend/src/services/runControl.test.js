@@ -80,6 +80,10 @@ test('planRedo rejects bad requests', () => {
   assert.equal(err({ testCaseIds: [] }).status, 400);
   assert.equal(err({ testCaseIds: ['TC003'] }).status, 400);          // belongs to another feature
   assert.equal(err({ activeFeatures: new Set(['Auth']) }).status, 409);
+  assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /still running/);
+  pausedFeatures.add('Auth');
+  assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /is paused/);
+  pausedFeatures.delete('Auth');
 });
 
 test('addRetry appends to the matching case and reports a miss', () => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import styles from './TcEvidencePanel.module.css'
 import Icon from './Icon'
 import { useStickToBottom } from '../hooks/useStickToBottom'
+import { formatLogTs } from '../utils/time'
 
 // Lazy-load presigned URL for an S3 snapshot key. The bucket is private,
 // so each thumbnail asks the backend for a short-lived signed URL when
@@ -170,7 +171,7 @@ export default function TcEvidencePanel({ tc, liveScreenshot }) {
                 const kind = entry.kind || entry.type || 'info'
                 return (
                   <div key={i} className={`${styles.logEntry} ${styles['logEntry_' + kind] || styles.logEntry_info}`}>
-                    {entry.ts && <span className={styles.logTs}>{entry.ts}</span>}
+                    {entry.ts && <span className={styles.logTs}>{formatLogTs(entry.ts)}</span>}
                     {entry.msg}
                   </div>
                 )

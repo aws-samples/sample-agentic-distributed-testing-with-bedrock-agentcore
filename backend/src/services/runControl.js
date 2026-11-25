@@ -71,7 +71,9 @@ export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeatu
     return { status: 400, error: `testCaseIds must list 1-${REDO_MAX_CASES} test cases` };
   }
   if (activeFeatures.has(feature)) {
-    return { status: 409, error: `${feature} is still running. Let it finish or Stop the run, then redo.` };
+    return { status: 409, error: pausedFeatures.has(feature)
+      ? `${feature} is paused. Resume it and let it finish, or Stop the run, then redo.`
+      : `${feature} is still running. Let it finish or Stop the run, then redo.` };
   }
   const cases = casesByFeature[feature] || [];
   const testCases = [];

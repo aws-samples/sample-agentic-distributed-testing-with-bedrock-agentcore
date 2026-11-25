@@ -626,6 +626,18 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs
   });
 }
 
+// Short, non-secret detail for a tool line in the live log: where the call goes (URL without
+// its query string) or what it targets (selector / element uid). Typed text and values are
+// never included, since they can be credentials.
+function summarizeToolInput(input) {
+  if (!input || typeof input !== 'object') return '';
+  for (const k of ['url', 'selector', 'uid', 'ref', 'element']) {
+    const v = input[k];
+    if (typeof v === 'string' && v) return `${k}=${(k === 'url' ? v.split(/[?#]/)[0] : v).replace(/\s+/g, ' ').slice(0, 120)}`;
+  }
+  return '';
+}
+
 /**
  * Extract screenshot base64 from an opencode tool_use event.
  *
@@ -790,7 +802,7 @@ app.post('/', async (req, res) => {
 
       // Forward step labels as action events
       if (ev.type === 'tool_use' && ev.part?.tool) {
-        emitText(`[${ev.part.tool}] ${ev.part.state?.title || ''}`);
+        emitText(`[${ev.part.tool}] ${ev.part.state?.title || summarizeToolInput(ev.part.state?.input)}`);
       }
 
       // Extract screenshots from tool results

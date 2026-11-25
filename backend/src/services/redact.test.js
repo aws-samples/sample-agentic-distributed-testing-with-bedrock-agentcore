@@ -13,9 +13,14 @@ test('redactSecrets ignores empty secrets and handles non-strings', () => {
 });
 
 test('redactSecrets masks the longer secret first so no tail is left', () => {
-  assert.equal(redactSecrets('pass12345', ['pass', 'pass12345']), REDACTED);
+  assert.equal(redactSecrets('pass12345', ['pass123', 'pass12345']), REDACTED);
 });
 
 test('redactSecrets treats secrets as literal text, not patterns', () => {
-  assert.equal(redactSecrets('a.b*c and axbbc', ['a.b*c']), `${REDACTED} and axbbc`);
+  assert.equal(redactSecrets('a.b*c+d and axbbcxd', ['a.b*c+d']), `${REDACTED} and axbbcxd`);
+});
+
+test('redactSecrets skips secrets shorter than 6 characters', () => {
+  assert.equal(redactSecrets('the pin 1234 and the word pass', ['1234', 'pass']), 'the pin 1234 and the word pass');
+  assert.equal(redactSecrets('abcdef', ['abcdef']), REDACTED);
 });

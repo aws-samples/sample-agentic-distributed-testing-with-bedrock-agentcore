@@ -92,7 +92,8 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
 
   const logEntry = (msg, kind = 'info') => {
     // Redacted before it is stored, broadcast to every WebSocket client, replayed or archived.
-    const entry = { ts: new Date().toLocaleTimeString(), msg: redactSecrets(msg, currentSecrets()), kind };
+    // ts is ISO; the browser formats it in the viewer's locale and timezone.
+    const entry = { ts: new Date().toISOString(), msg: redactSecrets(msg, currentSecrets()), kind };
     tcLog.push(entry);
     // Live per-test-case log for the Runner's detail view; replayed on reconnect (websocket.js).
     broadcast({ type: 'tc_log', runId, testId: tc.id, sessionId, entry });
