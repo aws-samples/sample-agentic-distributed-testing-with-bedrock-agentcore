@@ -6,7 +6,6 @@ import NavBar from '../components/NavBar'
 import FeaturePanel from '../components/FeaturePanel'
 import BrowserCell from '../components/BrowserCell'
 import FocusModal from '../components/FocusModal'
-import LiveCaseModal from '../components/LiveCaseModal'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import { SEED_TEST_CASES } from '../data/seedTestCases'
@@ -476,7 +475,6 @@ export default function RunnerPage() {
                 activeFeatures={state.activeFeatures}
                 pauseState={state.pausedFeatures[feat]}
                 onFocus={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: feat })}
-                onLive={() => dispatch({ type: 'SET_LIVE_FEATURE', feature: feat })}
                 onTogglePause={() => handleTogglePause(feat)}
               />
             ))}
@@ -505,21 +503,6 @@ export default function RunnerPage() {
         </div>
       </div>
 
-      {state.liveFeature && (
-        <LiveCaseModal
-          feature={state.liveFeature}
-          testCases={state.testCases[state.liveFeature]}
-          testResults={state.testResults}
-          tcLogs={state.tcLogs}
-          sessionStatus={state.sessionStatus[state.liveFeature]}
-          running={state.activeFeatures.has(state.liveFeature)}
-          pauseState={state.pausedFeatures[state.liveFeature]}
-          onTogglePause={() => handleTogglePause(state.liveFeature)}
-          onRedo={(ids, hint) => handleRedo(state.liveFeature, ids, hint)}
-          onClose={() => dispatch({ type: 'SET_LIVE_FEATURE', feature: null })}
-        />
-      )}
-
       {state.focusedFeature && (
         <FocusModal
           featureName={state.focusedFeature}
@@ -527,6 +510,11 @@ export default function RunnerPage() {
           testResults={state.testResults}
           sessionStatus={state.sessionStatus[state.focusedFeature]}
           sessionLogs={state.sessionLogs[state.focusedFeature]}
+          tcLogs={state.tcLogs}
+          running={state.activeFeatures.has(state.focusedFeature)}
+          pauseState={state.pausedFeatures[state.focusedFeature]}
+          onTogglePause={() => handleTogglePause(state.focusedFeature)}
+          onRedo={(ids, hint) => handleRedo(state.focusedFeature, ids, hint)}
           onClose={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: null })}
           onClearLog={() => dispatch({ type: 'CLEAR_SESSION_LOG', feature: state.focusedFeature })}
         />

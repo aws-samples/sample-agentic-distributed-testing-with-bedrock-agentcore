@@ -28,11 +28,13 @@ function useSnapshotUrls(snapshots) {
   return urls
 }
 
-// liveScreenshot: base64 of the feature's current browser frame, shown while a case is
-// still running (its evidence snapshots are only uploaded when it finishes).
-export default function TcEvidencePanel({ tc, liveScreenshot }) {
+// Stable fallback: a fresh [] on each render would re-run useSnapshotUrls'
+// effect, whose setUrls({}) re-renders again (issue #66).
+const NO_SNAPSHOTS = []
+
+export default function TcEvidencePanel({ tc }) {
   const [lightboxIndex, setLightboxIndex] = useState(null)
-  const snapshots = tc?.snapshots || []
+  const snapshots = tc?.snapshots || NO_SNAPSHOTS
   const snapshotUrls = useSnapshotUrls(snapshots)
 
   useEffect(() => {
@@ -122,12 +124,9 @@ export default function TcEvidencePanel({ tc, liveScreenshot }) {
             EVIDENCE SNAPSHOTS
             {snapshots.length > 0 && <span className={styles.snapCount}>{snapshots.length} frame{snapshots.length === 1 ? '' : 's'}</span>}
           </div>
-          {snapshots.length === 0 && liveScreenshot && status === 'RUNNING' && (
-            <img className={styles.liveShot} src={`data:image/jpeg;base64,${liveScreenshot}`} alt="Live browser" />
-          )}
-          {snapshots.length === 0 && !(liveScreenshot && status === 'RUNNING') && (
+          {snapshots.length === 0 && (
             <div className={styles.noScreenshot}>
-              {status === 'RUNNING' ? 'Waiting for the first frame…' : 'No snapshots captured for this test case.'}
+              {status === 'RUNNING' ? 'Snapshots are saved when the test case finishes.' : 'No snapshots captured for this test case.'}
             </div>
           )}
           {snapshots.length > 0 && (

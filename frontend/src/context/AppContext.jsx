@@ -20,7 +20,6 @@ const initialState = {
   filterStatus: 'ALL',
   gridMode: '4',
   focusedFeature: null,
-  liveFeature: null,    // feature whose live per-test-case view is open
   tcLogs: {},           // tcId -> [{ts,msg,kind}] live log of the current attempt
   pausedFeatures: {},   // feature -> 'pausing' (waiting for the running case) | 'paused'
 }
@@ -93,8 +92,6 @@ function reducer(state, action) {
       return { ...state, gridMode: action.mode }
     case 'SET_FOCUSED_FEATURE':
       return { ...state, focusedFeature: action.feature }
-    case 'SET_LIVE_FEATURE':
-      return { ...state, liveFeature: action.feature }
     case 'SET_TC_LOGS':
       return { ...state, tcLogs: { ...state.tcLogs, [action.tcId]: action.logs.slice(-500) } }
     case 'APPEND_TC_LOG': {
@@ -129,7 +126,6 @@ function reducer(state, action) {
         sessionStatus: clearedSessions,
         sessionLogs: clearedLogs,
         focusedFeature: null,
-        liveFeature: null,
         tcLogs: {},
         pausedFeatures: {},
       }

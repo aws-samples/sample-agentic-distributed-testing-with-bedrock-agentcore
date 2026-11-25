@@ -189,3 +189,28 @@
   font-size: 14px;
 }
 .resumePill:hover { filter: brightness(1.1); }
+
+.pauseNote {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--yellow);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.redo { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.redoTitle { font-size: 12px; font-weight: 700; }
+.hint {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.redoRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.note { font-size: 11px; color: var(--text-muted); }
+.err { font-size: 12px; color: var(--red); }
