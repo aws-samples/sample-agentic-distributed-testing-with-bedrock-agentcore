@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Option B: counts, then a list per feature</title><style>
+:root { --bg:#05070a; --surface:#161b22; --surface2:#21262d; --border:#30363d; --text:#e6edf3;
+  --text-muted:#7d8590; --accent:#58a6ff; --green:#3fb950; --red:#f85149; --yellow:#d29922; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; padding:30px 0; }
+.dlg { width:560px; margin:0 auto; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+.hd { background:var(--surface2); padding:8px 14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--border); font-weight:600; font-size:13px; height:44px; }
+.hd .sp { flex:1; }
+.bd { padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+.ft { padding:8px 14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:6px; }
+.btn { padding:6px 14px; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font:500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+.btn:hover { border-color:var(--accent); color:var(--accent); }
+.btn.sm { padding:4px 8px; }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.btn.primary:hover { opacity:.9; color:#fff; }
+.file { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:8px; }
+.file b { color:var(--text); }
+.ok { padding:10px 12px; border:1px solid rgba(63,185,80,.4); background:rgba(63,185,80,.07); border-radius:6px; font-size:13px; display:flex; flex-direction:column; gap:4px; }
+.ok div { display:flex; gap:8px; align-items:center; line-height:18px; }
+.ok .g { color:var(--green); } .ok .w { color:var(--yellow); }
+.chips { display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 4px; }
+.chip { padding:3px 10px; border:1px solid var(--border); background:var(--surface2); border-radius:11px; font-size:12px; font-weight:600; }
+.chip.g { color:var(--green); } .chip.y { color:var(--yellow); } .chip.m { color:var(--text-muted); }
+.grp { margin-bottom:4px; }
+.gh { background:var(--surface2); border:1px solid var(--border); border-radius:5px; padding:7px 12px; display:flex; align-items:center; gap:8px; font-weight:700; height:34px; }
+.tag { font-size:10px; font-weight:600; border:1px solid; border-radius:8px; padding:1px 7px; }
+.tag.new { color:var(--accent); } .tag.merged { color:var(--yellow); }
+.gh .cnt { margin-left:auto; font-size:12px; font-weight:500; color:var(--text-muted); }
+.row { display:flex; align-items:center; gap:10px; padding:0 8px 0 20px; height:24px; font-size:12px; }
+.row .s { width:12px; font-weight:700; font-size:14px; }
+.row.add .s { color:var(--green); } .row.skip .s { color:var(--yellow); }
+.row.more { color:var(--text-muted); }
+.row .why { font-size:11px; color:var(--yellow); }
+.tool { display:flex; align-items:center; gap:10px; font-size:12px; height:22px; }
+.tool .m { color:var(--text-muted); } .tool .r { margin-left:auto; font-size:11px; color:var(--text-muted); }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { text-align:left; font-size:11px; color:var(--text-muted); font-weight:700; background:var(--surface2); padding:0 10px; height:28px; border:1px solid var(--border); }
+td { padding:0 10px; height:32px; border:1px solid var(--border); }
+td.cb, th.cb { width:40px; }
+tr.off td { color:var(--text-muted); }
+td.res.add { color:var(--green); font-weight:600; font-size:11px; } td.res.skip { color:var(--yellow); font-weight:600; font-size:11px; }
+tr.more td { border-style:dashed; text-align:center; color:var(--text-muted); font-size:11px; height:28px; }
+input[type=checkbox] { accent-color:var(--accent); width:14px; height:14px; margin:0; vertical-align:middle; }
+svg.i { width:16px; height:16px; flex:none; }
+</style></head><body>
+<div class="dlg" role="dialog" aria-label="Add to suite">
+<div class="hd"><span>Add to suite</span><span class="sp"></span><button class="btn sm" aria-label="Close"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+<div class="bd"><div class="file"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="#7d8590" stroke-width="1.3" stroke-linejoin="round"><path d="M3 1.5h6.5L13 5v9.5H3Z"/></svg><span><b>banking-suite.yaml</b> · 9 test cases found, checked against your current suite</span></div><div class="chips"><span class="chip">2 features</span><span class="chip m">1 added · 1 merged</span><span class="chip g">7 cases added</span><span class="chip y">2 skipped</span></div><div class="grp"><div class="gh"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="#7d8590" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4.5L12 6"/></svg><span>Transfers</span><span class="tag merged">merged into existing</span><span class="cnt">4 added · 2 skipped</span></div><div class="row add"><span class="s">+</span><span>Transfer above balance</span></div><div class="row add more"><span class="s">+</span><span>3 more test cases</span></div><div class="row skip"><span class="s">–</span><span>Happy path</span><span class="why">skipped: title already exists</span></div><div class="row skip more"><span class="s">–</span><span>1 more skipped</span><span class="why">skipped: title already exists</span></div></div><div class="grp"><div class="gh"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="#7d8590" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4.5L12 6"/></svg><span>Login</span><span class="tag new">new feature</span><span class="cnt">3 added</span></div><div class="row add"><span class="s">+</span><span>Wrong password</span></div><div class="row add more"><span class="s">+</span><span>2 more test cases</span></div></div></div>
+<div class="ft"><button class="btn">Cancel</button><button class="btn primary"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7L8 2.5 12.5 7M2 14.5h12"/></svg>Add to suite</button></div></div>
+<!-- Mockup for issue #67. Colours, fonts, dialog width and button style are copied from the app's CSS. Sample data only. -->
+</body></html>

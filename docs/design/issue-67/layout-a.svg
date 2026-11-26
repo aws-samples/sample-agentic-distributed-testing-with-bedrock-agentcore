@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="297" viewBox="0 0 900 297" role="img" aria-label="Option A: counts only">
+<rect x="0" y="0" width="900" height="297" rx="0" fill="#05070a"/>
+<rect x="170.5" y="30.5" width="559" height="236" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<clipPath id="clip"><rect x="170" y="30" width="560" height="237" rx="8"/></clipPath><g clip-path="url(#clip)">
+<rect x="171" y="31" width="558" height="43" rx="0" fill="#21262d"/>
+<line x1="170" y1="74" x2="730" y2="74" stroke="#30363d" stroke-width="1"/>
+</g>
+<text x="184" y="57" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Add to suite</text>
+<rect x="688.5" y="38.5" width="27" height="27" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+<path d="M698 48 L706 56 M706 48 L698 56" fill="none" stroke="#e6edf3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M186 89 h7 l4 4 v10 h-11 Z" fill="none" stroke="#7d8590" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="206" y="100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#e6edf3" text-anchor="start">banking-suite.yaml</text>
+<text x="329.0" y="100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#7d8590" text-anchor="start">· 9 test cases found, checked against your current suite</text>
+<rect x="184.5" y="120.5" width="531" height="81" rx="6" fill="#3fb950" fill-opacity="0.07" stroke="#3fb950" stroke-width="1" stroke-opacity="0.4"/>
+<circle cx="202" cy="139" r="7" fill="none" stroke="#3fb950" stroke-width="1.6"/>
+<path d="M198.5 139 L201 141.6 L205.6 136.4" fill="none" stroke="#3fb950" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text xml:space="preserve" x="218" y="144" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"><tspan font-weight="700">2</tspan><tspan font-weight="400"> features: </tspan><tspan font-weight="700">1</tspan><tspan font-weight="400"> added, </tspan><tspan font-weight="700">1</tspan><tspan font-weight="400"> merged into an existing one</tspan></text>
+<circle cx="202" cy="161" r="7" fill="none" stroke="#3fb950" stroke-width="1.6"/>
+<path d="M198.5 161 L201 163.6 L205.6 158.4" fill="none" stroke="#3fb950" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text xml:space="preserve" x="218" y="166" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"><tspan font-weight="700">7</tspan><tspan font-weight="400"> test cases will be added</tspan></text>
+<path d="M202 176 L209.5 189 L194.5 189 Z" fill="none" stroke="#d29922" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="202" y1="181" x2="202" y2="185" stroke="#d29922" stroke-width="1"/>
+<circle cx="202" cy="187" r="0.6" fill="#d29922"/>
+<text xml:space="preserve" x="218" y="188" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#e6edf3"><tspan font-weight="700">2</tspan><tspan font-weight="400"> test cases skipped</tspan></text>
+<line x1="171" y1="222" x2="729" y2="222" stroke="#30363d" stroke-width="1"/>
+<rect x="591.7" y="230.5" width="123.80000000000001" height="27" rx="6" fill="#58a6ff" stroke="#58a6ff" stroke-width="1"/>
+<path d="M612.2 249 L612.2 239 M607.7 243 L612.2 238.5 L616.7 243 M606.2 250 L618.2 250" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="625.2" y="248.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#fff" text-anchor="start">Add to suite</text>
+<rect x="519.3000000000001" y="230.5" width="65.4" height="27" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+<text x="532.8000000000001" y="248.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#e6edf3" text-anchor="start">Cancel</text>
+</svg>
