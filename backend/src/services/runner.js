@@ -3,7 +3,7 @@ import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeF
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
-import { holdWhilePaused, clearPause, pausedFeatures, redoQueues } from './runControl.js';
+import { holdWhilePaused, clearPause, pausedFeatures, redoQueues, caseProgress, lastFrames, pauseState, takeQueuedRedo } from './runControl.js';
 import { createSseStream } from './sseParser.js';
 import { redactSecrets } from './redact.js';
 
@@ -34,7 +34,7 @@ function makeSseSink(sessionId, runId, tcId, logEntry) {
     screenshot(data) {
       const sess = sessions[sessionId];
       if (sess) { sess.screenshot = data; broadcast({ type: 'screenshot', sessionId, data, action: sess.action || '' }); }
-      if (runId && tcId) recordFrame(runId, tcId, data, sess?.action);
+      if (runId && tcId) { recordFrame(runId, tcId, data, sess?.action); lastFrames.set(tcId, data); }
     },
     step(action, kind) {
       broadcast({ type: 'step_detail', sessionId, action: redactSecrets(action, currentSecrets()), kind });
@@ -145,41 +145,62 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   }
 }
 
-// Puts a redo run's cases on the feature's live loop (it is paused, see planRedo). They run in
-// the same session before the held loop resumes. Resolves when every case has run or been skipped.
+// Puts a redo run's cases on the feature's redo queue, which the loop serves before the run's own cases (the feature is running, see
+// planRedo). They run in the same session right after the case in progress, or at once if the feature
+// is held by a pause. Resolves when every case has run, been skipped or been cancelled.
 export function enqueueRedo(feature, testCases, runId, onProgress, hints) {
   const queue = redoQueues.get(feature);
   return new Promise((resolve, reject) => {
     if (!queue) return reject(new Error(`${feature} is not running`));
     let left = testCases.length;
-    for (const tc of testCases) queue.push({ tc, runId, onProgress, hints, settle: () => { if (--left === 0) resolve(); } });
+    const jobs = testCases.map(tc => ({ tc, runId, onProgress, hints, settle: () => { if (--left === 0) resolve(); } }));
+    queue.push(...jobs);   // the redo queue is served before the run's own cases; first asked, first run
+    for (const tc of testCases) broadcast({ type: 'redo_queued', feature, runId, testId: tc.id, hint: hints?.[tc.id]?.hint || '' });
   });
+}
+
+// Cancels a queued redo that has not started. Returns the job, or null if it already started (or never existed).
+export function cancelRedo(feature, runId, tcId) {
+  const job = takeQueuedRedo(feature, runId, tcId);
+  if (!job) return null;
+  if (testRuns[runId]) {
+    testRuns[runId].results[tcId] = { status: 'PENDING' };
+    (testRuns[runId].cancelled = testRuns[runId].cancelled || {})[tcId] = true;   // read by buildRunRecord and planRedo
+  }
+  broadcast({ type: 'redo_cancelled', feature, runId, testId: tcId });
+  job.onProgress?.();
+  job.settle();
+  return job;
 }
 
 // hints: { [tcId]: { hint } } for a redo run; empty for a normal run.
 export async function runFeatureTests(feature, testCases, runId, onProgress, hints = {}) {
   const sessionId = feature;
   activeFeatures.add(feature);
+  // Redos queued onto this feature's loop (they go first); open from the start so one asked for while
+  // the session is still connecting is not lost.
+  const redos = [];
+  redoQueues.set(feature, redos);
   try {
     await ensureSession(sessionId);
   } catch (e) {
-    for (const tc of testCases) {
+    const failed = [...testCases.map(tc => ({ tc, runId, onProgress })), ...redos.splice(0)];
+    for (const { tc, runId: rid, onProgress: onProg, settle } of failed) {
       const failReason = `Session failed: ${e.message}`;
-      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: failReason, runId });
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message };
+      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: failReason, runId: rid });
+      if (testRuns[rid]) testRuns[rid].results[tc.id] = { status: 'FAIL', reason: e.message };
       saveTestResult(tc.id, 'FAIL', failReason);
+      onProg?.();
+      settle?.();
     }
-    onProgress?.();
     activeFeatures.delete(feature);
+    redoQueues.delete(feature);
     clearPause(feature);
     return;
   }
 
-  // Jobs of this run, plus redos queued onto the loop while the feature is paused (they go first).
   const mainRunId = runId;
   const todo = testCases.map(tc => ({ tc, runId, onProgress, hints }));
-  const redos = [];
-  redoQueues.set(feature, redos);
   let announced = false;   // "paused" was broadcast and "resumed" has not been yet
   let prev;
   for (;;) {
@@ -191,7 +212,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
       // (the feature stays paused: only "resumed" is not announced then).
       if (todo.length) {
         await holdWhilePaused(feature, () => stopFlags[mainRunId] || redos.length > 0, {
-          onHold: () => { if (!announced) { announced = true; broadcast({ type: 'feature_paused', feature, runId: mainRunId }); } },
+          onHold: () => { if (!announced) { announced = true; broadcast({ type: 'feature_paused', ...pauseState(feature), runId: mainRunId }); } },
           onRelease: () => {
             if (pausedFeatures.has(feature) && !stopFlags[mainRunId]) return;
             announced = false;
@@ -210,6 +231,8 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
       continue;
     }
 
+    // What a pending pause waits for, and how many of this run's cases would still follow it.
+    caseProgress.set(feature, { tcId: tc.id, startedAt: new Date().toISOString(), remaining: todo.length });
     broadcast({ type: 'test_start', testId: tc.id, sessionId, runId });
     if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'RUNNING' };
 
@@ -241,9 +264,11 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
       saveTestResult(tc.id, 'FAIL', e.message);
     }
     if (sess) { sess.testRunning = false; sess.action = ''; }
+    caseProgress.delete(feature);
     onProgress?.();
   }
 
+  caseProgress.delete(feature);
   activeFeatures.delete(feature);
   redoQueues.delete(feature);
   clearPause(feature);

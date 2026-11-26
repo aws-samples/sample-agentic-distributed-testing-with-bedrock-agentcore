@@ -79,22 +79,21 @@ test('planRedo rejects bad requests', () => {
   assert.equal(err({ feature: '__proto__' }).status, 404);
   assert.equal(err({ testCaseIds: [] }).status, 400);
   assert.equal(err({ testCaseIds: ['TC003'] }).status, 400);          // belongs to another feature
-  assert.equal(err({ activeFeatures: new Set(['Auth']) }).status, 409);
-  assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /still running/);
+  assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /still starting/);   // running, but no live loop yet
 });
 
-test('planRedo on a paused feature queues finished cases only', () => {
+test('planRedo on a running feature (paused or not) queues finished cases only', () => {
   const active = new Set(['Auth']);
   const ask = (ids) => planRedo({ ...base, activeFeatures: active, feature: 'Auth', testCaseIds: ids, hint: 'h' });
-  pausedFeatures.add('Auth');
-  assert.match(ask(['TC002']).error, /still starting/);              // no live loop yet
   redoQueues.set('Auth', []);
   assert.equal(ask(['TC002']).queued, true);                          // newest record: FAIL
   assert.equal(ask(['TC002']).hints.TC002.retryOf, 'run-2');
   assert.equal(ask(['TC001']).status, 409);                           // newest record: PENDING
   assert.equal(ask(['TC002', 'TC001']).status, 409);                  // one unfinished case refuses all
-  redoQueues.delete('Auth');
+  pausedFeatures.add('Auth');
+  assert.equal(ask(['TC002']).queued, true);                          // paused or not, it is queued
   pausedFeatures.delete('Auth');
+  redoQueues.delete('Auth');
 });
 
 test('addRetry appends to the matching case and reports a miss', () => {

@@ -19,6 +19,7 @@ function toArr(v) {
  *                         the plain Result block (live verdict, reason and the case's own log)
  * renderTcLead(tc, status)  runner/focus: node at the start of a case row (e.g. a redo checkbox);
  *                         clicks on it do not expand the row
+ * renderTcTail(tc, status)  runner/focus: node after the status badge (e.g. "Queued: redo with hint" and its cancel)
  * autoExpandTcIds         runner/focus: ids that expand by themselves when they appear (the running case)
  * onFeatureEdit           editor: pencil on the feature header (rename / edit Background / delete)
  * onTcAdd                editor: + on the feature header adds a test case to that feature
@@ -58,6 +59,7 @@ export default function FeaturePanel({
   footer,
   renderTcLive,
   renderTcLead,
+  renderTcTail,
   autoExpandTcIds,
 }) {
   // Self-managed expansion state (runner / focus modal)
@@ -250,6 +252,9 @@ export default function FeaturePanel({
                               <Icon name={statusIconName(status)} />
                               {status}
                             </span>
+                          )}
+                          {renderTcTail && (
+                            <span className={styles.tcTail} onClick={(e) => e.stopPropagation()}>{renderTcTail(tc, status)}</span>
                           )}
                         </div>
 

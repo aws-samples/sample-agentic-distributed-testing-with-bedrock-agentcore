@@ -21,7 +21,8 @@ const initialState = {
   gridMode: '4',
   focusedFeature: null,
   tcLogs: {},           // tcId -> [{ts,msg,kind}] live log of the current attempt
-  pausedFeatures: {},   // feature -> 'pausing' (waiting for the running case) | 'paused'
+  pausedFeatures: {},   // feature -> { state: 'pausing' | 'paused', after, caseStartedAt, heldSince }
+  queuedRedos: {},      // tcId -> { feature, runId, hint } redo waiting for its turn in the feature's queue
 }
 
 function reducer(state, action) {
@@ -106,6 +107,17 @@ function reducer(state, action) {
     }
     case 'SET_PAUSED_ALL':
       return { ...state, pausedFeatures: action.paused }
+    case 'QUEUE_REDO':
+      return { ...state, queuedRedos: { ...state.queuedRedos, [action.tcId]: action.redo } }
+    case 'UNQUEUE_REDO': {
+      const cur = state.queuedRedos[action.tcId]
+      if (!cur || (action.runId && cur.runId !== action.runId)) return state
+      const next = { ...state.queuedRedos }
+      delete next[action.tcId]
+      return { ...state, queuedRedos: next }
+    }
+    case 'SET_QUEUED_ALL':
+      return { ...state, queuedRedos: action.queued }
     case 'RESET_ALL': {
       const clearedSessions = {}
       for (const k of Object.keys(state.sessionStatus)) {
@@ -128,6 +140,7 @@ function reducer(state, action) {
         focusedFeature: null,
         tcLogs: {},
         pausedFeatures: {},
+        queuedRedos: {},
       }
     }
     default:

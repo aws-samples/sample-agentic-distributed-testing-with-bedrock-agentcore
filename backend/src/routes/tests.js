@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, activeRunPromises, featureList, activeFeatures } from '../state/store.js';
 import { broadcast } from '../services/websocket.js';
-import { runFeatureTests, enqueueRedo } from '../services/runner.js';
+import { runFeatureTests, enqueueRedo, cancelRedo } from '../services/runner.js';
 import { upsertRunRecord, runArchive } from '../state/archive.js';
-import { pausedFeatures, pauseState, planRedo, addRetry } from '../services/runControl.js';
+import { pausedFeatures, pauseState, planRedo, addRetry, removeRetry, caseProgress, lastFrames } from '../services/runControl.js';
 
 const router = Router();
 
@@ -56,6 +56,7 @@ function startRun(testCases, hints = {}, queued = false) {
           logs: (runLogs[runId]?.[tc.id]) || [],
           // Human input: this case was redone with `hint`; retryOf is the run it replaces.
           ...(h ? { hint: h.hint, retryOf: h.retryOf } : {}),
+          ...(run.cancelled?.[tc.id] ? { cancelled: true } : {}),   // a redo cancelled before it started
           // Later runs that redid this case with a human hint: [{ runId, hint, ts }].
           ...(retries?.length ? { retries } : {}),
         };
@@ -143,9 +144,33 @@ router.post('/tests/redo', (req, res) => {
 router.post('/tests/pause', (req, res) => {
   const { feature } = req.body || {};
   if (typeof feature !== 'string' || !activeFeatures.has(feature)) return res.status(409).json({ error: 'Feature is not running' });
+  // A pause holds before the next case; with none left it would change nothing, so say so.
+  const p = caseProgress.get(feature);
+  if (p && p.remaining === 0) return res.status(409).json({ error: `${p.tcId} is the last test case of ${feature}: nothing is left to pause before.` });
   pausedFeatures.add(feature);
   broadcast({ type: 'feature_pause_requested', ...pauseState(feature) });
   res.json(pauseState(feature));
+});
+
+// Cancel a queued redo before it starts. runId + testCaseId identify the queued job.
+router.post('/tests/redo/cancel', (req, res) => {
+  const { feature, runId, testCaseId } = req.body || {};
+  if (typeof feature !== 'string' || typeof runId !== 'string' || typeof testCaseId !== 'string') return res.status(400).json({ error: 'feature, runId and testCaseId required' });
+  const job = cancelRedo(feature, runId, testCaseId);
+  if (!job) return res.status(409).json({ error: `${testCaseId} is not queued any more (it may have started).` });
+  // The earlier result no longer has a retry coming: drop the link added when the redo was queued.
+  const prior = job.hints?.[testCaseId]?.retryOf;
+  if (testRuns[prior]?.retries?.[testCaseId]) testRuns[prior].retries[testCaseId] = testRuns[prior].retries[testCaseId].filter(r => r.runId !== runId);
+  const archived = runArchive.find(r => r.runId === prior);
+  if (archived && removeRetry(archived, testCaseId, runId)) { upsertRunRecord(archived); broadcast({ type: 'run_archive_updated', runId: prior }); }
+  res.json({ ok: true });
+});
+
+// Last browser frame the agent produced for a test case (base64), for a finished case's row.
+router.get('/tests/frame/:tcId', (req, res) => {
+  const data = lastFrames.get(req.params.tcId);
+  if (!data) return res.status(404).json({ error: 'No frame for this test case' });
+  res.json({ data });
 });
 
 router.post('/tests/resume', (req, res) => {

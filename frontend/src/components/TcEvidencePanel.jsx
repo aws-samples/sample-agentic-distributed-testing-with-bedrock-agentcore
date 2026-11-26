@@ -32,7 +32,9 @@ function useSnapshotUrls(snapshots) {
 // effect, whose setUrls({}) re-renders again (issue #66).
 const NO_SNAPSHOTS = []
 
-export default function TcEvidencePanel({ tc }) {
+// compact: inline use (the Runner's case row), where the live frame is shown above and a case that
+// has no snapshots yet should not spend room on an empty snapshots section.
+export default function TcEvidencePanel({ tc, compact = false }) {
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const snapshots = tc?.snapshots || NO_SNAPSHOTS
   const snapshotUrls = useSnapshotUrls(snapshots)
@@ -119,6 +121,7 @@ export default function TcEvidencePanel({ tc }) {
         )}
 
         {/* Evidence snapshots from S3 */}
+        {!(compact && snapshots.length === 0) && (
         <section className={styles.section}>
           <div className={styles.sectionLabel}>
             EVIDENCE SNAPSHOTS
@@ -157,6 +160,7 @@ export default function TcEvidencePanel({ tc }) {
             </div>
           )}
         </section>
+        )}
 
         {/* Agent Log */}
         <section className={styles.section}>

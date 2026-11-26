@@ -1,0 +1,8 @@
+.frame { border-bottom: 1px solid var(--border); background: #000; position: relative; flex-shrink: 0; }
+.frame img { display: block; width: 100%; max-height: 190px; object-fit: contain; }
+.label {
+  position: absolute; top: 4px; left: 6px; z-index: 1;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text-muted); background: rgba(0, 0, 0, 0.6); padding: 1px 5px; border-radius: 3px;
+}
+.none { padding: 22px 8px 14px; font-size: 11px; color: var(--text-muted); text-align: center; }

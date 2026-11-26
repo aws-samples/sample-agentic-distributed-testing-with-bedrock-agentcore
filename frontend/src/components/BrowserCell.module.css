@@ -132,4 +132,9 @@
   border: 1px solid var(--yellow);
   border-radius: 8px;
   padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  flex-shrink: 1;
 }

@@ -9,6 +9,7 @@
 }
 
 .modal {
+  --focus-list-w: 440px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -214,3 +215,13 @@
 .redoRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .note { font-size: 11px; color: var(--text-muted); }
 .err { font-size: 12px; color: var(--red); }
+
+/* Narrow windows: the screenshot is what a tester watches, so the case list gives way. */
+@media (max-width: 1100px) {
+  .modal { --focus-list-w: 360px; }
+}
+.pauseStatus { font-size: 12px; color: var(--yellow); white-space: nowrap; }
+.liveEvidence { height: 280px; display: flex; flex-direction: column; min-height: 0; }
+.queuedTag { font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 0 6px; white-space: nowrap; }
+.queuedCancel { background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: inline-flex; padding: 0 2px; }
+.queuedCancel:hover, .queuedCancel:focus-visible { color: var(--red); }

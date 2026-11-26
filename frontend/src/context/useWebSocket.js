@@ -2,6 +2,9 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useApp } from './AppContext'
 import { buildAuthedWsUrl } from './authFetch'
 
+// What the UI needs to word a pause: the case it waits for, when that case started, when the hold began.
+const pauseInfo = (m, state) => ({ state, after: m.after, caseStartedAt: m.caseStartedAt, heldSince: m.heldSince })
+
 export function useWebSocket(onLog) {
   const { dispatch } = useApp()
   const wsRef = useRef(null)
@@ -89,6 +92,7 @@ export function useWebSocket(onLog) {
           break
 
         case 'test_start':
+          dispatch({ type: 'UNQUEUE_REDO', tcId: msg.testId, runId: msg.runId })   // its turn came
           dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'RUNNING' } })
           dispatch({ type: 'SET_TC_LOGS', tcId: msg.testId, logs: [] })   // a redo starts a fresh log
           if (msg.sessionId) {
@@ -153,12 +157,23 @@ export function useWebSocket(onLog) {
           break
 
         case 'feature_pause_requested':
-          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: msg.holding ? 'paused' : 'pausing' })
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: pauseInfo(msg, msg.holding ? 'paused' : 'pausing') })
+          addSessionLog(msg.feature, msg.holding ? 'Paused' : `Pausing after ${msg.after || 'the current case'}`, 'warn', 'warn')
           break
 
         case 'feature_paused':
-          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: 'paused' })
+          dispatch({ type: 'SET_PAUSE', feature: msg.feature, state: pauseInfo(msg, 'paused') })
           addSessionLog(msg.feature, 'Paused', 'warn', 'warn')
+          break
+
+        case 'redo_queued':
+          dispatch({ type: 'QUEUE_REDO', tcId: msg.testId, redo: { feature: msg.feature, runId: msg.runId, hint: msg.hint } })
+          addSessionLog(msg.feature, `${msg.testId}: redo with hint queued`, 'info', 'info')
+          break
+
+        case 'redo_cancelled':
+          dispatch({ type: 'UNQUEUE_REDO', tcId: msg.testId, runId: msg.runId })
+          addSessionLog(msg.feature, `${msg.testId}: queued redo cancelled`, 'warn', 'warn')
           break
 
         case 'feature_resumed':
@@ -214,7 +229,10 @@ export function useWebSocket(onLog) {
           }
           dispatch({ type: 'SET_STOPPING', stopping: !!msg.stopping })
           if (Array.isArray(msg.paused)) {
-            dispatch({ type: 'SET_PAUSED_ALL', paused: Object.fromEntries(msg.paused.map(p => [p.feature, p.holding ? 'paused' : 'pausing'])) })
+            dispatch({ type: 'SET_PAUSED_ALL', paused: Object.fromEntries(msg.paused.map(p => [p.feature, pauseInfo(p, p.holding ? 'paused' : 'pausing')])) })
+          }
+          if (Array.isArray(msg.queuedRedos)) {
+            dispatch({ type: 'SET_QUEUED_ALL', queued: Object.fromEntries(msg.queuedRedos.map(q => [q.testId, { feature: q.feature, runId: q.runId, hint: q.hint }])) })
           }
           break
 

@@ -21,8 +21,43 @@ export const heldFeatures = new Set();
 // that loop is alive, so a redo can be queued onto it while the feature is paused.
 export const redoQueues = new Map();
 
+// feature -> { tcId, startedAt, remaining }: the case running now and how many of the run's own cases
+// are still to come after it (a pause only holds before one of those).
+export const caseProgress = new Map();
+const heldSince = new Map();   // feature -> ISO time the hold started
+
+// Latest browser frame (base64) per test case, so a finished case can show what the agent saw last.
+// shortcut: in memory, one frame per case id (about 100 KB each), lost on restart; upgrade to the
+// S3 snapshots (runs/...) when frames must outlive the process.
+export const lastFrames = new Map();
+
 export function pauseState(feature) {
-  return { feature, paused: pausedFeatures.has(feature), holding: heldFeatures.has(feature) };
+  const p = caseProgress.get(feature);
+  return {
+    feature,
+    paused: pausedFeatures.has(feature),
+    holding: heldFeatures.has(feature),
+    after: p?.tcId ?? null,                 // the case a pending pause waits for
+    caseStartedAt: p?.startedAt ?? null,    // for the elapsed time next to it
+    heldSince: heldSince.get(feature) ?? null,
+  };
+}
+
+// Redo jobs that are queued and have not started, for the case list and the reconnect snapshot.
+export function listQueuedRedos() {
+  const out = [];
+  for (const [feature, queue] of redoQueues) {
+    for (const job of queue) out.push({ feature, runId: job.runId, testId: job.tc.id, hint: job.hints?.[job.tc.id]?.hint || '' });
+  }
+  return out;
+}
+
+// Removes a not-yet-started redo from its feature's queue and returns the job (null if it already
+// started or was never queued). The caller settles it.
+export function takeQueuedRedo(feature, runId, tcId) {
+  const queue = redoQueues.get(feature);
+  const i = queue ? queue.findIndex(j => j.runId === runId && j.tc.id === tcId) : -1;
+  return i < 0 ? null : queue.splice(i, 1)[0];
 }
 
 export function listPaused() {
@@ -32,6 +67,7 @@ export function listPaused() {
 export function clearPause(feature) {
   pausedFeatures.delete(feature);
   heldFeatures.delete(feature);
+  heldSince.delete(feature);
 }
 
 /**
@@ -42,11 +78,13 @@ export function clearPause(feature) {
 export async function holdWhilePaused(feature, isStopped, { onHold, onRelease, pollMs = 300 } = {}) {
   if (!pausedFeatures.has(feature) || isStopped()) return;
   heldFeatures.add(feature);
+  heldSince.set(feature, new Date().toISOString());
   onHold?.();
   while (pausedFeatures.has(feature) && !isStopped()) {
     await new Promise(r => setTimeout(r, pollMs));
   }
   heldFeatures.delete(feature);
+  heldSince.delete(feature);
   onRelease?.();
 }
 
@@ -66,7 +104,7 @@ export function normalizeHint(x) {
  * definitions come from `casesByFeature`, never from the request body.
  * Returns { error, status } or { testCases, hints }; hints[tcId] = { hint, retryOf }
  * where retryOf is the newest archived run that has a PASS/FAIL result for that case.
- * `queued` is true when the feature is paused and the redo must go onto its live run loop.
+ * `queued` is true when the feature is running and the redo must go onto its live run loop.
  */
 export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeature, archive, activeFeatures }) {
   const text = normalizeHint(hint);
@@ -75,23 +113,21 @@ export function planRedo({ feature, testCaseIds, hint, featureList, casesByFeatu
   if (!Array.isArray(testCaseIds) || !testCaseIds.length || testCaseIds.length > REDO_MAX_CASES) {
     return { status: 400, error: `testCaseIds must list 1-${REDO_MAX_CASES} test cases` };
   }
-  // A running feature takes a redo only while paused: the redo joins the feature's own loop
-  // (same session) and runs before the held loop resumes.
+  // A running feature takes a redo too: it goes to the front of the feature's own queue, so it runs
+  // right after the case in progress (or at once if the feature is held by a pause), in the same session.
   const queued = activeFeatures.has(feature);
-  if (queued) {
-    if (!pausedFeatures.has(feature)) return { status: 409, error: `${feature} is still running. Pause it, let it finish or Stop the run, then redo.` };
-    if (!redoQueues.has(feature)) return { status: 409, error: `${feature} is still starting. Try again in a moment.` };
-  }
+  if (queued && !redoQueues.has(feature)) return { status: 409, error: `${feature} is still starting. Try again in a moment.` };
   const cases = casesByFeature[feature] || [];
   const testCases = [];
   for (const id of new Set(testCaseIds)) {
     const tc = cases.find(c => c.id === id);
     if (!tc) return { status: 400, error: `${id} is not a test case of ${feature}` };
-    // Only a finished case, by its newest record (a case that is running, not reached yet or
-    // already waiting for a redo reads RUNNING / PENDING there).
-    const latest = queued && archive.map(r => (r.features?.[feature]?.cases || []).find(c => c.id === id)).find(Boolean);
+    // While the feature runs, only a finished case, by its newest record (a case that is running, not
+    // reached yet or already waiting for a redo reads RUNNING / PENDING there).
+    // A redo that was cancelled before it started is not a result: look past it.
+    const latest = queued && archive.map(r => (r.features?.[feature]?.cases || []).find(c => c.id === id && !c.cancelled)).find(Boolean);
     if (queued && latest?.status !== 'PASS' && latest?.status !== 'FAIL') {
-      return { status: 409, error: `${id} has not finished (or already has a redo queued). While paused, only finished cases can be redone.` };
+      return { status: 409, error: `${id} has not finished (or already has a redo queued). While the feature runs, only finished cases can be redone.` };
     }
     testCases.push(tc);
   }
@@ -109,6 +145,15 @@ export function addRetry(record, tcId, entry) {
   for (const f of Object.values(record?.features || {})) {
     const c = (f.cases || []).find(x => x.id === tcId);
     if (c) { c.retries = [...(c.retries || []), entry]; return true; }
+  }
+  return false;
+}
+
+// Undoes addRetry for one redo run (the redo was cancelled before it started).
+export function removeRetry(record, tcId, runId) {
+  for (const f of Object.values(record?.features || {})) {
+    const c = (f.cases || []).find(x => x.id === tcId);
+    if (c?.retries) { c.retries = c.retries.filter(r => r.runId !== runId); if (!c.retries.length) delete c.retries; return true; }
   }
   return false;
 }

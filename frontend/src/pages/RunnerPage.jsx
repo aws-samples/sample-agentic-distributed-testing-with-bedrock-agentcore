@@ -324,15 +324,26 @@ export default function RunnerPage() {
     }
   }
 
-  // Pause holds one feature before its next test case; the others keep running.
+  // Pause holds one feature before its next test case; the others keep running. Returns the server's
+  // reason when it refuses (for example on the last case), so the modal can show it.
   const handleTogglePause = async (feat) => {
     const wasPaused = !!state.pausedFeatures[feat]
     try {
       if (wasPaused) await api.resumeFeature(feat)
       else await api.pauseFeature(feat)
-      addLog(wasPaused ? `Resumed ${feat}` : `Pause requested for ${feat} — holds after its current test case`, 'warn')
+      addLog(wasPaused ? `Resumed ${feat}` : `Pause requested for ${feat}: it holds after its current test case`, 'warn')
+      return ''
     } catch (e) {
       addLog(`${wasPaused ? 'Resume' : 'Pause'} failed: ${e.message}`, 'fail')
+      return e.message
+    }
+  }
+
+  const handleCancelRedo = async (feat, tcId, runId) => {
+    try {
+      await api.cancelRedo({ feature: feat, runId, testCaseId: tcId })
+    } catch (e) {
+      addLog(`Cancel redo failed: ${e.message}`, 'fail')
     }
   }
 
@@ -340,7 +351,7 @@ export default function RunnerPage() {
   const handleRedo = async (feat, testCaseIds, hint) => {
     const { runId } = await api.redoCases({ feature: feat, testCaseIds, hint })
     dispatch({ type: 'SET_CURRENT_RUN_ID', runId })
-    addLog(`Redo with hint started for ${feat}: ${testCaseIds.join(', ')} (${runId})`, 'info')
+    addLog(`Redo with hint queued for ${feat}: ${testCaseIds.join(', ')} (${runId})`, 'info')
   }
 
   const handleRequestAnalysis = async (tcId) => {
@@ -514,7 +525,9 @@ export default function RunnerPage() {
           running={state.activeFeatures.has(state.focusedFeature)}
           pauseState={state.pausedFeatures[state.focusedFeature]}
           onTogglePause={() => handleTogglePause(state.focusedFeature)}
+          queuedRedos={state.queuedRedos}
           onRedo={(ids, hint) => handleRedo(state.focusedFeature, ids, hint)}
+          onCancelRedo={(tcId, runId) => handleCancelRedo(state.focusedFeature, tcId, runId)}
           onClose={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: null })}
           onClearLog={() => dispatch({ type: 'CLEAR_SESSION_LOG', feature: state.focusedFeature })}
         />

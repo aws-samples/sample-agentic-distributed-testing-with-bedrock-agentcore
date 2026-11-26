@@ -1,7 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { config, featureList, sessions, testResultsCache, testRuns, stopFlags, activeFeatures, runLogs } from '../state/store.js';
 import { authEnabled, verifyWsToken } from '../middleware/auth.js';
-import { listPaused } from './runControl.js';
+import { listPaused, listQueuedRedos } from './runControl.js';
 
 let wss;
 const wsClients = new Set();
@@ -83,6 +83,7 @@ export function initWebSocket(server) {
         currentRunId: activeRunId,
         stopping: activeRunStopping,
         paused: listPaused(),
+        queuedRedos: listQueuedRedos(),
       }));
     }
 

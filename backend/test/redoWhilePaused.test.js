@@ -76,9 +76,6 @@ test('redo while paused: runs in the same session before the held loop resumes, 
   const { body: { runId: main } } = await post('/tests/run', { testCases: tcs });
   await until(() => calls.some(c => c.id === 'TC903'), 'TC903 started');     // TC901, TC902 finished
 
-  // Not paused: still 409.
-  assert.equal((await redo(['TC901'])).status, 409);
-
   // Paused while TC903 is still running: finished cases are accepted, the running case is not.
   await post('/tests/pause', { feature });
   assert.ok(pausedFeatures.has(feature));

@@ -1,9 +1,12 @@
 import styles from './BrowserCell.module.css'
 import { featureColor } from '../data/seedTestCases'
 import Icon from './Icon'
+import { pauseLabel } from '../utils/pauseText.mjs'
+import { useNow } from '../utils/useNow'
 
 export default function BrowserCell({ featureName, sessionStatus, activeFeatures, pauseState, onFocus, onTogglePause }) {
   const sess = sessionStatus || {}
+  const now = useNow(!!pauseState)
   const isRunning = activeFeatures?.has(featureName)
   const color = featureColor(featureName)
 
@@ -17,10 +20,10 @@ export default function BrowserCell({ featureName, sessionStatus, activeFeatures
       <div className={styles.header} onClick={onFocus}>
         <div className={connClass} />
         <span className={styles.title} style={{ color }}>{featureName}</span>
-        {pauseState && <span className={styles.pauseTag} role="status">{pauseState === 'paused' ? 'Paused' : 'Pausing…'}</span>}
+        {pauseState && <span className={styles.pauseTag} role="status">{pauseLabel(pauseState, now)}</span>}
         {isRunning && (
           <button className={styles.iconBtn}
-            title={pauseState ? 'Resume this feature' : 'Pause this feature after its current test case'}
+            title={pauseState ? 'Resume this feature' : 'Pause this feature after its current test case (the case in progress cannot be interrupted)'}
             aria-label={`${pauseState ? 'Resume' : 'Pause'} ${featureName}`}
             onClick={(e) => { e.stopPropagation(); onTogglePause() }}>
             <Icon name={pauseState ? 'play_arrow' : 'pause'} size={14} />
