@@ -39,6 +39,7 @@ export function useApi() {
     testDatabase: (connection) => apiCall('POST', '/api/config/databases/test', { connection }),
     loadDatabaseSchema: (connection) => apiCall('POST', '/api/config/databases/schema', { connection }),
     getTools: () => apiCall('GET', '/api/config/tools'),
+    getToolsStatus: () => apiCall('GET', '/api/config/tools/status'),
     saveTools: (tools) => apiCall('PUT', '/api/config/tools', { tools }),
     getSkills: () => apiCall('GET', '/api/config/skills'),
     saveSkills: (skills) => apiCall('PUT', '/api/config/skills', { skills }),

@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket as WS } from 'ws';
-import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, withDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
@@ -646,17 +646,14 @@ async function handleInvocation(req, res) {
     // its own directory, outside the agent's working directory, that is removed when the run ends
     // (finally below); never into the prompt or onto a command line.
     const dbs = dbConnectionsFromRequest({ tools, databases });
-    const dbCreds = dbs.length ? writeDbCredentials(dbs) : null;
-    const dbFile = dbCreds?.file || null;
     const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
 
     const { url: cdpWsUrl, headers: cdpWsHeaders } = await getCdpWebSocket(sessionName);
-    let verdict;
-    try {
-    verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
+    // withDbCredentials writes the file and removes it in a finally, so a crash or a stopped run cannot leave it behind
+    const verdict = await withDbCredentials(dbs, (dbFile) => runOpencode(prompt, workDir, assertResultFile, (ev) => {
       if (ev.type === 'text' && ev.part?.text) {
         emitText(ev.part.text);
       }
@@ -671,10 +668,7 @@ async function handleInvocation(req, res) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile, tools);
-    } finally {
-      dbCreds?.cleanup();
-    }
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile, tools));
     // Emit final screenshot
     if (!lastScreenshot) {
       try { lastScreenshot = await agentCoreScreenshot(sessionName); } catch { /* ignore */ }

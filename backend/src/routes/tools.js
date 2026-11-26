@@ -20,6 +20,23 @@ router.put('/config/tools', (req, res) => {
   res.json({ tools: TOOLS.map(({ id, name }) => ({ id, name, enabled: config.tools[id].enabled })) });
 });
 
+// Can the agent's browser read files on the machine it runs on? Matters for the database tool, whose
+// credentials file sits on disk for the length of a run. Asked of the local runtime (it knows whether
+// its Chromium has the file:// block, or whether an external Chrome is used). null = unknown or not
+// applicable: AgentCore's browser is a separate managed machine, and an unreachable runtime says nothing.
+router.get('/config/tools/status', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  let browserCanReadFiles = null;
+  if (config.agentMode === 'local') {
+    try {
+      const r = await fetch(`${process.env.LOCAL_RUNTIME_URL || 'http://localhost:4020'}/health`, { signal: AbortSignal.timeout(2000) });
+      const h = await r.json();
+      if (typeof h.browserCanReadFiles === 'boolean') browserCanReadFiles = h.browserCanReadFiles;
+    } catch { /* runtime not reachable: unknown */ }
+  }
+  res.json({ agentMode: config.agentMode, browserCanReadFiles });
+});
+
 // Skills: global reusable instructions, sent to the agent as data on every run.
 router.get('/config/skills', (req, res) => {
   res.json({ skills: config.skills, limits: SKILL_LIMITS, tools: TOOLS.map(({ id, name }) => ({ id, name })) });

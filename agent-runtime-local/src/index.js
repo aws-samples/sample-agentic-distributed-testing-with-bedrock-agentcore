@@ -23,7 +23,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
-import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, isUnsafeKey, writeDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, isUnsafeKey, withDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
@@ -683,8 +683,13 @@ function extractScreenshot(ev) {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
+// True when the agent's browser can open file:// URLs, so it could read files on this machine
+// (including the database credentials file while a run is going): an external Chrome we do not
+// control, or our own Chromium without the managed policy the Docker image installs.
+const browserCanReadFiles = () => !!CHROME_DEVTOOLS_URL || !existsSync(CHROMIUM_POLICY);
+
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', runtime: 'opencode', region: BEDROCK_REGION, model: BEDROCK_MODEL_RAW });
+  res.json({ status: 'ok', runtime: 'opencode', region: BEDROCK_REGION, model: BEDROCK_MODEL_RAW, browserCanReadFiles: browserCanReadFiles() });
 });
 
 /**
@@ -797,16 +802,13 @@ app.post('/', runLimiter, async (req, res) => {
     // its own directory, outside the agent's working directory, that is removed when the run ends
     // (finally below); never into the prompt or onto a command line.
     const dbs = dbConnectionsFromRequest({ tools, databases });
-    const dbCreds = dbs.length ? writeDbCredentials(dbs) : null;
-    const dbFile = dbCreds?.file || null;
     const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
 
-    let verdict;
-    try {
-    verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
+    // withDbCredentials writes the file and removes it in a finally, so a crash or a stopped run cannot leave it behind
+    const verdict = await withDbCredentials(dbs, (dbFile) => runOpencode(prompt, workDir, assertResultFile, (ev) => {
       // Forward text narration
       if (ev.type === 'text' && ev.part?.text) {
         emitText(ev.part.text);
@@ -826,10 +828,7 @@ app.post('/', runLimiter, async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body), dbFile, tools);
-    } finally {
-      dbCreds?.cleanup();
-    }
+    }, browserWs, resolveModelAndRegion(req.body), dbFile, tools));
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);
 

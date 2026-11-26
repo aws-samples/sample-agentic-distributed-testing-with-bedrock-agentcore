@@ -188,13 +188,38 @@ export function dbEvidence(part, connections, maxChars = 1500) {
 
 /**
  * Write the connections (with passwords) to a 0600 file in a fresh 0700 directory that is NOT the
- * agent's working directory; only the db tool server is given the path. Call cleanup() in a finally.
+ * agent's working directory; only the db tool server is given the path. Prefer withDbCredentials().
  */
+// The file stays on disk for the whole run (the tool server may be restarted by OpenCode and needs
+// it again), in a 0600 file inside a 0700 directory. It is removed when the run ends however it
+// ends: withDbCredentials() uses a finally, and a process that is stopped (SIGTERM/SIGINT) or exits
+// removes any directory still registered here. shortcut: a SIGKILL or power loss leaves it behind
+// in the temp directory; the OS temp cleaner is the backstop.
+const liveCredDirs = new Set();
+let exitHooked = false;
+function removeDir(dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
+function removeAllCredDirs() { for (const d of liveCredDirs) removeDir(d); liveCredDirs.clear(); }
+function hookExit() {
+  if (exitHooked) return;
+  exitHooked = true;
+  process.on('exit', removeAllCredDirs);
+  for (const [sig, code] of [['SIGTERM', 143], ['SIGINT', 130]]) process.once(sig, () => { removeAllCredDirs(); process.exit(code); });
+}
+
 export function writeDbCredentials(connections) {
+  hookExit();
   const dir = mkdtempSync(join(tmpdir(), 'ocdb-'));
+  liveCredDirs.add(dir);
   const file = join(dir, 'connections.json');
   writeFileSync(file, JSON.stringify(connections), { mode: 0o600 });
-  return { file, cleanup: () => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } } };
+  return { file, cleanup: () => { removeDir(dir); liveCredDirs.delete(dir); } };
+}
+
+/** Run fn(file) with the credentials file in place (file is null when there are no connections); remove it afterwards, also when fn throws. */
+export async function withDbCredentials(connections, fn) {
+  const creds = connections.length ? writeDbCredentials(connections) : null;
+  try { return await fn(creds ? creds.file : null); }
+  finally { creds?.cleanup(); }
 }
 
 /**

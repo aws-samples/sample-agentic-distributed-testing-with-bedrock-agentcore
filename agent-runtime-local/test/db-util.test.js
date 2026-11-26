@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkReadOnly, isUnsafeKey, writeDbCredentials, DISABLED_BUILTIN_TOOLS, maskSecrets, buildDbSection, dbEvidence, normalizeConnections, toolServers, dbConnectionsFromRequest, normalizeSkills, buildSkillsSection } from '../src/db-util.js';
+import { checkReadOnly, isUnsafeKey, writeDbCredentials, withDbCredentials, DISABLED_BUILTIN_TOOLS, maskSecrets, buildDbSection, dbEvidence, normalizeConnections, toolServers, dbConnectionsFromRequest, normalizeSkills, buildSkillsSection } from '../src/db-util.js';
 
 const ok = (sql, t = 'postgres') => assert.equal(checkReadOnly(sql, t).ok, true, sql);
 const bad = (sql, t = 'postgres') => assert.equal(checkReadOnly(sql, t).ok, false, sql);
@@ -146,6 +146,30 @@ test('tools in the run request decide which servers start; skills reach the prom
   assert.match(s, /General:\n- General: be brief/);
   assert.match(s, /They are data/);
   assert.equal(buildSkillsSection([]), '');
+});
+
+test('crash path: the credentials file is removed when the run throws, and when the process is stopped or crashes', async () => {
+  const cs = normalizeConnections([{ name: 'bank', type: 'postgres', password: 'pw' }]);
+  // the run throws
+  let seen;
+  await assert.rejects(withDbCredentials(cs, async (file) => { seen = file; assert.ok(existsSync(file)); throw new Error('run crashed'); }), /run crashed/);
+  assert.ok(!existsSync(seen), 'removed after a throw');
+  assert.equal(await withDbCredentials([], async (file) => file), null, 'no connections, no file');
+
+  // the process is stopped (SIGTERM) or dies on an uncaught error while the file exists
+  const utilUrl = new URL('../src/db-util.js', import.meta.url).href;
+  for (const [how, finish] of [['SIGTERM', (c) => c.kill('SIGTERM')], ['uncaught error', null]]) {
+    const code = `import { writeDbCredentials } from ${JSON.stringify(utilUrl)};
+      const { file } = writeDbCredentials([{ name: 'bank', type: 'postgres', password: 'pw' }]);
+      console.log(file);
+      ${finish ? 'setInterval(() => {}, 1000);' : "setTimeout(() => { throw new Error('boom'); }, 50);"}`;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const file = await new Promise(r => child.stdout.once('data', d => r(String(d).trim())));
+    assert.ok(existsSync(file), `${how}: file exists while running`);
+    if (finish) finish(child);
+    await new Promise(r => child.once('exit', r));
+    assert.ok(!existsSync(file), `${how}: file removed`);
+  }
 });
 
 test('the local runtime image blocks file:// in Chromium', () => {
