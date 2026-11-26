@@ -43,8 +43,10 @@ export function useApi() {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
       return res.text()
     },
-    importYaml: async (yamlText) => {
-      const res = await fetch('/api/import', {
+    // mode 'add' keeps the suite and adds to it; dryRun only returns what would change.
+    importYaml: async (yamlText, { mode, dryRun } = {}) => {
+      const q = mode === 'add' ? `?mode=add${dryRun ? '&dryRun=1' : ''}` : ''
+      const res = await fetch('/api/import' + q, {
         method: 'POST',
         headers: { 'Content-Type': 'text/yaml' },
         body: yamlText,
