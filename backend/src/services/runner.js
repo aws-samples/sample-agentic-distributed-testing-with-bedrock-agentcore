@@ -3,7 +3,7 @@ import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeF
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
-import { holdWhilePaused, clearPause } from './runControl.js';
+import { holdWhilePaused, clearPause, pausedFeatures, redoQueues } from './runControl.js';
 import { createSseStream } from './sseParser.js';
 import { redactSecrets } from './redact.js';
 
@@ -145,6 +145,17 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   }
 }
 
+// Puts a redo run's cases on the feature's live loop (it is paused, see planRedo). They run in
+// the same session before the held loop resumes. Resolves when every case has run or been skipped.
+export function enqueueRedo(feature, testCases, runId, onProgress, hints) {
+  const queue = redoQueues.get(feature);
+  return new Promise((resolve, reject) => {
+    if (!queue) return reject(new Error(`${feature} is not running`));
+    let left = testCases.length;
+    for (const tc of testCases) queue.push({ tc, runId, onProgress, hints, settle: () => { if (--left === 0) resolve(); } });
+  });
+}
+
 // hints: { [tcId]: { hint } } for a redo run; empty for a normal run.
 export async function runFeatureTests(feature, testCases, runId, onProgress, hints = {}) {
   const sessionId = feature;
@@ -164,13 +175,35 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
     return;
   }
 
-  for (const tc of testCases) {
-    // A human can pause one feature; it holds here, between test cases (a case already
-    // running inside the agent can't be interrupted). Stop releases it.
-    await holdWhilePaused(feature, () => stopFlags[runId], {
-      onHold: () => broadcast({ type: 'feature_paused', feature, runId }),
-      onRelease: () => broadcast({ type: 'feature_resumed', feature, runId }),
-    });
+  // Jobs of this run, plus redos queued onto the loop while the feature is paused (they go first).
+  const mainRunId = runId;
+  const todo = testCases.map(tc => ({ tc, runId, onProgress, hints }));
+  const redos = [];
+  redoQueues.set(feature, redos);
+  let announced = false;   // "paused" was broadcast and "resumed" has not been yet
+  let prev;
+  for (;;) {
+    prev?.settle?.(); prev = undefined;
+    let job = redos.shift();
+    if (!job) {
+      // A human can pause one feature; it holds here, between test cases (a case already
+      // running inside the agent can't be interrupted). Stop releases it, and so does a redo
+      // (the feature stays paused: only "resumed" is not announced then).
+      if (todo.length) {
+        await holdWhilePaused(feature, () => stopFlags[mainRunId] || redos.length > 0, {
+          onHold: () => { if (!announced) { announced = true; broadcast({ type: 'feature_paused', feature, runId: mainRunId }); } },
+          onRelease: () => {
+            if (pausedFeatures.has(feature) && !stopFlags[mainRunId]) return;
+            announced = false;
+            broadcast({ type: 'feature_resumed', feature, runId: mainRunId });
+          },
+        });
+      }
+      job = redos.shift() || todo.shift();
+      if (!job) break;
+    }
+    prev = job;
+    const { tc, runId, hints, onProgress } = job;
     if (stopFlags[runId]) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'PENDING' };
       broadcast({ type: 'test_skipped', testId: tc.id, sessionId, runId });
@@ -212,6 +245,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress, hin
   }
 
   activeFeatures.delete(feature);
+  redoQueues.delete(feature);
   clearPause(feature);
   broadcast({ type: 'feature_complete', feature: sessionId, runId });
 }

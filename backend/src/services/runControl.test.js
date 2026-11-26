@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pausedFeatures, heldFeatures, holdWhilePaused, clearPause, normalizeHint, planRedo, addRetry, HINT_MAX,
+  pausedFeatures, heldFeatures, redoQueues, holdWhilePaused, clearPause, normalizeHint, planRedo, addRetry, HINT_MAX,
 } from './runControl.js';
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -81,8 +81,19 @@ test('planRedo rejects bad requests', () => {
   assert.equal(err({ testCaseIds: ['TC003'] }).status, 400);          // belongs to another feature
   assert.equal(err({ activeFeatures: new Set(['Auth']) }).status, 409);
   assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /still running/);
+});
+
+test('planRedo on a paused feature queues finished cases only', () => {
+  const active = new Set(['Auth']);
+  const ask = (ids) => planRedo({ ...base, activeFeatures: active, feature: 'Auth', testCaseIds: ids, hint: 'h' });
   pausedFeatures.add('Auth');
-  assert.match(err({ activeFeatures: new Set(['Auth']) }).error, /is paused/);
+  assert.match(ask(['TC002']).error, /still starting/);              // no live loop yet
+  redoQueues.set('Auth', []);
+  assert.equal(ask(['TC002']).queued, true);                          // newest record: FAIL
+  assert.equal(ask(['TC002']).hints.TC002.retryOf, 'run-2');
+  assert.equal(ask(['TC001']).status, 409);                           // newest record: PENDING
+  assert.equal(ask(['TC002', 'TC001']).status, 409);                  // one unfinished case refuses all
+  redoQueues.delete('Auth');
   pausedFeatures.delete('Auth');
 });
 
