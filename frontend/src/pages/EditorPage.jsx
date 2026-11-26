@@ -12,6 +12,7 @@ import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import Toast from '../components/Toast'
 import { buildAuthedWsUrl } from '../context/authFetch'
+import { copyTitle } from '../utils/caseSteps'
 import styles from './EditorPage.module.css'
 
 // Test case ids are suite-wide (TC001, TC002, ...), not tied to a feature.
@@ -402,7 +403,7 @@ export default function EditorPage() {
     const orig = feat.testCases[pos]
     const copy = {
       id: nextTcId(doc.features),
-      title: `Copy of ${orig.title}`,
+      title: copyTitle(orig.title, (feat.testCases || []).map(t => t.title)),
       given: [...(orig.given || [])],
       when: [...(orig.when || [])],
       then: [...(orig.then || [])],
