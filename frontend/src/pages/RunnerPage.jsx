@@ -10,6 +10,7 @@ import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import { SEED_TEST_CASES } from '../data/seedTestCases'
 import { useStickToBottom } from '../hooks/useStickToBottom'
+import { hasSteps } from '../utils/caseSteps'
 import styles from './RunnerPage.module.css'
 
 export default function RunnerPage() {
@@ -263,8 +264,13 @@ export default function RunnerPage() {
 
   const handleRunAll = async () => {
     if (!state.targetUrl) { addLog('Set a Target URL in Test Editor before running tests', 'warn'); return }
-    const testCases = Object.values(state.testCases).flat()
-    if (testCases.length === 0) { addLog('No tests to run', 'warn'); return }
+    const allCases = Object.values(state.testCases).flat()
+    if (allCases.length === 0) { addLog('No tests to run', 'warn'); return }
+    // A case with no steps is a draft: never send it to the agent.
+    const testCases = allCases.filter(hasSteps)
+    const drafts = allCases.filter(tc => !hasSteps(tc))
+    if (drafts.length > 0) addLog(`Skipping ${drafts.length} draft(s) with no steps: ${drafts.map(tc => tc.id).join(', ')}`, 'warn')
+    if (testCases.length === 0) { addLog('No tests with steps to run', 'warn'); return }
 
     // Health-check every session before starting — a feature whose
     // agent-runtime tab hasn't finished initializing yet would otherwise

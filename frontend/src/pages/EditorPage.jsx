@@ -12,6 +12,7 @@ import Btn from '../components/Btn'
 import Icon from '../components/Icon'
 import Toast from '../components/Toast'
 import { buildAuthedWsUrl } from '../context/authFetch'
+import { copyTitle } from '../utils/caseSteps'
 import styles from './EditorPage.module.css'
 
 // Test case ids are suite-wide (TC001, TC002, ...), not tied to a feature.
@@ -23,6 +24,12 @@ function nextTcId(allFeatures) {
   }
   return `TC${String(max + 1).padStart(3, '0')}`
 }
+
+// The menu under a feature's "+". Blank first: writing by hand needs no AI call.
+const TC_ADD_CHOICES = [
+  { kind: 'blank', label: 'Blank scenario', icon: 'note_add', title: 'Add an empty scenario and write its steps yourself' },
+  { kind: 'ai', label: 'Draft with AI (uses Bedrock)', icon: 'auto_awesome', title: 'Describe the scenario and let the AI draft it (calls Amazon Bedrock)' },
+]
 
 // What the Authentication button shows: is a login configured, and for how many accounts.
 function summarizeAuth(a) {
@@ -61,6 +68,9 @@ export default function EditorPage() {
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
   const urlCheckSeq = useRef(0) // bumped on edit and on each check so late responses are dropped
   const [urlCheck, setUrlCheck] = useState(null) // null | { loading } | result from the backend
+  // The last deleted test case, kept for the Undo toast: { tc, featName, index, key }.
+  // shortcut: only the latest delete can be undone, and only until the toast closes or the page reloads.
+  const [undoDelete, setUndoDelete] = useState(null)
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
   // Read-only mode while a test run is in progress
@@ -374,9 +384,46 @@ export default function EditorPage() {
     setFeatModalOpen(false)
   }
 
-  // "+" on a feature opens the Edit-with-AI modal in create mode; nothing is added
+  // "+" on a feature: "Blank scenario" adds an empty case straight away (no AI call);
+  // "Draft with AI" opens the Edit-with-AI modal in create mode, and nothing is added
   // until the user confirms the draft (handleAddTc below).
-  const handleStartAddTc = (featIdx) => setAddingToFeatIdx(featIdx)
+  const handleStartAddTc = (featIdx, kind) => {
+    if (kind === 'ai') { setAddingToFeatIdx(featIdx); return }
+    const titles = new Set((doc.features[featIdx]?.testCases || []).map(t => t.title))
+    let title = 'New scenario'
+    for (let n = 2; titles.has(title); n++) title = `New scenario ${n}`
+    // One empty row per section so the step editor opens ready to type into.
+    handleAddTc(featIdx, { title, given: [''], when: [''], then: [''] })
+    setStatusMsg(`Added "${title}" — write its steps, then Apply Changes`, 'ok')
+  }
+
+  // Copy a case into the same feature, right after the original, with a new id.
+  const handleDuplicateTc = (tcId) => {
+    if (selectedFeatIdx == null) return
+    const feat = doc.features[selectedFeatIdx]
+    const pos = (feat?.testCases || []).findIndex(t => t.id === tcId)
+    if (pos === -1) return
+    const orig = feat.testCases[pos]
+    const copy = {
+      id: nextTcId(doc.features),
+      title: copyTitle(orig.title, (feat.testCases || []).map(t => t.title)),
+      given: [...(orig.given || [])],
+      when: [...(orig.when || [])],
+      then: [...(orig.then || [])],
+    }
+    setDoc(prev => ({
+      ...prev,
+      features: prev.features.map((m, i) => {
+        if (i !== selectedFeatIdx) return m
+        const cases = [...(m.testCases || [])]
+        cases.splice(pos + 1, 0, copy)
+        return { ...m, testCases: cases }
+      }),
+    }))
+    setSelectedTcId(copy.id)
+    setDirty(true)
+    setStatusMsg(`Duplicated ${orig.id} as ${copy.id}`, 'ok')
+  }
 
   const handleAddTc = (featIdx, draft) => {
     setDoc(prev => {
@@ -415,9 +462,13 @@ export default function EditorPage() {
     setStatusMsg('Changes applied', 'ok')
   }
 
+  // Deletes straight away; the Undo toast puts the case back where it was.
   const handleDeleteTc = () => {
-    if (!selectedTcId) return
-    if (!confirm(`Delete ${selectedTcId}?`)) return
+    if (!selectedTcId || selectedFeatIdx == null) return
+    const feat = doc.features[selectedFeatIdx]
+    const index = (feat?.testCases || []).findIndex(t => t.id === selectedTcId)
+    if (index === -1) return
+    setUndoDelete({ tc: feat.testCases[index], featName: feat.name, index, key: Date.now() })
     setDoc(prev => {
       const feats = prev.features.map((m, i) => {
         if (i !== selectedFeatIdx) return m
@@ -427,6 +478,31 @@ export default function EditorPage() {
     })
     setSelectedTcId(null)
     setDirty(true)
+  }
+
+  const handleUndoDelete = () => {
+    if (!undoDelete) return
+    const { tc, featName, index } = undoDelete
+    const featIdx = doc.features.findIndex(m => m.name === featName)
+    setUndoDelete(null)
+    if (featIdx === -1) { setStatusMsg('Cannot restore: its feature was deleted', 'err'); return }
+    // Ids are the highest number + 1, so a new case may have taken this id meanwhile.
+    const taken = doc.features.some(m => (m.testCases || []).some(t => t.id === tc.id))
+    const restored = taken ? { ...tc, id: nextTcId(doc.features) } : tc
+    setDoc(prev => ({
+      ...prev,
+      features: prev.features.map((m, i) => {
+        if (i !== featIdx) return m
+        const cases = [...(m.testCases || [])]
+        cases.splice(Math.min(index, cases.length), 0, restored)
+        return { ...m, testCases: cases }
+      }),
+    }))
+    setSelectedFeatIdx(featIdx)
+    setSelectedTcId(restored.id)
+    setExpandedFeatNames(p => new Set(p).add(featName))
+    setDirty(true)
+    setStatusMsg(`Restored ${restored.id}`, 'ok')
   }
 
   // Build feature data for panel
@@ -481,6 +557,7 @@ export default function EditorPage() {
             tc={selectedTc}
             onApply={handleApplyTc}
             onDelete={handleDeleteTc}
+            onDuplicate={() => handleDuplicateTc(selectedTc.id)}
             readOnly={readOnly}
           />
         </>
@@ -496,7 +573,7 @@ export default function EditorPage() {
           <line x1="16" y1="17" x2="8" y2="17" />
         </svg>
         <div style={{ fontSize: 14 }}>Select a test case to edit</div>
-        <div style={{ fontSize: 12 }}>Use <strong>+</strong> on a feature to add one, or <strong>+ Add Feature</strong> to start a new group (it can draft test cases from a spec)</div>
+        <div style={{ fontSize: 12 }}>Use <strong>+</strong> on a feature to add a blank scenario or draft one with AI, or <strong>+ Add Feature</strong> to start a new group (it can draft test cases from a spec)</div>
       </div>
     )
   }
@@ -571,10 +648,11 @@ export default function EditorPage() {
             const idx = doc.features.findIndex(m => m.name === featName)
             if (idx !== -1) handleOpenEditFeat(idx)
           }}
-          onTcAdd={readOnly ? null : (featName) => {
+          onTcAdd={readOnly ? null : (featName, kind) => {
             const idx = doc.features.findIndex(m => m.name === featName)
-            if (idx !== -1) handleStartAddTc(idx)
+            if (idx !== -1) handleStartAddTc(idx, kind)
           }}
+          tcAddChoices={TC_ADD_CHOICES}
           onExpandAll={() => setExpandedFeatNames(new Set(doc.features.map(m => m.name)))}
           onCollapseAll={() => setExpandedFeatNames(new Set())}
           showExpandControls={true}
@@ -595,6 +673,12 @@ export default function EditorPage() {
             ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
             : `Not reachable: ${urlCheck.reason}`}
           {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
+        </Toast>
+      )}
+      {undoDelete && (
+        <Toast key={undoDelete.key} className={styles.undoToast} kind="success" autoDismissMs={15000} onClose={() => setUndoDelete(null)}>
+          Deleted {undoDelete.tc.id} “{undoDelete.tc.title}”.{' '}
+          <button type="button" className={styles.undoBtn} onClick={handleUndoDelete} disabled={readOnly}>Undo</button>
         </Toast>
       )}
       <ImportModal

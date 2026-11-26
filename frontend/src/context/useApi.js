@@ -4,7 +4,11 @@ async function apiCall(method, path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    // Show the server's own message when it sent one ({ error }); a bare "502 Bad Gateway" tells nobody what to do.
+    const body = await res.json().catch(() => null)
+    throw new Error(typeof body?.error === 'string' && body.error ? body.error : `${res.status} ${res.statusText}`)
+  }
   return res.json()
 }
 

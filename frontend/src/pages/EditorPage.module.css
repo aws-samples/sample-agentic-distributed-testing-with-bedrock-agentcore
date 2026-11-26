@@ -260,3 +260,17 @@
   margin: 0 2px;
   align-self: center;
 }
+
+/* Sits under the health-check toast when both are showing. */
+div.undoToast { top: 84px; }
+.undoBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.undoBtn:disabled { color: var(--text-muted); cursor: not-allowed; }

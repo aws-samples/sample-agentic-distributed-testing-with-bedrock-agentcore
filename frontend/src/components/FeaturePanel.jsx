@@ -1,10 +1,77 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import styles from './FeaturePanel.module.css'
 import Icon from './Icon'
+import { hasSteps } from '../utils/caseSteps'
 
 function toArr(v) {
   if (!v) return []
   return Array.isArray(v) ? v : [v]
+}
+
+// The + on a feature header when there is more than one way to add a test case.
+// A menu button: Enter / Space / ArrowDown opens it on the first item, arrows move,
+// Escape closes it and returns focus to the button, Tab or a click outside closes it.
+function AddMenu({ feat, choices, onPick }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const btnRef = useRef(null)
+  const itemRefs = useRef([])
+
+  useEffect(() => {
+    if (!open) return
+    itemRefs.current[0]?.focus()
+    const onDocDown = (e) => { if (!wrapRef.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [open])
+
+  const close = (refocus) => { setOpen(false); if (refocus) btnRef.current?.focus() }
+  const pick = (kind) => { setOpen(false); onPick(kind) }
+
+  const onMenuKey = (e) => {
+    e.stopPropagation()
+    const items = itemRefs.current.filter(Boolean)
+    const i = items.indexOf(document.activeElement)
+    if (e.key === 'Escape') { e.preventDefault(); close(true) }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus() }
+    else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus() }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus() }
+    else if (e.key === 'Tab') setOpen(false)
+  }
+
+  return (
+    <span className={styles.addMenuWrap} ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        ref={btnRef}
+        className={styles.featIconBtn}
+        onClick={() => setOpen(o => !o)}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true) } }}
+        title="Add test case"
+        aria-label={`Add test case to ${feat}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      ><Icon name="add" size={15} /></button>
+      {open && (
+        <div className={styles.addMenu} role="menu" aria-label={`Add test case to ${feat}`} onKeyDown={onMenuKey}>
+          {choices.map((c, i) => (
+            <button
+              key={c.kind}
+              type="button"
+              role="menuitem"
+              ref={el => { itemRefs.current[i] = el }}
+              className={styles.addMenuItem}
+              title={c.title}
+              onClick={() => pick(c.kind)}
+            >
+              {c.icon && <Icon name={c.icon} size={15} />}{c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
 }
 
 /**
@@ -37,6 +104,7 @@ export default function FeaturePanel({
   onTcClick,
   onFeatureEdit,
   onTcAdd,
+  tcAddChoices,  // editor: [{ kind, label, icon }] — + opens a menu and calls onTcAdd(feat, kind)
   onExpandAll,   // editor: called to expand all features
   onCollapseAll, // editor: called to collapse all features
   // Modes
@@ -195,7 +263,10 @@ export default function FeaturePanel({
                         aria-label={`Edit feature ${feat}`}
                       ><Icon name="edit" size={14} /></button>
                     )}
-                    {onTcAdd && (
+                    {onTcAdd && tcAddChoices && (
+                      <AddMenu feat={feat} choices={tcAddChoices} onPick={(kind) => onTcAdd(feat, kind)} />
+                    )}
+                    {onTcAdd && !tcAddChoices && (
                       <button
                         type="button"
                         className={styles.featIconBtn}
@@ -227,6 +298,9 @@ export default function FeaturePanel({
                           )}
                           <span className={styles.tcId}>{tc.id}</span>
                           <span className={styles.tcTitle}>{tc.title}</span>
+                          {!hasSteps(tc) && (
+                            <span className={styles.draftBadge} title="This test case has no steps, so Run All skips it">Draft: no steps</span>
+                          )}
                           {showStatusBadges && (
                             <span className={`${styles.statusBadge} ${styles['status_' + status]}`}>
                               <Icon name={statusIconName(status)} />
