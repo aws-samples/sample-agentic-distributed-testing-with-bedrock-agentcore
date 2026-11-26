@@ -41,13 +41,18 @@ async function resolveAllowed(url, signal) {
     const reason = 'Link-local and cloud-metadata addresses are not allowed';
     throw Object.assign(new Error(reason), { reason });
   }
-  return { host, address: addrs[0].address };
+  // Every address passed the check above; the caller tries them in resolver order.
+  return { host, addresses: addrs.map(a => a.address) };
 }
 
-// One GET to the pre-resolved address. The response body is never read.
-function requestOnce(url, { host, address }, signal) {
+// One GET to one pre-resolved address. The response body is never read.
+// connectMs, when set, limits only the TCP connect, so a dead address leaves time
+// for the next one. Errors are marked afterConnect once the socket connected.
+function requestOnce(url, host, address, signal, connectMs) {
   const lib = url.protocol === 'https:' ? https : http;
   return new Promise((resolve, reject) => {
+    let connected = false;
+    let timer;
     const req = lib.request({
       host: address,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -58,12 +63,37 @@ function requestOnce(url, { host, address }, signal) {
       agent: false,
       signal,
     }, (res) => {
+      clearTimeout(timer);
       res.destroy();
       resolve({ status: res.statusCode, location: res.headers.location });
     });
-    req.on('error', reject);
+    if (connectMs !== undefined) {
+      timer = setTimeout(() => req.destroy(Object.assign(new Error('Connection timed out'), { code: 'ETIMEDOUT' })), connectMs);
+    }
+    req.on('socket', s => s.once('connect', () => { connected = true; clearTimeout(timer); }));
+    req.on('error', (e) => { clearTimeout(timer); e.afterConnect = connected; reject(e); });
     req.end();
   });
+}
+
+// Try each validated address in order (localhost may list ::1 before 127.0.0.1
+// while the app listens on IPv4 only). Fall through only on connect failures,
+// so a server that answered is never asked twice. The last address gets all the
+// time left; earlier ones get an even share of it for their connect.
+async function requestAny(url, { host, addresses }, signal, deadline) {
+  let lastErr;
+  for (let i = 0; i < addresses.length; i++) {
+    const left = addresses.length - i;
+    const connectMs = left > 1 ? Math.max(0, deadline - Date.now()) / left : undefined;
+    try {
+      return await requestOnce(url, host, addresses[i], signal, connectMs);
+    } catch (e) {
+      if (signal.aborted) throw signal.reason; // overall timeout: say so, not the socket error it caused
+      if (e.afterConnect) throw e;
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 function describeError(e) {
@@ -91,7 +121,7 @@ export async function checkTargetUrl(rawUrl, { timeoutMs = TIMEOUT_MS } = {}) {
     let res;
     for (let hop = 0; ; hop++) {
       const target = await resolveAllowed(url, signal);
-      res = await requestOnce(url, target, signal);
+      res = await requestAny(url, target, signal, started + timeoutMs);
       const loc = res.location;
       if (res.status < 300 || res.status >= 400 || !loc) break;
       if (hop >= MAX_REDIRECTS) return { ...base, ok: false, status: res.status, responseTimeMs: Date.now() - started, finalUrl: url.href, reason: `Too many redirects (more than ${MAX_REDIRECTS})` };
