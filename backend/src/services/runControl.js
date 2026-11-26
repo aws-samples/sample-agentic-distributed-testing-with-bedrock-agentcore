@@ -11,6 +11,12 @@ export const REDO_MAX_CASES = 50;
 // The runtime wraps the hint in <hint> tags; a hint must not be able to close them early.
 export const HINT_TAG_RE = /<\s{0,16}\/?\s{0,16}hint\s{0,16}>/gi;
 
+// Keys that reach Object.prototype when used as obj[key] = ... (CodeQL: prototype-polluting assignment).
+export const isUnsafeKey = (k) => k === '__proto__' || k === 'constructor' || k === 'prototype';
+// A test case id or feature name from a request, safe to use as an object key: a string of
+// 1-200 characters that is not one of the keys above.
+export const isSafeKey = (k) => typeof k === 'string' && k.length > 0 && k.length <= 200 && !isUnsafeKey(k);
+
 // A feature is in `pausedFeatures` from the moment a human asks to pause. It is
 // also in `heldFeatures` once its run loop is actually idle at a test-case
 // boundary (a case already running inside the agent cannot be interrupted).

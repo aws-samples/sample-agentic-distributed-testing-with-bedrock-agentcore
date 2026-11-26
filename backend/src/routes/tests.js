@@ -3,7 +3,7 @@ import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, act
 import { broadcast } from '../services/websocket.js';
 import { runFeatureTests, enqueueRedo, cancelRedo } from '../services/runner.js';
 import { upsertRunRecord, runArchive } from '../state/archive.js';
-import { pausedFeatures, pauseState, planRedo, addRetry, removeRetry, caseProgress, lastFrames } from '../services/runControl.js';
+import { pausedFeatures, pauseState, planRedo, addRetry, removeRetry, caseProgress, lastFrames, isSafeKey } from '../services/runControl.js';
 
 const router = Router();
 
@@ -12,10 +12,11 @@ const router = Router();
 // a paused feature: its cases go onto the feature's live loop instead of starting a second one.
 function startRun(testCases, hints = {}, queued = false) {
   const runId = `run-${Date.now()}`;
-  testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
+  // Maps keyed by test case id or feature name have no prototype, so such a key is only ever a key.
+  testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: Object.create(null) };
   stopFlags[runId] = false;
 
-  const byFeature = {};
+  const byFeature = Object.create(null);
   for (const tc of testCases) {
     if (!byFeature[tc.feature]) byFeature[tc.feature] = [];
     byFeature[tc.feature].push(tc);
@@ -111,7 +112,10 @@ function startRun(testCases, hints = {}, queued = false) {
 
 router.post('/tests/run', (req, res) => {
   const { testCases } = req.body;
-  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
+  if (!Array.isArray(testCases) || !testCases.length) return res.status(400).json({ error: 'testCases required' });
+  // id and feature are used as object keys (results, logs, the per-feature split): refuse __proto__ and the like.
+  const bad = testCases.find(tc => !isSafeKey(tc?.id) || !isSafeKey(tc?.feature));
+  if (bad) return res.status(400).json({ error: 'Each test case needs a valid id and feature' });
   res.json({ runId: startRun(testCases) });
 });
 
@@ -130,7 +134,7 @@ router.post('/tests/redo', (req, res) => {
     if (!retryOf) continue;
     const entry = { runId, hint: text, ts };
     const live = testRuns[retryOf];
-    if (live) { live.retries = live.retries || {}; live.retries[tc.id] = [...(live.retries[tc.id] || []), entry]; }
+    if (live) { live.retries = live.retries || Object.create(null); live.retries[tc.id] = [...(live.retries[tc.id] || []), entry]; }
     const archived = runArchive.find(r => r.runId === retryOf);
     if (archived && addRetry(archived, tc.id, entry)) {
       upsertRunRecord(archived);
@@ -156,6 +160,11 @@ router.post('/tests/pause', (req, res) => {
 router.post('/tests/redo/cancel', (req, res) => {
   const { feature, runId, testCaseId } = req.body || {};
   if (typeof feature !== 'string' || typeof runId !== 'string' || typeof testCaseId !== 'string') return res.status(400).json({ error: 'feature, runId and testCaseId required' });
+  // All three come from the request and are used as keys below: accept only a run this server made
+  // and a test case id the feature really has (this also refuses __proto__, constructor, prototype).
+  if (!isSafeKey(runId) || !Object.prototype.hasOwnProperty.call(testRuns, runId)) return res.status(404).json({ error: 'Run not found' });
+  if (!isSafeKey(feature) || !isSafeKey(testCaseId) || !Object.prototype.hasOwnProperty.call(testCasesByFeature, feature)
+    || !testCasesByFeature[feature].some(tc => tc.id === testCaseId)) return res.status(400).json({ error: `${testCaseId} is not a test case of ${feature}` });
   const job = cancelRedo(feature, runId, testCaseId);
   if (!job) return res.status(409).json({ error: `${testCaseId} is not queued any more (it may have started).` });
   // The earlier result no longer has a retry coming: drop the link added when the redo was queued.

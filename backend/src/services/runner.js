@@ -3,7 +3,7 @@ import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeF
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
-import { holdWhilePaused, clearPause, pausedFeatures, redoQueues, caseProgress, lastFrames, pauseState, takeQueuedRedo } from './runControl.js';
+import { holdWhilePaused, clearPause, pausedFeatures, redoQueues, caseProgress, lastFrames, pauseState, takeQueuedRedo, isUnsafeKey } from './runControl.js';
 import { createSseStream } from './sseParser.js';
 import { redactSecrets } from './redact.js';
 
@@ -86,7 +86,7 @@ export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   };
 
   // Init per-run log store
-  if (!runLogs[runId]) runLogs[runId] = {};
+  if (!runLogs[runId]) runLogs[runId] = Object.create(null);   // keyed by test case id
   if (!runLogs[runId][tc.id]) runLogs[runId][tc.id] = [];
   const tcLog = runLogs[runId][tc.id];
 
@@ -161,11 +161,15 @@ export function enqueueRedo(feature, testCases, runId, onProgress, hints) {
 
 // Cancels a queued redo that has not started. Returns the job, or null if it already started (or never existed).
 export function cancelRedo(feature, runId, tcId) {
+  // runId and tcId come from the request: refuse keys that reach Object.prototype before any lookup.
+  if (isUnsafeKey(runId) || isUnsafeKey(tcId)) return null;
   const job = takeQueuedRedo(feature, runId, tcId);
   if (!job) return null;
-  if (testRuns[runId]) {
-    testRuns[runId].results[tcId] = { status: 'PENDING' };
-    (testRuns[runId].cancelled = testRuns[runId].cancelled || {})[tcId] = true;   // read by buildRunRecord and planRedo
+  if (Object.prototype.hasOwnProperty.call(testRuns, runId)) {
+    const run = testRuns[runId];
+    run.results[tcId] = { status: 'PENDING' };
+    if (!run.cancelled) run.cancelled = Object.create(null);
+    run.cancelled[tcId] = true;   // read by buildRunRecord and planRedo
   }
   broadcast({ type: 'redo_cancelled', feature, runId, testId: tcId });
   job.onProgress?.();

@@ -136,6 +136,34 @@ test('a queued redo can be cancelled before it starts; the earlier result loses 
   assert.equal(caseOf(r.body.runId, 'TC911').cancelled, true);
 });
 
+test('cancel and run refuse __proto__, constructor, prototype and unknown ids, and leave Object.prototype alone', async () => {
+  reset();
+  holdCases.add('TC912');
+  const { body: { runId: main } } = await post('/tests/run', { testCases: tcs });
+  await until(() => gates.TC912, 'TC912 running');
+  const r = await redo(['TC911'], 'keep me');
+  const protoKeys = Object.getOwnPropertyNames(Object.prototype).sort();
+  for (const k of ['__proto__', 'constructor', 'prototype']) {
+    const asCase = await post('/tests/redo/cancel', { feature, runId: r.body.runId, testCaseId: k });
+    assert.equal(asCase.status, 400, `testCaseId ${k}`);
+    const asRun = await post('/tests/redo/cancel', { feature, runId: k, testCaseId: 'TC911' });
+    assert.equal(asRun.status, 404, `runId ${k}`);
+    const asFeature = await post('/tests/redo/cancel', { feature: k, runId: r.body.runId, testCaseId: 'TC911' });
+    assert.equal(asFeature.status, 400, `feature ${k}`);
+    const run = await post('/tests/run', { testCases: [{ ...tcs[0], id: k }] });
+    assert.equal(run.status, 400, `run id ${k}`);
+    assert.equal((await post('/tests/run', { testCases: [{ ...tcs[0], feature: k }] })).status, 400, `run feature ${k}`);
+  }
+  assert.equal((await post('/tests/redo/cancel', { feature, runId: r.body.runId, testCaseId: 'TC999' })).status, 400);   // unknown id
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype).sort(), protoKeys);
+  assert.equal(({}).status, undefined);
+  assert.equal(({}).PENDING, undefined);
+  assert.deepEqual(listQueuedRedos().map(q => q.testId), ['TC911']);                 // the real redo is still queued
+  assert.equal((await post('/tests/redo/cancel', { feature, runId: r.body.runId, testCaseId: 'TC911' })).status, 200);
+  gates.TC912();
+  await finish(r.body.runId); await finish(main);
+});
+
 test('after a cancel the same case can be redone again', async () => {
   reset();
   holdCases.add('TC912');
