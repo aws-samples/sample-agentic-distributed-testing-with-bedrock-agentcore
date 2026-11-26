@@ -7,7 +7,7 @@ import BddHelpModal from './BddHelpModal'
 import { useApi } from '../context/useApi'
 import { toGherkin, fromGherkin } from '../utils/gherkin'
 import { tabEdit, enterEdit } from '../utils/textEdit'
-import { TITLE_MAX } from '../utils/caseSteps'
+import { TITLE_MAX, titleProblem as titleError } from '../utils/caseSteps'
 
 const SECTIONS = [
   { key: 'given', label: 'Given', placeholder: "e.g. I'm a signed-in customer with a credit card account" },
@@ -71,9 +71,7 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
     return { ...tc, title: c.title || tc.title, given: c.given, when: c.when, then: c.then }
   }
   // The title is required and has the server's length limit; Apply says why it is off.
-  const liveTitle = (onGherkin ? parsed.title : draft.title).trim()
-  const titleProblem = !liveTitle ? 'Scenario title is required'
-    : liveTitle.length > TITLE_MAX ? `Scenario title is longer than ${TITLE_MAX} characters` : ''
+  const titleProblem = titleError(onGherkin ? parsed.title : draft.title)
   const canApply = !readOnly && (!onGherkin || gherkinOk) && !titleProblem
   const applyHint = titleProblem || (!gherkinOk ? 'Fix the Gherkin errors first' : '')
 

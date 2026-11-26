@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { hasSteps, copyTitle, TITLE_MAX } from '../src/utils/caseSteps.js'
+import { hasSteps, copyTitle, titleProblem, TITLE_MAX } from '../src/utils/caseSteps.js'
 
 test('hasSteps: empty, blank and whitespace-only rows are not steps', () => {
   assert.equal(hasSteps({ given: [], when: [], then: [] }), false)
@@ -40,4 +40,13 @@ test('copyTitle: result never exceeds the title limit', () => {
   assert.equal(second.length, TITLE_MAX)
   assert.notEqual(second, first)
   assert.ok(second.endsWith(' (2)'))
+})
+
+test('titleProblem: empty and whitespace-only are refused, 300 characters pass, 301 do not', () => {
+  assert.match(titleProblem(''), /required/)
+  assert.match(titleProblem('   \t'), /required/)
+  assert.match(titleProblem(undefined), /required/)
+  assert.equal(titleProblem('x'.repeat(300)), '')
+  assert.match(titleProblem('x'.repeat(301)), /longer than 300/)
+  assert.equal(titleProblem('  ' + 'x'.repeat(300) + '  '), '')   // spaces around the title are trimmed first
 })

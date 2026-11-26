@@ -2,6 +2,13 @@
 
 export const TITLE_MAX = 300   // same limit as the backend (CASE_LIMITS.title)
 
+// Why a scenario title cannot be applied, or '' when it can.
+export function titleProblem(title) {
+  const t = String(title ?? '').trim()
+  if (!t) return 'Scenario title is required'
+  return t.length > TITLE_MAX ? `Scenario title is longer than ${TITLE_MAX} characters` : ''
+}
+
 const asList = (v) => (Array.isArray(v) ? v : v ? [v] : [])
 
 // True when Given, When or Then holds at least one step with text in it.
