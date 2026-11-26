@@ -10,6 +10,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { spawn } from 'child_process';
 import { mkdtempSync, readFileSync, unlinkSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -18,12 +19,14 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket as WS } from 'ws';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, withDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
+const DB_SERVER = join(__dirname, 'db-server.js');
 
 const PORT           = process.env.PORT           || 8080;
 const BEDROCK_REGION = process.env.BEDROCK_REGION || process.env.AWS_REGION || 'ap-southeast-1';
@@ -44,6 +47,9 @@ const BEDROCK_MODEL = BEDROCK_MODEL_RAW.startsWith('amazon-bedrock/')
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+// Rate limit for the endpoint that starts a test run (it writes files and spawns OpenCode).
+// shortcut: per-IP in-memory counter, 120/min is far above one backend's sequential use; use a shared store if the runtime is ever scaled out behind one address.
+const runLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 // ─── AgentCore Browser session pool ──────────────────────────────────────────
 // One managed browser session per sessionName, lazily provisioned. A Browser
@@ -273,7 +279,7 @@ async function getAwsCredentials() {
 
 // ─── Config & prompt builders ─────────────────────────────────────────────────
 
-function buildSystemPrompt(tc, targetUrl, auth, env) {
+function buildSystemPrompt(tc, targetUrl, auth, env, dbSection = '') {
   const numbered = (v) => (Array.isArray(v) ? v : [v])
     .filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join('\n');
   const backgroundText = (tc.background || '').trim();
@@ -314,7 +320,7 @@ In the test case, a reference like $${'{'}NAME} or "the NAME variable" means the
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
-IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${authSection}${envSection}
+IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${authSection}${envSection}${dbSection}
 
 RULES:
 1. Navigate to ${targetUrl} first, then carry out the When steps
@@ -363,7 +369,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
+function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList) {
   // AgentCore's WS endpoint requires SigV4-signed headers on the upgrade
   // request — chrome-devtools-mcp's --wsHeaders passes them through.
   const chromeMcpArgs = cdpWsUrl.startsWith('ws')
@@ -381,13 +387,18 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
     tools: {
       'chrome-devtools_new_page': false,
       'chrome-devtools_close_page': false,
+      // With database credentials in play the agent gets no shell or file tools (see db-util.js)
+      ...(dbFile ? DISABLED_BUILTIN_TOOLS : {}),
     },
+    ...(dbFile ? { permission: DENIED_PERMISSIONS } : {}),
     mcp: {
       assert: {
         type: 'local',
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
+      // One MCP server per enabled tool, e.g. the read-only database tools (db_list_tables, db_describe_table, db_query)
+      ...toolServers(toolList, { dbFile, dbServer: DB_SERVER }),
       'chrome-devtools': {
         type: 'local',
         command: [
@@ -405,9 +416,9 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList) {
   const configPath = join(workDir, 'opencode.json');
-  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm), null, 2));
+  writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm, dbFile, toolList), null, 2));
   const awsCreds = await getAwsCredentials();
   // Diagnostic: if getAwsCredentials() (classic EC2 IMDS) returns null, the
   // opencode child gets no explicit AWS creds beyond whatever's already in
@@ -556,16 +567,16 @@ app.get('/ping', (req, res) => {
   res.json({ status: 'Healthy', time_of_last_update: Math.floor(Date.now() / 1000) });
 });
 
-app.post('/invocations', async (req, res) => {
+app.post('/invocations', runLimiter, async (req, res) => {
   return handleInvocation(req, res);
 });
 
-app.post('/', async (req, res) => {
+app.post('/', runLimiter, async (req, res) => {
   return handleInvocation(req, res);
 });
 
 async function handleInvocation(req, res) {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env } = req.body;
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName = 'default', auth, env, tools, skills, databases } = req.body;
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
@@ -631,26 +642,33 @@ async function handleInvocation(req, res) {
     }
 
     const assertResultFile = join(workDir, 'verdict.json');
-    const prompt = buildSystemPrompt(tc, targetUrl, auth, env) +
+    // Database connections for this run. Passwords go to the db tool server through a 0600 file in
+    // its own directory, outside the agent's working directory, that is removed when the run ends
+    // (finally below); never into the prompt or onto a command line.
+    const dbs = dbConnectionsFromRequest({ tools, databases });
+    const prompt = buildSystemPrompt(tc, targetUrl, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
 
     const { url: cdpWsUrl, headers: cdpWsHeaders } = await getCdpWebSocket(sessionName);
-    const verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
+    // withDbCredentials writes the file and removes it in a finally, so a crash or a stopped run cannot leave it behind
+    const verdict = await withDbCredentials(dbs, (dbFile) => runOpencode(prompt, workDir, assertResultFile, (ev) => {
       if (ev.type === 'text' && ev.part?.text) {
         emitText(ev.part.text);
       }
       if (ev.type === 'tool_use' && ev.part?.tool) {
         emitText(`[${ev.part.tool}] ${ev.part.state?.title || ''}`);
+        // Queries and their (truncated, password-masked) results go to the test case log as evidence
+        const evidence = dbEvidence(ev.part, dbs);
+        if (evidence) emitText(evidence);
       }
       const ss = extractScreenshot(ev);
       if (ss) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body));
-
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), dbFile, tools));
     // Emit final screenshot
     if (!lastScreenshot) {
       try { lastScreenshot = await agentCoreScreenshot(sessionName); } catch { /* ignore */ }

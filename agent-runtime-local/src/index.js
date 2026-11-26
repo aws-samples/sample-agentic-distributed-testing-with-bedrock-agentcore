@@ -14,6 +14,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { spawn } from 'child_process';
 import { mkdtempSync, readFileSync, unlinkSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -22,9 +23,11 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
+import { normalizeConnections, dbConnectionsFromRequest, toolServers, normalizeSkills, buildSkillsSection, buildDbSection, dbEvidence, isUnsafeKey, withDbCredentials, DISABLED_BUILTIN_TOOLS, DENIED_PERMISSIONS } from './db-util.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
+const DB_SERVER = join(__dirname, 'db-server.js');
 
 const PORT = process.env.PORT || 4020;
 // opencode uses Bedrock converse-stream; us-east-1 has the broadest model availability
@@ -46,6 +49,9 @@ const CHROME_DEVTOOLS_URL = process.env.CHROME_DEVTOOLS_URL || '';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+// Rate limit for the endpoint that starts a test run (it writes files and spawns OpenCode).
+// shortcut: per-IP in-memory counter, 120/min is far above one backend's sequential use; use a shared store if the runtime is ever scaled out behind one address.
+const runLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 // ─── Persistent Chromium ──────────────────────────────────────────────────────
 // We launch one shared Chromium instance that opencode connects to.
@@ -54,7 +60,17 @@ app.use(express.json({ limit: '10mb' }));
 const CHROME_CDP_PORT = 9222;
 let chromiumProc = null;
 
+// The Dockerfile installs a managed policy that blocks file:// in this Chromium, so the agent's
+// browser cannot read the runtime's files. Outside the image there may be none: say so.
+const CHROMIUM_POLICY = '/etc/chromium/policies/managed/block-file.json';
+function warnIfFilesReadable() {
+  if (!existsSync(CHROMIUM_POLICY)) {
+    console.warn(`[chromium] ${CHROMIUM_POLICY} is missing: the agent's browser can open file:// URLs and read this machine's files. Use the Docker image, or install agent-runtime-local/chromium-policy.json there.`);
+  }
+}
+
 function startChromium() {
+  warnIfFilesReadable();
   const args = [
     '--no-sandbox',
     '--disable-dev-shm-usage',
@@ -97,7 +113,7 @@ async function waitForChromium(retries = 20) {
 
 // ─── Per-session tab management ───────────────────────────────────────────────
 // One dedicated Chromium tab per session (feature). Keyed by session name.
-const sessionTabs = {};   // sessionName → { targetId, wsUrl }
+const sessionTabs = Object.create(null);   // no prototype, so a session name like "__proto__" is just a key; sessionName → { targetId, wsUrl }
 
 async function cdpHttp(path) {
   return new Promise((resolve, reject) => {
@@ -344,7 +360,7 @@ async function getAwsCredentials() {
 
 // ─── Config & prompt builders ─────────────────────────────────────────────────
 
-function buildSystemPrompt(tc, targetUrl, pageNum, auth, env) {
+function buildSystemPrompt(tc, targetUrl, pageNum, auth, env, dbSection = '') {
   const numbered = (v) => (Array.isArray(v) ? v : [v])
     .filter(Boolean).map((x, i) => `  ${i + 1}. ${x}`).join('\n');
   const backgroundText = (tc.background || '').trim();
@@ -389,7 +405,7 @@ In the test case, a reference like $${'{'}NAME} or "the NAME variable" means the
   return `You are an expert QA automation engineer testing a web application.
 
 TARGET URL: ${targetUrl}
-IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${pageInstruction}${authSection}${envSection}
+IMPORTANT: Always start by navigating to ${targetUrl}. Ignore any URLs mentioned in the test case — use ONLY ${targetUrl} as the starting point.${pageInstruction}${authSection}${envSection}${dbSection}
 
 RULES:
 1. Navigate to ${targetUrl} first using pageId: ${pageNum || 1}, then carry out the When steps
@@ -451,7 +467,7 @@ function resolveModelAndRegion(body) {
   return { model, region };
 }
 
-function buildOpencodeConfig(assertResultFile, browserWs, llm) {
+function buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile, toolList) {
   // Connect to the browser-level WebSocket so chrome-devtools-mcp can call
   // browser-level commands (Target.getBrowserContexts, etc.).
   // Individual page routing is handled via pageId in tool calls.
@@ -474,13 +490,18 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
     tools: {
       'chrome-devtools_new_page': false,
       'chrome-devtools_close_page': false,
+      // With database credentials in play the agent gets no shell or file tools (see db-util.js)
+      ...(dbFile ? DISABLED_BUILTIN_TOOLS : {}),
     },
+    ...(dbFile ? { permission: DENIED_PERMISSIONS } : {}),
     mcp: {
       assert: {
         type: 'local',
         command: ['node', ASSERT_SERVER],
         environment: { ASSERT_RESULT_FILE: assertResultFile },
       },
+      // One MCP server per enabled tool, e.g. the read-only database tools (db_list_tables, db_describe_table, db_query)
+      ...toolServers(toolList, { dbFile, dbServer: DB_SERVER }),
       'chrome-devtools': {
         type: 'local',
         // Use globally-installed binary (avoids npx download on every run)
@@ -512,9 +533,9 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, dbFile, toolList) {
   const configPath = join(workDir, 'opencode.json');
-  const config = buildOpencodeConfig(assertResultFile, browserWs, llm);
+  const config = buildOpencodeConfig(assertResultFile, browserWs, llm, dbFile, toolList);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   // Log auth presence (usernames only, never passwords) so operators can verify
   // the agent received credentials when authentication is enabled
@@ -662,8 +683,13 @@ function extractScreenshot(ev) {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
+// True when the agent's browser can open file:// URLs, so it could read files on this machine
+// (including the database credentials file while a run is going): an external Chrome we do not
+// control, or our own Chromium without the managed policy the Docker image installs.
+const browserCanReadFiles = () => !!CHROME_DEVTOOLS_URL || !existsSync(CHROMIUM_POLICY);
+
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', runtime: 'opencode', region: BEDROCK_REGION, model: BEDROCK_MODEL_RAW });
+  res.json({ status: 'ok', runtime: 'opencode', region: BEDROCK_REGION, model: BEDROCK_MODEL_RAW, browserCanReadFiles: browserCanReadFiles() });
 });
 
 /**
@@ -671,8 +697,8 @@ app.get('/health', (req, res) => {
  * Request: { action: 'init'|'run_test'|'health', testCase?, targetUrl }
  * Response: SSE lines — data: {"event": {...}}
  */
-app.post('/', async (req, res) => {
-  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env } = req.body;
+app.post('/', runLimiter, async (req, res) => {
+  const { action = 'run_test', testCase: tc, targetUrl, sessionName, auth, env, tools, skills, databases } = req.body;
   if (action === 'run_test') {
     console.log(`[runtime] run_test session=${sessionName} tc=${tc?.id} auth=${(auth?.accounts || (auth?.username ? [auth] : [])).filter(a => a.username).map(a => (a.role || 'user') + ':' + a.username).join(',') || 'no'}`);
   }
@@ -686,6 +712,13 @@ app.post('/', async (req, res) => {
   }
   function emitText(text) {
     emit({ contentBlockDelta: { delta: { text } } });
+  }
+
+  // sessionName becomes an object key below: refuse names that could pollute Object.prototype.
+  if (isUnsafeKey(sessionName)) {
+    emitText(JSON.stringify({ error: 'Invalid sessionName' }));
+    res.end();
+    return;
   }
 
   if (action === 'health') {
@@ -765,12 +798,17 @@ app.post('/', async (req, res) => {
       return;
     }
 
-    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env) +
+    // Database connections for this run. Passwords go to the db tool server through a 0600 file in
+    // its own directory, outside the agent's working directory, that is removed when the run ends
+    // (finally below); never into the prompt or onto a command line.
+    const dbs = dbConnectionsFromRequest({ tools, databases });
+    const prompt = buildSystemPrompt(tc, targetUrl, pageNum, auth, env, buildDbSection(dbs) + buildSkillsSection(normalizeSkills(skills))) +
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
 
-    const verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
+    // withDbCredentials writes the file and removes it in a finally, so a crash or a stopped run cannot leave it behind
+    const verdict = await withDbCredentials(dbs, (dbFile) => runOpencode(prompt, workDir, assertResultFile, (ev) => {
       // Forward text narration
       if (ev.type === 'text' && ev.part?.text) {
         emitText(ev.part.text);
@@ -779,6 +817,9 @@ app.post('/', async (req, res) => {
       // Forward step labels as action events
       if (ev.type === 'tool_use' && ev.part?.tool) {
         emitText(`[${ev.part.tool}] ${ev.part.state?.title || ''}`);
+        // Queries and their (truncated, password-masked) results go to the test case log as evidence
+        const evidence = dbEvidence(ev.part, dbs);
+        if (evidence) emitText(evidence);
       }
 
       // Extract screenshots from tool results
@@ -787,8 +828,7 @@ app.post('/', async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body));
-
+    }, browserWs, resolveModelAndRegion(req.body), dbFile, tools));
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);
 

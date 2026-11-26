@@ -7,7 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git config --global user.name "x"
 
 # Install opencode and chrome-devtools-mcp globally
-RUN npm install -g opencode-ai@latest chrome-devtools-mcp@latest
+ARG OPENCODE_VERSION=1.19.6
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} chrome-devtools-mcp@latest
 
 WORKDIR /app
 COPY package.json .

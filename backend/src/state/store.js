@@ -8,10 +8,11 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadFeaturesAndCases, loadLegacyIdMap } from './db.js';
+import { normalizeTools, normalizeSkills, applyDefaults } from './skills.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_FILE = path.join(__dirname, 'testResults.json');
-const CONFIG_FILE  = path.join(__dirname, 'config.json');
+const CONFIG_FILE  = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');   // CONFIG_PATH: tests
 
 function loadPersistedConfig() {
   try {
@@ -95,6 +96,60 @@ export function normalizeEnvVars(list) {
   })).filter(v => ENV_NAME_RE.test(v.name));
 }
 
+// Database connections the testing agent may read during a run (read-only, no write mode;
+// the database user should be read-only too). The password is a secret: it is served to nobody but the
+// runtime (in the run request) and never returned by any GET.
+export const DB_LIMITS = { count: 10, description: 4000, ca: 20000 };
+export const DB_TYPES = ['mysql', 'postgres', 'sqlite'];
+export const DB_SSL = ['off', 'require', 'verify'];
+export const DB_DEFAULT_PORT = { mysql: 3306, postgres: 5432, sqlite: 0 };
+const dbIdentity = (v) => {
+  const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
+  return [type, String(v?.host || '').trim(), Number(v?.port) || DB_DEFAULT_PORT[type], String(v?.user || '').trim()].join('|');
+};
+/**
+ * The saved password may be reused (a request that sends no password) only for the same
+ * server and login: type, host, port and user unchanged. Returns the name of the first
+ * connection that omits its password but points somewhere else, or null.
+ */
+export function needsPasswordReentry(list, saved = []) {
+  for (const v of Array.isArray(list) ? list : []) {
+    if (typeof v?.password === 'string') continue;
+    const s = saved.find(x => x.name === String(v?.name || '').trim());
+    if (s?.password && dbIdentity(s) !== dbIdentity(v)) return s.name;
+  }
+  return null;
+}
+/**
+ * Clean a list of connections. A password that is not a string keeps the saved one of the
+ * same name, but only when host, port, user and type are unchanged (see needsPasswordReentry).
+ */
+export function normalizeDbConnections(list, saved = []) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, DB_LIMITS.count).map(v => {
+    const name = String(v?.name || '').trim();
+    const type = DB_TYPES.includes(v?.type) ? v.type : 'postgres';
+    const s = saved.find(x => x.name === name);
+    if (type === 'sqlite') {   // a file path in `database`; no server, login or TLS
+      return { name, type, host: '', port: 0, database: String(v?.database || '').trim(), user: '', password: '', ssl: 'off', sslCa: '',
+        description: String(v?.description ?? '').slice(0, DB_LIMITS.description), logResults: v?.logResults !== false, sample: !!v?.sample };
+    }
+    return {
+      name, type,
+      host: String(v?.host || '').trim(),
+      port: Number(v?.port) || DB_DEFAULT_PORT[type],
+      database: String(v?.database || '').trim(),
+      user: String(v?.user || '').trim(),
+      password: typeof v?.password === 'string' ? v.password : (s && dbIdentity(s) === dbIdentity(v) ? String(s.password || '') : ''),
+      ssl: DB_SSL.includes(v?.ssl) ? v.ssl : 'require',
+      sslCa: String(v?.sslCa || '').slice(0, DB_LIMITS.ca),   // a CA certificate is public: it may be served back
+      description: String(v?.description ?? '').slice(0, DB_LIMITS.description),
+      logResults: v?.logResults !== false,
+      sample: false,
+    };
+  }).filter(v => ENV_NAME_RE.test(v.name));
+}
+
 // Bedrock model ids are stored bare ("global.anthropic.claude-sonnet-5"); the
 // runtimes add the "amazon-bedrock/" prefix OpenCode wants.
 export const bareModelId = (id) => String(id || '').trim().replace(/^amazon-bedrock\//, '');
@@ -117,7 +172,26 @@ export const config = {
   agentcoreRuntimeArn: _persisted.agentcoreRuntimeArn ?? process.env.AGENTCORE_RUNTIME_ARN ?? null,
   auth:         normalizeAuth(_persisted.auth),
   envVars:      normalizeEnvVars(_persisted.envVars),
+  dbConnections: normalizeDbConnections(_persisted.dbConnections),
+  tools:        normalizeTools(_persisted.tools),
+  skills:       normalizeSkills(_persisted.skills),
+  // One-time changes already made to this config (see state/skills.js), so they never run twice.
+  flags:        { skillsMigrated: !!_persisted.flags?.skillsMigrated, cardDemoSeeded: !!_persisted.flags?.cardDemoSeeded },
 };
+
+// First start of this version: move connection descriptions into skills (config backed up first)
+// and add the CardDemo sample connection to an install that has no connections.
+{
+  const { state, changed } = applyDefaults(
+    { dbConnections: config.dbConnections, skills: config.skills, flags: config.flags },
+    () => { if (fs.existsSync(CONFIG_FILE)) fs.copyFileSync(CONFIG_FILE, `${CONFIG_FILE}.pre-skills-${Date.now()}.bak`); },
+  );
+  if (changed) {
+    Object.assign(config, state);
+    config.skills = normalizeSkills(config.skills);
+    queueMicrotask(() => saveConfig());
+  }
+}
 
 // If no persisted browser region and no env override, try to match the EC2 host
 export async function initEc2Region() {
@@ -138,6 +212,10 @@ export function saveConfig() {
         targetUrl:           config.targetUrl,
         auth:                config.auth,
         envVars:             config.envVars,
+        dbConnections:       config.dbConnections,
+        tools:               config.tools,
+        skills:              config.skills,
+        flags:               config.flags,
         bedrockModel:        config.bedrockModel,
         bedrockRegion:       config.bedrockRegion,
         agentModel:          config.agentModel,

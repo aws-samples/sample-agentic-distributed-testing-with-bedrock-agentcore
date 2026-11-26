@@ -36,5 +36,6 @@ case "${1:-}" in
 esac
 
 log "Building and starting agent-runtime-local (Docker)"
+bash ./init-sample-volume.sh   # the read-only sample database volume the compose file mounts
 docker compose up --build -d agent-runtime-local
 log "agent-runtime-local: http://localhost:4020"

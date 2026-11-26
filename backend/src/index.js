@@ -13,6 +13,8 @@ import { assignTcIds, bddFields, scenarioName } from './services/tcIds.js';
 import { replaceAllFeaturesAndCases } from './state/db.js';
 import { requireAuth, authEnabled } from './middleware/auth.js';
 import configRoutes   from './routes/config.js';
+import databaseRoutes from './routes/databases.js';
+import toolRoutes from './routes/tools.js';
 import featureRoutes   from './routes/features.js';
 import sessionRoutes  from './routes/sessions.js';
 import testRoutes     from './routes/tests.js';
@@ -84,6 +86,8 @@ if (authEnabled) console.log('[auth] Cognito verification enabled for /api/*');
 app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
 
 app.use('/api', configRoutes);
+app.use('/api', databaseRoutes);
+app.use('/api', toolRoutes);
 app.use('/api', featureRoutes);
 app.use('/api', sessionRoutes);
 app.use('/api', testRoutes);

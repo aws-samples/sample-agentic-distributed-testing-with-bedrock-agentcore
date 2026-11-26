@@ -1,0 +1,12 @@
+.wrap { display: flex; flex-direction: column; gap: 10px; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.head { display: flex; align-items: center; gap: 10px; }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.switch input { accent-color: var(--accent); cursor: pointer; }
+.name { font-size: 13px; font-weight: 700; color: var(--text); }
+.on { font-size: 11px; color: var(--green, #2e7d32); }
+.off { font-size: 11px; color: var(--text-muted); }
+.expand { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; font-family: inherit; }
+.expand:hover { color: var(--text); }
+.desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.panel { border-top: 1px solid var(--border); padding-top: 10px; }

@@ -16,7 +16,7 @@ const blocked = new net.BlockList();
 blocked.addSubnet('169.254.0.0', 16, 'ipv4');
 blocked.addSubnet('fe80::', 10, 'ipv6');
 blocked.addSubnet(['fd00', 'ec2', ''].join(':') + ':', 32, 'ipv6');
-function isLinkLocal(ip) {
+export function isLinkLocal(ip) {
   return blocked.check(ip, net.isIPv4(ip) ? 'ipv4' : 'ipv6');
 }
 

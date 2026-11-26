@@ -10,13 +10,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git config --global user.name "x"
 
 # Install opencode and chrome-devtools-mcp globally
-RUN npm install -g opencode-ai@latest chrome-devtools-mcp@latest
+ARG OPENCODE_VERSION=1.19.6
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} chrome-devtools-mcp@latest
 
 WORKDIR /app
 COPY package.json .
 RUN npm install --omit=dev
 
 COPY src/ src/
+
+# The agent's browser must not read this container's files (file:///tmp/, /proc/<pid>/environ):
+# managed Chromium policy blocks file:// (see the README, Database checks).
+COPY chromium-policy.json /etc/chromium/policies/managed/block-file.json
 
 # chrome-devtools-mcp will use CHROMIUM_PATH if set, or auto-detect chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium

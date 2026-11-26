@@ -12,3 +12,9 @@
 .themeBtn:hover { border-color: var(--accent); }
 .readonly { font-size: 12px; padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; }
 .error { font-size: 12px; color: var(--red); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 14px; font-size: 13px; font-weight: 600; font-family: inherit; color: var(--text-muted); cursor: pointer; }
+.tab:hover { color: var(--text); }
+.tabOn { color: var(--text); border-bottom-color: var(--accent); }
+.tabPanel { display: flex; flex-direction: column; gap: 12px; }
+.tabPanel[hidden] { display: none; }
