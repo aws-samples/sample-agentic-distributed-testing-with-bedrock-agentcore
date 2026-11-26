@@ -208,6 +208,17 @@
 }
 
 /* Status badges on TC rows */
+.draftBadge {
+  padding: 2px 6px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
 .statusBadge {
   padding: 2px 6px;
   border-radius: 8px;

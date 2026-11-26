@@ -60,3 +60,13 @@ export function normArray(val) {
   if (Array.isArray(val)) return val;
   return val ? [val] : [];
 }
+
+/**
+ * True when Given, When or Then holds at least one step with text in it.
+ * Empty and whitespace-only rows do not count. A case without steps is a draft:
+ * running it would cost an agent run for a verdict that means nothing.
+ */
+export function hasSteps(tc) {
+  return ['given', 'when', 'then'].some(k =>
+    normArray(tc?.[k]).some(s => typeof s === 'string' && s.trim() !== ''));
+}

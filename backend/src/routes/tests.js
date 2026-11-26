@@ -3,12 +3,17 @@ import { testRuns, stopFlags, sessions, config, testCasesByFeature, runLogs, act
 import { broadcast } from '../services/websocket.js';
 import { runFeatureTests } from '../services/runner.js';
 import { upsertRunRecord } from '../state/archive.js';
+import { hasSteps } from '../services/tcIds.js';
 
 const router = Router();
 
 router.post('/tests/run', (req, res) => {
-  const { testCases } = req.body;
-  if (!testCases?.length) return res.status(400).json({ error: 'testCases required' });
+  const { testCases: requested } = req.body;
+  if (!requested?.length) return res.status(400).json({ error: 'testCases required' });
+  // A case with no steps is a draft: skip it rather than spend an agent run on it.
+  const testCases = requested.filter(hasSteps);
+  const skipped = requested.filter(tc => !hasSteps(tc)).map(tc => tc?.id);
+  if (!testCases.length) return res.status(400).json({ error: 'No test case has any steps to run', skipped });
 
   const runId = `run-${Date.now()}`;
   testRuns[runId] = { runId, startedAt: new Date().toISOString(), results: {} };
@@ -96,7 +101,7 @@ router.post('/tests/run', (req, res) => {
 
   activeRunPromises.set(runId, runPromise);
 
-  res.json({ runId });
+  res.json({ runId, skipped });
 });
 
 router.get('/tests/run/:runId', (req, res) => {

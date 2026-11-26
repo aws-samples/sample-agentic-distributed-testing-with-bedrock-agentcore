@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import styles from './FeaturePanel.module.css'
 import Icon from './Icon'
+import { hasSteps } from '../utils/caseSteps'
 
 function toArr(v) {
   if (!v) return []
@@ -297,6 +298,9 @@ export default function FeaturePanel({
                           )}
                           <span className={styles.tcId}>{tc.id}</span>
                           <span className={styles.tcTitle}>{tc.title}</span>
+                          {!hasSteps(tc) && (
+                            <span className={styles.draftBadge} title="This test case has no steps, so Run All skips it">Draft: no steps</span>
+                          )}
                           {showStatusBadges && (
                             <span className={`${styles.statusBadge} ${styles['status_' + status]}`}>
                               <Icon name={statusIconName(status)} />
