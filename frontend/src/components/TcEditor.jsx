@@ -7,6 +7,7 @@ import BddHelpModal from './BddHelpModal'
 import { useApi } from '../context/useApi'
 import { toGherkin, fromGherkin } from '../utils/gherkin'
 import { tabEdit, enterEdit } from '../utils/textEdit'
+import { TITLE_MAX } from '../utils/caseSteps'
 
 const SECTIONS = [
   { key: 'given', label: 'Given', placeholder: "e.g. I'm a signed-in customer with a credit card account" },
@@ -69,7 +70,12 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
     const c = clean(draft)
     return { ...tc, title: c.title || tc.title, given: c.given, when: c.when, then: c.then }
   }
-  const canApply = !readOnly && (!onGherkin || gherkinOk)
+  // The title is required and has the server's length limit; Apply says why it is off.
+  const liveTitle = (onGherkin ? parsed.title : draft.title).trim()
+  const titleProblem = !liveTitle ? 'Scenario title is required'
+    : liveTitle.length > TITLE_MAX ? `Scenario title is longer than ${TITLE_MAX} characters` : ''
+  const canApply = !readOnly && (!onGherkin || gherkinOk) && !titleProblem
+  const applyHint = titleProblem || (!gherkinOk ? 'Fix the Gherkin errors first' : '')
 
   const show = (updated) => {          // refresh both views from one test case
     setDraft(toDraft(updated))
@@ -93,10 +99,10 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
   const handleSwitchTab = (tab) => {
     if (tab === activeTab) return
     if (tab === 'gherkin') {
-      setGherkin(toGherkin({ ...tc, title: clean(draft).title || tc.title, ...clean(draft) }))
+      setGherkin(toGherkin({ ...tc, ...clean(draft) }))
     } else {
       if (!gherkinOk) { setSwitchBlocked(true); return }   // don't throw away text that doesn't parse yet
-      setDraft({ title: parsed.title.trim() || tc.title, given: parsed.given, when: parsed.when, then: parsed.then })
+      setDraft({ title: parsed.title.trim(), given: parsed.given, when: parsed.when, then: parsed.then })
     }
     setSwitchBlocked(false)
     setActiveTab(tab)
@@ -163,11 +169,11 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
   return (
     <div className={styles.container}>
       <div className={styles.topActions}>
-        <Btn variant="primary" disabled={!canApply} onClick={handleApply}>
+        <Btn variant="primary" disabled={!canApply} onClick={handleApply} title={!readOnly ? applyHint : undefined}>
           <Icon name="check" />Apply Changes
         </Btn>
         <Btn disabled={readOnly || !canApply} onClick={() => setAiOpen(true)}
-          title={!canApply && !readOnly ? 'Fix the Gherkin errors first' : 'Describe what to change, or pick a preset, and review the AI\'s edit before saving'}>
+          title={!canApply && !readOnly ? applyHint : 'Describe what to change, or pick a preset, and review the AI\'s edit before saving'}>
           <Icon name="auto_awesome" />Edit with AI
         </Btn>
         {onDuplicate && (
@@ -209,7 +215,12 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
               onChange={(e) => setDraft(d => ({ ...d, title: e.target.value }))}
               placeholder="What this test case proves, in one line"
               disabled={readOnly}
+              maxLength={TITLE_MAX}
+              aria-required="true"
+              aria-invalid={titleProblem ? 'true' : undefined}
+              aria-describedby={titleProblem ? 'tc-title-error' : undefined}
             />
+            {titleProblem && <div id="tc-title-error" className={styles.fieldError} role="alert">{titleProblem}</div>}
           </div>
 
           {SECTIONS.map(({ key, label, placeholder }) => (
@@ -261,8 +272,9 @@ export default function TcEditor({ tc, onApply, onDelete, onDuplicate, readOnly 
             disabled={readOnly}
             placeholder={'Scenario: Customer pays the full card balance\n\nGiven:\n  - I am a signed-in customer with a credit card account\nWhen:\n  - I pay the full balance\nThen:\n  - I see a confirmation\n  - the balance shows as zero'}
           />
-          {(parsed.errors.length > 0 || parsed.warnings.length > 0 || switchBlocked) && (
+          {(parsed.errors.length > 0 || parsed.warnings.length > 0 || switchBlocked || titleProblem) && (
             <div className={styles.gherkinMsgs}>
+              {titleProblem && <div className={styles.gherkinErr}>{titleProblem}. Add it after <code>Scenario:</code>.</div>}
               {switchBlocked && <div className={styles.gherkinErr}>Fix the errors below before switching to the Editor tab, so nothing you typed is lost.</div>}
               {parsed.errors.map((m, i) => <div key={'e' + i} className={styles.gherkinErr}>{m}</div>)}
               {parsed.warnings.map((m, i) => <div key={'w' + i} className={styles.gherkinWarn}>{m}</div>)}

@@ -63,6 +63,8 @@
   font-family: inherit;
 }
 .fieldInput:focus { border-color: var(--accent); }
+.fieldInput[aria-invalid='true'] { border-color: var(--red); }
+.fieldError { margin-top: 4px; font-size: 12px; color: var(--red); }
 
 .fieldTextarea {
   resize: vertical;
