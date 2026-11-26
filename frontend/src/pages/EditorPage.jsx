@@ -68,6 +68,9 @@ export default function EditorPage() {
   const [targetUrlDirty, setTargetUrlDirty] = useState(false)
   const urlCheckSeq = useRef(0) // bumped on edit and on each check so late responses are dropped
   const [urlCheck, setUrlCheck] = useState(null) // null | { loading } | result from the backend
+  // The last deleted test case, kept for the Undo toast: { tc, featName, index, key }.
+  // shortcut: only the latest delete can be undone, and only until the toast closes or the page reloads.
+  const [undoDelete, setUndoDelete] = useState(null)
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authSummary, setAuthSummary] = useState({ enabled: false, count: 0 })   // for the button badge
   // Read-only mode while a test run is in progress
@@ -459,9 +462,13 @@ export default function EditorPage() {
     setStatusMsg('Changes applied', 'ok')
   }
 
+  // Deletes straight away; the Undo toast puts the case back where it was.
   const handleDeleteTc = () => {
-    if (!selectedTcId) return
-    if (!confirm(`Delete ${selectedTcId}?`)) return
+    if (!selectedTcId || selectedFeatIdx == null) return
+    const feat = doc.features[selectedFeatIdx]
+    const index = (feat?.testCases || []).findIndex(t => t.id === selectedTcId)
+    if (index === -1) return
+    setUndoDelete({ tc: feat.testCases[index], featName: feat.name, index, key: Date.now() })
     setDoc(prev => {
       const feats = prev.features.map((m, i) => {
         if (i !== selectedFeatIdx) return m
@@ -471,6 +478,31 @@ export default function EditorPage() {
     })
     setSelectedTcId(null)
     setDirty(true)
+  }
+
+  const handleUndoDelete = () => {
+    if (!undoDelete) return
+    const { tc, featName, index } = undoDelete
+    const featIdx = doc.features.findIndex(m => m.name === featName)
+    setUndoDelete(null)
+    if (featIdx === -1) { setStatusMsg('Cannot restore: its feature was deleted', 'err'); return }
+    // Ids are the highest number + 1, so a new case may have taken this id meanwhile.
+    const taken = doc.features.some(m => (m.testCases || []).some(t => t.id === tc.id))
+    const restored = taken ? { ...tc, id: nextTcId(doc.features) } : tc
+    setDoc(prev => ({
+      ...prev,
+      features: prev.features.map((m, i) => {
+        if (i !== featIdx) return m
+        const cases = [...(m.testCases || [])]
+        cases.splice(Math.min(index, cases.length), 0, restored)
+        return { ...m, testCases: cases }
+      }),
+    }))
+    setSelectedFeatIdx(featIdx)
+    setSelectedTcId(restored.id)
+    setExpandedFeatNames(p => new Set(p).add(featName))
+    setDirty(true)
+    setStatusMsg(`Restored ${restored.id}`, 'ok')
   }
 
   // Build feature data for panel
@@ -641,6 +673,12 @@ export default function EditorPage() {
             ? `Reachable: HTTP ${urlCheck.status}, ${urlCheck.responseTimeMs} ms${urlCheck.finalUrl && urlCheck.finalUrl !== targetUrl.trim() ? `, final URL ${urlCheck.finalUrl}` : ''}`
             : `Not reachable: ${urlCheck.reason}`}
           {urlCheck.checkedFrom && ' (checked from the backend; AgentCore Browser may see a different network)'}
+        </Toast>
+      )}
+      {undoDelete && (
+        <Toast key={undoDelete.key} className={styles.undoToast} kind="success" autoDismissMs={15000} onClose={() => setUndoDelete(null)}>
+          Deleted {undoDelete.tc.id} “{undoDelete.tc.title}”.{' '}
+          <button type="button" className={styles.undoBtn} onClick={handleUndoDelete} disabled={readOnly}>Undo</button>
         </Toast>
       )}
       <ImportModal
