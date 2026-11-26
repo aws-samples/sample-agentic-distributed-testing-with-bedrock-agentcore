@@ -3,6 +3,7 @@ import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@a
 import { config } from '../state/store.js';
 import yaml from 'js-yaml';
 import { formatTcId, bddFields } from '../services/tcIds.js';
+import { extractJsonObject } from '../services/aiJson.js';
 
 const router = Router();
 
@@ -236,6 +237,15 @@ function asLines(v) {
   return arr.map(x => String(x).trim()).filter(Boolean);
 }
 
+// The model replied, but not with a test case we can read. The reason goes to the
+// log; the user gets one sentence they can act on.
+function unusableReply(reason) {
+  const e = new Error(`unusable model reply: ${reason}`);
+  e.status = 422;
+  e.userMessage = 'The AI reply could not be read as a test case. Try again.';
+  return e;
+}
+
 async function editWithAi(req, res) {
   const mode = req.body?.mode === 'create' ? 'create' : 'edit';
   const focus = [...new Set((Array.isArray(req.body?.focus) ? req.body.focus : []).filter(f => ENHANCE_FOCUS[f]))];
@@ -286,11 +296,8 @@ async function editWithAi(req, res) {
     // Reasoning models put a reasoning block before the text block, so take
     // every text block rather than assuming content[0].
     const text = (resp.output?.message?.content || []).map(b => b.text || '').join('').trim();
-    const start = text.indexOf('{'), end = text.lastIndexOf('}');
-    if (start === -1 || end <= start) throw new Error('The model did not return JSON');
-    let parsed;
-    try { parsed = JSON.parse(text.slice(start, end + 1)); }
-    catch (e) { throw new Error(`The model returned invalid JSON: ${e.message}`); }
+    const { value: parsed, error: why } = extractJsonObject(text);
+    if (!parsed) throw unusableReply(why);
 
     const enhanced = {
       title: String(parsed.title || original.title).trim() || original.title,
@@ -300,13 +307,15 @@ async function editWithAi(req, res) {
     };
     // Guard against a lossy rewrite (edit) or an empty draft (create): a test
     // without actions or outcomes is not a test.
-    if ((mode === 'create' || original.when.length) && !enhanced.when.length) throw new Error('The model returned no "When" steps');
-    if ((mode === 'create' || original.then.length) && !enhanced.then.length) throw new Error('The model returned no "Then" outcomes');
-    if (mode === 'create' && !enhanced.title) throw new Error('The model returned no scenario title');
+    if ((mode === 'create' || original.when.length) && !enhanced.when.length) throw unusableReply('the reply has no "When" steps');
+    if ((mode === 'create' || original.then.length) && !enhanced.then.length) throw unusableReply('the reply has no "Then" outcomes');
+    if (mode === 'create' && !enhanced.title) throw unusableReply('the reply has no scenario title');
     res.json({ mode, original, enhanced, summary: String(parsed.summary || '').trim(), focus, instruction, model: config.bedrockModel });
   } catch (e) {
     console.error(`[edit-with-ai:${mode}] error:`, e.message);
-    res.status(502).json({ error: e.message });
+    // 422: the model answered but not with a usable test case, so trying again can work.
+    // 502: the call to the model itself failed.
+    res.status(e.status || 502).json({ error: e.userMessage || e.message });
   }
 }
 
