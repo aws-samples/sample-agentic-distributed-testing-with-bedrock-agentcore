@@ -7,9 +7,9 @@ import styles from './ImportModal.module.css'
 import { readTextFile } from '../utils/readFile'
 import { parseSuiteYaml } from '../utils/importSuite'
 import { IMPORT_TEMPLATE_YAML, downloadText } from '../utils/samples'
+import { previewRows, unsavedBlock } from '../utils/importPreview'
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
-const ROWS_SHOWN = 10   // a feature's list collapses after this many rows ("and 23 more")
 
 /**
  * Import a test suite from a YAML file. Two modes:
@@ -23,7 +23,8 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)   // the backend's dry-run answer
   const [busy, setBusy] = useState(false)
-  const needsSave = mode === 'add' && !!dirty   // the check runs against the saved suite
+  const saveMessage = unsavedBlock({ mode, dirty })   // both modes wait for unsaved edits
+  const needsSave = !!saveMessage
 
   useEffect(() => { if (open) { setMode('add'); setPicked(null); setError(''); setPreview(null) } }, [open])
 
@@ -73,7 +74,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
           <Icon name="upload" />Add to suite
         </Btn>
       ) : (
-        <Btn variant="primary" disabled={!picked} onClick={() => onReplace(picked.doc, picked.name)}>
+        <Btn variant="primary" disabled={!picked || needsSave} onClick={() => onReplace(picked.doc, picked.name)}>
           <Icon name="upload_file" />Replace suite{picked ? ` with ${plural(picked.summary.cases, 'test case')}` : ''}
         </Btn>
       )}
@@ -81,7 +82,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
   )
 
   return (
-    <Modal open={open} onClose={onClose} title="Import test suite" width="min(560px, 94vw)" footer={footer}>
+    <Modal open={open} onClose={onClose} closeOnEscape title="Import test suite" width="min(560px, 94vw)" footer={footer}>
       <div className={styles.body}>
         <div className={styles.modes} role="radiogroup" aria-label="How to import">
           <ModeChoice
@@ -127,7 +128,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
           <div className={styles.replace} role="alert">
             <Icon name="warning" size={16} />
             <div>
-              You have unsaved changes in the editor. Add to suite checks the file against the saved suite, so they need saving first.
+              {saveMessage}
               {' '}<Btn size="sm" disabled={busy} onClick={saveFirst}>Save my changes and continue</Btn>
             </div>
           </div>
@@ -188,10 +189,7 @@ function AddPreview({ fileName, found, preview }) {
 
 function FeatureGroup({ f }) {
   const [showAll, setShowAll] = useState(false)
-  // Skipped rows come first so the reason is never behind "and N more".
-  const rows = [...f.skip.map(c => ({ kind: 'skip', ...c })), ...f.add.map(c => ({ kind: 'add', title: c.title }))]
-  const shown = showAll ? rows : rows.slice(0, Math.max(ROWS_SHOWN, f.skip.length))
-  const hidden = rows.length - shown.length
+  const { rows: shown, hidden } = previewRows(f, showAll)
   return (
     <div className={styles.grp}>
       <div className={styles.gh}>
@@ -216,7 +214,7 @@ function FeatureGroup({ f }) {
           <span className={styles.sign} />and {hidden} more
         </button>
       )}
-      {rows.length === 0 && <div className={`${styles.row} ${styles.more}`}><span className={styles.sign} />No test cases in this feature</div>}
+      {shown.length === 0 && <div className={`${styles.row} ${styles.more}`}><span className={styles.sign} />No test cases in this feature</div>}
     </div>
   )
 }

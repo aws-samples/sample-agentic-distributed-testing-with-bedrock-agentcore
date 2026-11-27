@@ -2,7 +2,9 @@ import { useEffect, useId, useRef } from 'react'
 import styles from './Modal.module.css'
 import Icon from './Icon'
 
-export default function Modal({ open, onClose, title, children, footer, width }) {
+// closeOnEscape is opt-in so dialogs holding typed input (AI drafts, settings) keep
+// their current behaviour; a click outside still closes every dialog as before.
+export default function Modal({ open, onClose, title, children, footer, width, closeOnEscape = false }) {
   const titleId = useId()
   const boxRef = useRef(null)
   // Move focus into the dialog on open and give it back to the opener on close.
@@ -13,6 +15,7 @@ export default function Modal({ open, onClose, title, children, footer, width })
     return () => { if (opener instanceof HTMLElement) opener.focus() }
   }, [open])
   if (!open) return null
+  const onKeyDown = (e) => { if (closeOnEscape && e.key === 'Escape') { e.stopPropagation(); onClose() } }
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div
@@ -21,6 +24,7 @@ export default function Modal({ open, onClose, title, children, footer, width })
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
+        onKeyDown={onKeyDown}
         className={styles.box}
         style={width ? { width } : undefined}
         onClick={(e) => e.stopPropagation()}
