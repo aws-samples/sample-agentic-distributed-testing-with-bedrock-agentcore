@@ -17,18 +17,19 @@ const ROWS_SHOWN = 10   // a feature's list collapses after this many rows ("and
  *   and returns a preview (onPreviewAdd); nothing is written until "Add to suite" is clicked.
  * - "Replace suite": the file replaces every feature and test case (onReplace).
  */
-export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, onConfirmAdd, existingCount }) {
+export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, onConfirmAdd, existingCount, dirty, onSaveChanges }) {
   const [mode, setMode] = useState('add')
   const [picked, setPicked] = useState(null)     // { name, text, doc, summary }
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)   // the backend's dry-run answer
   const [busy, setBusy] = useState(false)
+  const needsSave = mode === 'add' && !!dirty   // the check runs against the saved suite
 
   useEffect(() => { if (open) { setMode('add'); setPicked(null); setError(''); setPreview(null) } }, [open])
 
   // Ask for a fresh preview whenever a file is picked in Add mode.
   useEffect(() => {
-    if (!open || mode !== 'add' || !picked) return
+    if (!open || mode !== 'add' || !picked || needsSave) return
     let stale = false
     setPreview(null); setBusy(true); setError('')
     onPreviewAdd(picked.text)
@@ -36,7 +37,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
       .catch(e => { if (!stale) setError(e.message) })
       .finally(() => { if (!stale) setBusy(false) })
     return () => { stale = true }
-  }, [open, mode, picked]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, mode, picked, needsSave]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onFile = async (file) => {
     setError(''); setPicked(null); setPreview(null)
@@ -47,6 +48,12 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
     } catch (e) {
       setError(e.message)
     }
+  }
+
+  const saveFirst = async () => {
+    setBusy(true); setError('')
+    try { if (!(await onSaveChanges())) setError('Your changes could not be saved. Try again.') }
+    finally { setBusy(false) }
   }
 
   const confirmAdd = async () => {
@@ -62,7 +69,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
     <>
       <Btn onClick={onClose}>Cancel</Btn>
       {mode === 'add' ? (
-        <Btn variant="primary" disabled={!preview || nothingToAdd || busy} onClick={confirmAdd}>
+        <Btn variant="primary" disabled={!preview || nothingToAdd || busy || needsSave} onClick={confirmAdd}>
           <Icon name="upload" />Add to suite
         </Btn>
       ) : (
@@ -116,8 +123,18 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
           <div className={styles.error} role="alert"><Icon name="error" size={16} /><div className={styles.errorText}>{error}</div></div>
         )}
 
+        {needsSave && (
+          <div className={styles.replace} role="alert">
+            <Icon name="warning" size={16} />
+            <div>
+              You have unsaved changes in the editor. Add to suite checks the file against the saved suite, so they need saving first.
+              {' '}<Btn size="sm" disabled={busy} onClick={saveFirst}>Save my changes and continue</Btn>
+            </div>
+          </div>
+        )}
+
         {mode === 'add' && picked && busy && !preview && <div className={styles.sub}>Checking the file against your current suite…</div>}
-        {mode === 'add' && picked && preview && <AddPreview fileName={picked.name} found={picked.summary.cases} preview={preview} />}
+        {mode === 'add' && picked && preview && !needsSave && <AddPreview fileName={picked.name} found={picked.summary.cases} preview={preview} />}
 
         {mode === 'replace' && picked && (
           <div className={styles.ok}>
@@ -171,8 +188,9 @@ function AddPreview({ fileName, found, preview }) {
 
 function FeatureGroup({ f }) {
   const [showAll, setShowAll] = useState(false)
-  const rows = [...f.add.map(c => ({ kind: 'add', title: c.title })), ...f.skip.map(c => ({ kind: 'skip', ...c }))]
-  const shown = showAll ? rows : rows.slice(0, ROWS_SHOWN)
+  // Skipped rows come first so the reason is never behind "and N more".
+  const rows = [...f.skip.map(c => ({ kind: 'skip', ...c })), ...f.add.map(c => ({ kind: 'add', title: c.title }))]
+  const shown = showAll ? rows : rows.slice(0, Math.max(ROWS_SHOWN, f.skip.length))
   const hidden = rows.length - shown.length
   return (
     <div className={styles.grp}>
@@ -183,7 +201,7 @@ function FeatureGroup({ f }) {
         </span>
         <span className={styles.cnt}>{f.add.length} added{f.skip.length ? ` · ${f.skip.length} skipped` : ''}</span>
       </div>
-      {f.backgroundDiffers && (
+      {f.status === 'merged' && f.backgroundDiffers && (
         <div className={styles.bgNote}><Icon name="warning" size={14} /> Your file has a different Background. It was not applied: the existing Background is kept.</div>
       )}
       {shown.map((r, i) => (

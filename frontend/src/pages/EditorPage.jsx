@@ -199,10 +199,10 @@ export default function EditorPage() {
     setStatusMsg('Imported ' + fileName, 'ok')
   }
 
-  // "Add to suite": the backend checks the file against the SAVED suite, so unsaved edits go first.
+  // "Add to suite": the backend checks the file against the SAVED suite; the modal asks before saving unsaved edits.
+  const handleSaveBeforeImport = async () => { clearTimeout(saveTimerRef.current); return saveToBackend() }
   const handlePreviewAdd = async (text) => {
-    clearTimeout(saveTimerRef.current)
-    if (dirty && !(await saveToBackend())) throw new Error('Your unsaved changes could not be saved, so the file was not checked. Try again.')
+    if (dirty) throw new Error('Save your changes first, then choose the file again.')
     return api.importYaml(text, { mode: 'add', dryRun: true })
   }
   const handleConfirmAdd = async (text, fileName) => {
@@ -619,6 +619,8 @@ export default function EditorPage() {
         onPreviewAdd={handlePreviewAdd}
         onConfirmAdd={handleConfirmAdd}
         existingCount={doc.features.length}
+        dirty={dirty}
+        onSaveChanges={handleSaveBeforeImport}
       />
       <AuthModal
         open={authModalOpen}

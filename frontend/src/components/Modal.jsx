@@ -1,17 +1,32 @@
+import { useEffect, useId, useRef } from 'react'
 import styles from './Modal.module.css'
 import Icon from './Icon'
 
 export default function Modal({ open, onClose, title, children, footer, width }) {
+  const titleId = useId()
+  const boxRef = useRef(null)
+  // Move focus into the dialog on open and give it back to the opener on close.
+  useEffect(() => {
+    if (!open) return
+    const opener = document.activeElement
+    boxRef.current?.focus()
+    return () => { if (opener instanceof HTMLElement) opener.focus() }
+  }, [open])
   if (!open) return null
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div
+        ref={boxRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className={styles.box}
         style={width ? { width } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
-          <span>{title}</span>
+          <span id={titleId}>{title}</span>
           <span style={{ flex: 1 }} />
           <button className="btn btn-sm" onClick={onClose}><Icon name="close" size={14} /></button>
         </div>

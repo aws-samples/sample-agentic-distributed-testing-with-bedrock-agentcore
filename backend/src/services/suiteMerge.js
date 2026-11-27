@@ -49,8 +49,8 @@ export function planAddToSuite(suite, featureDefs) {
       groups.push(group);
     }
     const { group, existing, taken } = entry;
-    // The same feature can appear twice in one file; the first Background wins there too.
-    if (background && background !== group.background) group.backgroundDiffers = true;
+    // Only a merge has an existing Background to differ from; a new feature takes the file's (first one wins if it repeats).
+    if (group.status === 'merged' && background && background !== group.background) group.backgroundDiffers = true;
 
     for (const raw of Array.isArray(def.testCases) ? def.testCases : []) {
       const tc = raw && typeof raw === 'object' ? raw : {};

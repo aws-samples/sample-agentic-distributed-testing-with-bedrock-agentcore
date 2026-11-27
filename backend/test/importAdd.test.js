@@ -177,3 +177,12 @@ test('Replace suite still replaces: features not in the file are removed', async
   assert.deepEqual(saved(), { Login: ['TC001 Wrong password'] });
   assert.deepEqual(featureList, ['Login']);
 });
+
+test('a new feature never carries a Background warning, even when the file repeats it with another Background', async () => {
+  const body = await (await preview(suite([
+    { name: 'Login', description: 'Given A', testCases: [tc(null, 'One')] },
+    { name: 'Login', description: 'Given B', testCases: [tc(null, 'Two')] },
+  ]))).json();
+  assert.equal(body.features[0].status, 'added');
+  assert.equal(body.features[0].backgroundDiffers, false);
+});
