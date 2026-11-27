@@ -162,7 +162,7 @@ export default function TcEvidencePanel({ tc }) {
                 const kind = entry.kind || entry.type || 'info'
                 return (
                   <div key={i} className={`${styles.logEntry} ${styles['logEntry_' + kind] || styles.logEntry_info}`}>
-                    {entry.ts && <span className={styles.logTs}>{entry.ts}</span>}
+                    {entry.ts && <span className={styles.logTs}>{logTime(entry.ts)}</span>}
                     {entry.msg}
                   </div>
                 )
@@ -207,6 +207,12 @@ export default function TcEvidencePanel({ tc }) {
       })()}
     </div>
   )
+}
+
+// New runs store ISO times; older archived runs stored a server-local time string.
+function logTime(ts) {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString()
 }
 
 function statusLabel(status) {

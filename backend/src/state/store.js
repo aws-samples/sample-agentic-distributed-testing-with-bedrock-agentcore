@@ -119,9 +119,10 @@ export const config = {
   envVars:      normalizeEnvVars(_persisted.envVars),
   // Per-test-case limits (services/runner.js): one agent call is aborted after
   // caseTimeoutMs and recorded as ERROR: timeout; an ERROR is retried up to
-  // caseMaxRetries times, each attempt kept on the case record.
+  // caseMaxRetries times, each attempt kept on the case record. Default 0:
+  // a retry runs the agent again and is paid for again.
   caseTimeoutMs:  envInt('CASE_TIMEOUT_MS', 600_000, 1_000),
-  caseMaxRetries: envInt('CASE_MAX_RETRIES', 1, 0),
+  caseMaxRetries: envInt('CASE_MAX_RETRIES', 0, 0),
 };
 
 function envInt(name, fallback, min) {
