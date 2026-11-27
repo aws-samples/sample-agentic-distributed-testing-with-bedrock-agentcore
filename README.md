@@ -189,6 +189,8 @@ The platform orchestrates browser agents against a target app. Three scripts set
 
 Both runtimes can exist at once; pick which one runs the agents in the platform's Settings → Agent Mode (`AGENT_MODE` in `.env` is only the initial default). The AgentCore region is decided by `init-agentcore-runtime.sh` and is shown read-only in Settings. Restart the backend after running it — it only reads `.env` / `config.json` at start-up. Connect does not deploy anything: the AgentCore Runtime must exist first. Each script has `--destroy`, which removes everything that script created (containers, images and volumes for the Docker ones; the CloudFormation stack for AgentCore). The two Docker scripts also have `--down`, which only stops containers.
 
+**Per-case limits (`.env`, read at backend start-up):** `CASE_TIMEOUT_MS` (default `600000`) aborts one agent call and records the case as `ERROR: timeout`; the runtime stops the agent process when the request closes. `CASE_MAX_RETRIES` (default `0`) is how many times a case that ended in `ERROR` (no verdict, runtime error, timeout) is run again. Each retry is another paid agent run, so it is off by default; set `1` to retry once. In the Runner, `ERROR` means the run broke (no verdict) and `FAIL` means the app failed; `SKIPPED` cases were not run because the run was stopped.
+
 ```bash
 # Copy the example env and adjust as needed
 cp .env.example .env
