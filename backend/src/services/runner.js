@@ -174,6 +174,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
   for (const tc of testCases) {
     if (stopFlags[runId]) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'SKIPPED', reason: 'Run stopped before this case' };
+      saveTestResult(tc.id, 'SKIPPED', 'Run stopped before this case');
       broadcast({ type: 'test_skipped', testId: tc.id, sessionId, runId });
       continue;
     }
