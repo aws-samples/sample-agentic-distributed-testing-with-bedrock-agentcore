@@ -27,9 +27,13 @@ function useSnapshotUrls(snapshots) {
   return urls
 }
 
+// Stable fallback: a fresh [] on each render would re-run useSnapshotUrls'
+// effect, whose setUrls({}) re-renders again (issue #66).
+const NO_SNAPSHOTS = []
+
 export default function TcEvidencePanel({ tc }) {
   const [lightboxIndex, setLightboxIndex] = useState(null)
-  const snapshots = tc?.snapshots || []
+  const snapshots = tc?.snapshots || NO_SNAPSHOTS
   const snapshotUrls = useSnapshotUrls(snapshots)
 
   useEffect(() => {
