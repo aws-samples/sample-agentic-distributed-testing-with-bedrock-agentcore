@@ -47,7 +47,7 @@ export default function RunHistoryList({ runs = [], selectedRunId, onSelect, onR
 
         {runs.map((run, idx) => {
           const isActive = run.runId === selectedRunId
-          const { total = 0, pass = 0, fail = 0, pending = 0 } = run.summary || {}
+          const { total = 0, pass = 0, fail = 0, error = 0, skipped = 0, pending = 0 } = run.summary || {}
           return (
             <div
               key={run.runId}
@@ -70,6 +70,16 @@ export default function RunHistoryList({ runs = [], selectedRunId, onSelect, onR
                 {fail > 0 && (
                   <span className={styles.badge} data-type="fail">
                     {fail}<Icon name="cancel" />
+                  </span>
+                )}
+                {error > 0 && (
+                  <span className={styles.badge} data-type="error" title="Infrastructure error (no verdict)">
+                    {error}<Icon name="error" />
+                  </span>
+                )}
+                {skipped > 0 && (
+                  <span className={styles.badge} data-type="skipped" title="Skipped">
+                    {skipped}<Icon name="block" />
                   </span>
                 )}
                 {pending > 0 && (

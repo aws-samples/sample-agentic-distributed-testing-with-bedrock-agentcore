@@ -8,6 +8,7 @@ import BrowserCell from '../components/BrowserCell'
 import FocusModal from '../components/FocusModal'
 import Btn from '../components/Btn'
 import Icon from '../components/Icon'
+import Toast from '../components/Toast'
 import { SEED_TEST_CASES } from '../data/seedTestCases'
 import { useStickToBottom } from '../hooks/useStickToBottom'
 import styles from './RunnerPage.module.css'
@@ -46,7 +47,12 @@ export default function RunnerPage() {
     if (!isRunning && stopping) dispatch({ type: 'SET_STOPPING', stopping: false })
   }, [isRunning, stopping, dispatch])
 
+  // One toast for run errors (the run broke, not the app); counts the ERROR results
+  // that arrive until it is closed.
+  const [errorToast, setErrorToast] = useState(0)
+
   const addLog = useCallback((msg, type = '') => {
+    if (type === 'error') setErrorToast(n => n + 1)
     const ts = new Date().toLocaleTimeString()
     setLogs(prev => {
       const next = [...prev, { ts, msg, type }]
@@ -168,7 +174,7 @@ export default function RunnerPage() {
 
   // Stats
   const allTcs = Object.values(state.testCases).flat()
-  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0
+  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0, statError = 0, statSkipped = 0
   for (const tc of allTcs) {
     const r = state.testResults[tc.id]
     const s = r ? r.status : 'PENDING'
@@ -176,7 +182,11 @@ export default function RunnerPage() {
     else if (s === 'RUNNING') statRunning++
     else if (s === 'PASS') statPass++
     else if (s === 'FAIL') statFail++
+    else if (s === 'ERROR') statError++
+    else if (s === 'SKIPPED') statSkipped++
   }
+  // Every case that has an outcome, so the count reaches the total after a Stop too.
+  const statDone = statPass + statFail + statError + statSkipped
 
   // Filtered TCs for left panel
   const filteredTestCases = {}
@@ -364,6 +374,18 @@ export default function RunnerPage() {
         <span className={`${styles.statValue} ${styles.statFail}`}>{statFail}</span>
         <span> fail</span>
       </div>
+      <div className={styles.statItem} title="Infrastructure error: no verdict from the agent">
+        <span className={`${styles.statValue} ${styles.statError}`}>{statError}</span>
+        <span> error</span>
+      </div>
+      <div className={styles.statItem} title="Not run: the run was stopped first">
+        <span className={`${styles.statValue} ${styles.statSkipped}`}>{statSkipped}</span>
+        <span> skipped</span>
+      </div>
+      <div className={styles.statItem}>
+        <span className={`${styles.statValue} ${styles.statDone}`}>{statDone}</span>
+        <span> of {allTcs.length} done</span>
+      </div>
     </div>
   )
 
@@ -404,6 +426,14 @@ export default function RunnerPage() {
           className={`${styles.filterBtn}${filterStatus === 'FAIL' ? ' ' + styles.filterBtnActive : ''}`}
           onClick={() => setFilterStatus('FAIL')}
         >Fail</button>
+        <button
+          className={`${styles.filterBtn}${filterStatus === 'ERROR' ? ' ' + styles.filterBtnActive : ''}`}
+          onClick={() => setFilterStatus('ERROR')}
+        >Error</button>
+        <button
+          className={`${styles.filterBtn}${filterStatus === 'SKIPPED' ? ' ' + styles.filterBtnActive : ''}`}
+          onClick={() => setFilterStatus('SKIPPED')}
+        >Skipped</button>
       </div>
     </>
   )
@@ -411,6 +441,11 @@ export default function RunnerPage() {
   return (
     <div className={styles.page}>
       <NavBar />
+      {errorToast > 0 && (
+        <Toast kind="error" onClose={() => setErrorToast(0)}>
+          {errorToast} run error{errorToast === 1 ? '' : 's'}: the run broke (no verdict, timeout or runtime error), not the app. Use the Error filter to see them.
+        </Toast>
+      )}
       <div className={styles.main}>
         <FeaturePanel
           features={state.features}

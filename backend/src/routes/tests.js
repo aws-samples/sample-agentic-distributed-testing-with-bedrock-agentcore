@@ -27,7 +27,7 @@ router.post('/tests/run', (req, res) => {
     const run = testRuns[runId] || {};
     const results = run.results || {};
     const features = {};
-    let total = 0, pass = 0, fail = 0, pending = 0;
+    let total = 0, pass = 0, fail = 0, error = 0, skipped = 0, pending = 0;
 
     for (const [feat, tcs] of Object.entries(byFeature)) {
       const cases = tcs.map(tc => {
@@ -42,6 +42,8 @@ router.post('/tests/run', (req, res) => {
         total++;
         if (status === 'PASS') pass++;
         else if (status === 'FAIL') fail++;
+        else if (status === 'ERROR') error++;     // infrastructure, not a product defect
+        else if (status === 'SKIPPED') skipped++;
         else pending++; // covers RUNNING and PENDING alike in the summary badge
 
         return {
@@ -51,6 +53,8 @@ router.post('/tests/run', (req, res) => {
           reason: r.reason || '',
           snapshots: r.snapshots || [],  // [{key, ts, action, seq}] uploaded to S3
           logs: (runLogs[runId]?.[tc.id]) || [],
+          // Every attempt of this case: [{ n, status, reason, startedAt, endedAt }].
+          ...(r.attempts?.length ? { attempts: r.attempts } : {}),
         };
       });
       features[feat] = { cases };
@@ -62,7 +66,7 @@ router.post('/tests/run', (req, res) => {
       completedAt,
       stopped: !!stopFlags[runId],
       targetUrl: config.targetUrl,
-      summary: { total, pass, fail, pending },
+      summary: { total, pass, fail, error, skipped, pending },
       features,
     };
   }

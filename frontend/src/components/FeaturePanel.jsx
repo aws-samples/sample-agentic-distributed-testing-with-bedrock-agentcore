@@ -64,6 +64,8 @@ export default function FeaturePanel({
   const statusIconName = (s) => {
     if (s === 'PASS') return 'check_circle'
     if (s === 'FAIL') return 'cancel'
+    if (s === 'ERROR') return 'error'
+    if (s === 'SKIPPED') return 'block'
     if (s === 'RUNNING') return 'progress_activity'
     return 'radio_button_unchecked'
   }

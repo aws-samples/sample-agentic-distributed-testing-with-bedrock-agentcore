@@ -98,6 +98,18 @@ export default function TcEvidencePanel({ tc }) {
           )}
         </section>
 
+        {/* Every attempt when the case was retried after an ERROR (#40) */}
+        {tc.attempts?.length > 1 && (
+          <section className={styles.section}>
+            <div className={styles.sectionLabel}>ATTEMPTS ({tc.attempts.length})</div>
+            {tc.attempts.map(a => (
+              <div key={a.n} className={styles.verdictReason}>
+                #{a.n} <span className={`status-badge status-${a.status}`}>{a.status}</span> {a.reason}
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Evidence snapshots from S3 */}
         <section className={styles.section}>
           <div className={styles.sectionLabel}>
@@ -150,7 +162,7 @@ export default function TcEvidencePanel({ tc }) {
                 const kind = entry.kind || entry.type || 'info'
                 return (
                   <div key={i} className={`${styles.logEntry} ${styles['logEntry_' + kind] || styles.logEntry_info}`}>
-                    {entry.ts && <span className={styles.logTs}>{entry.ts}</span>}
+                    {entry.ts && <span className={styles.logTs}>{logTime(entry.ts)}</span>}
                     {entry.msg}
                   </div>
                 )
@@ -197,10 +209,18 @@ export default function TcEvidencePanel({ tc }) {
   )
 }
 
+// New runs store ISO times; older archived runs stored a server-local time string.
+function logTime(ts) {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString()
+}
+
 function statusLabel(status) {
   const iconName = (
     status === 'PASS'    ? 'check_circle' :
     status === 'FAIL'    ? 'cancel' :
+    status === 'ERROR'   ? 'error' :
+    status === 'SKIPPED' ? 'block' :
     status === 'RUNNING' ? 'progress_activity' :
                            'radio_button_unchecked'
   )

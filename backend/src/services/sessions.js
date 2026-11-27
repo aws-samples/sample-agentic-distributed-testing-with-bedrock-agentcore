@@ -104,8 +104,21 @@ export function stopAgentcoreScreenPoller(sessionId) {
 
 // ─── Local runtime invoke ─────────────────────────────────────────────────────
 
-export async function invokeLocalRuntime(body, onLine) {
+// `signal` (optional) aborts the call and its response stream: per-case timeout or Stop.
+export async function invokeLocalRuntime(body, onLine, signal) {
   const ctrl = new AbortController();
+  if (signal) {
+    if (signal.aborted) ctrl.abort(signal.reason);
+    else signal.addEventListener('abort', () => {
+      ctrl.abort(signal.reason);
+      // The runtime also stops the agent when the request closes; this makes sure
+      // it is gone before a retry or the next case uses the same tab. Only this session.
+      if (body.sessionName) {
+        fetch(`${LOCAL_URL}/kill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionName: body.sessionName }) })
+          .catch(e => console.warn(`[session] kill ${body.sessionName} failed: ${e.message}`));
+      }
+    }, { once: true });
+  }
   activeAborts.add(ctrl);
   let resp;
   try {

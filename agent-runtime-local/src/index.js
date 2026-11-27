@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import { WebSocket } from 'ws';
+import { trackRun, killSession, killChildOnAbort } from './childStop.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
@@ -512,7 +513,8 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm) {
+// `signal` (from trackRun) stops the child when the backend gives up on the request.
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, signal) {
   const configPath = join(workDir, 'opencode.json');
   const config = buildOpencodeConfig(assertResultFile, browserWs, llm);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -554,6 +556,7 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs
       activeChildren.delete(child);
       resolve(verdict);
     }
+    killChildOnAbort(child, signal, () => tryResolve(null));
 
     child.stdout.on('data', (chunk) => {
       buf += chunk.toString();
@@ -769,6 +772,8 @@ app.post('/', async (req, res) => {
       `\n\nNavigate to ${targetUrl} and execute test case ${tc.id}: ${tc.title}. Use the assert_pass or assert_fail tool when done.`;
 
     let lastScreenshot = null;
+    // Backend timeout or Stop closes the request: the child is killed, no second agent in this tab.
+    const run = trackRun(tabName, res);
 
     const verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
       // Forward text narration
@@ -787,7 +792,13 @@ app.post('/', async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body));
+    }, browserWs, resolveModelAndRegion(req.body), run.signal);
+    run.done();
+    if (run.signal.aborted) {
+      console.log(`[runtime] run_test session=${tabName} tc=${tc.id} stopped: request closed or killed`);
+      res.end();
+      return;
+    }
 
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);
@@ -818,8 +829,11 @@ app.post('/', async (req, res) => {
   res.end();
 });
 
-// Kill all running opencode processes and reset tabs (called on reset)
+// Kill all running opencode processes and reset tabs (called on reset).
+// With { sessionName }: stop only that session's run, keep its tab (backend per-case timeout / Stop).
 app.post('/kill', async (req, res) => {
+  const one = req.body?.sessionName;
+  if (typeof one === 'string') return res.json({ ok: true, killed: killSession(one) ? 1 : 0 });
   const count = activeChildren.size;
   for (const child of activeChildren) {
     try { child.kill('SIGTERM'); } catch { /* ignore */ }

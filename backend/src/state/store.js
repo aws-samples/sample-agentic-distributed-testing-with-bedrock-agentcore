@@ -117,7 +117,18 @@ export const config = {
   agentcoreRuntimeArn: _persisted.agentcoreRuntimeArn ?? process.env.AGENTCORE_RUNTIME_ARN ?? null,
   auth:         normalizeAuth(_persisted.auth),
   envVars:      normalizeEnvVars(_persisted.envVars),
+  // Per-test-case limits (services/runner.js): one agent call is aborted after
+  // caseTimeoutMs and recorded as ERROR: timeout; an ERROR is retried up to
+  // caseMaxRetries times, each attempt kept on the case record. Default 0:
+  // a retry runs the agent again and is paid for again.
+  caseTimeoutMs:  envInt('CASE_TIMEOUT_MS', 600_000, 1_000),
+  caseMaxRetries: envInt('CASE_MAX_RETRIES', 0, 0),
 };
+
+function envInt(name, fallback, min) {
+  const n = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(n) && n >= min ? n : fallback;
+}
 
 // If no persisted browser region and no env override, try to match the EC2 host
 export async function initEc2Region() {
@@ -174,7 +185,7 @@ export const activeFeatures     = new Set();   // featureName
 export const activeRunPromises = new Map();   // runId → Promise
 
 // ─── Persistent test results ──────────────────────────────────────────────────
-// Flat map: { [tcId]: { status: 'PASS'|'FAIL'|'PENDING', reason: string } }
+// Flat map: { [tcId]: { status: 'PASS'|'FAIL'|'ERROR'|'SKIPPED'|'PENDING', reason: string } }
 // Loaded from disk on startup, written on every change, replayed to new WS clients.
 
 function loadResultsFromDisk() {

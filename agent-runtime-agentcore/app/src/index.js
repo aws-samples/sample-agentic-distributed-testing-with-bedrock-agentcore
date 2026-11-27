@@ -21,6 +21,7 @@ import { WebSocket as WS } from 'ws';
 import { BedrockAgentCoreClient } from '@aws-sdk/client-bedrock-agentcore';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { Browser } from 'bedrock-agentcore/browser';
+import { trackRun, killSession, killChildOnAbort } from './childStop.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSERT_SERVER = join(__dirname, 'assert-server.js');
@@ -405,7 +406,8 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm) {
+// `signal` (from trackRun) stops the child when the backend gives up on the request.
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, signal) {
   const configPath = join(workDir, 'opencode.json');
   writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm), null, 2));
   const awsCreds = await getAwsCredentials();
@@ -445,6 +447,7 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl,
       activeChildren.delete(child);
       resolve(verdict);
     }
+    killChildOnAbort(child, signal, () => tryResolve(null));
 
     child.stdout.on('data', (chunk) => {
       buf += chunk.toString();
@@ -584,6 +587,14 @@ async function handleInvocation(req, res) {
     return;
   }
 
+  // AgentCore only routes /invocations, so the backend stops a timed-out or stopped
+  // case with { action: 'kill', sessionName } on the same runtimeSessionId (issue #40).
+  if (action === 'kill') {
+    emitText(JSON.stringify({ killed: killSession(sessionName) ? 1 : 0 }));
+    res.end();
+    return;
+  }
+
   let sess;
   try {
     sess = await getOrCreateBrowserSession(sessionName);
@@ -636,6 +647,8 @@ async function handleInvocation(req, res) {
 
     let lastScreenshot = null;
 
+    // Request closed (backend timeout or Stop) or a kill action: the child is killed.
+    const run = trackRun(sessionName, res);
     const { url: cdpWsUrl, headers: cdpWsHeaders } = await getCdpWebSocket(sessionName);
     const verdict = await runOpencode(prompt, workDir, assertResultFile, (ev) => {
       if (ev.type === 'text' && ev.part?.text) {
@@ -649,7 +662,13 @@ async function handleInvocation(req, res) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body));
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), run.signal);
+    run.done();
+    if (run.signal.aborted) {
+      console.log(`[runtime] run_test session=${sessionName} tc=${tc.id} stopped: request closed or killed`);
+      res.end();
+      return;
+    }
 
     // Emit final screenshot
     if (!lastScreenshot) {

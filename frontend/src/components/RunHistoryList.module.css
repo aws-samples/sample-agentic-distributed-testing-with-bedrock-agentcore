@@ -132,6 +132,12 @@
   color: var(--red);
 }
 
+.badge[data-type="error"] {
+  background: rgba(219, 109, 40, 0.15);
+  color: var(--orange);
+}
+
+.badge[data-type="skipped"],
 .badge[data-type="pending"] {
   background: rgba(125, 133, 144, 0.15);
   color: var(--text-muted);

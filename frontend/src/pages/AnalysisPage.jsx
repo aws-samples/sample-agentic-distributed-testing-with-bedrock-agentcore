@@ -12,6 +12,8 @@ function statusIconName(status) {
   switch (status) {
     case 'PASS': return 'check_circle'
     case 'FAIL': return 'cancel'
+    case 'ERROR': return 'error'
+    case 'SKIPPED': return 'block'
     case 'RUNNING': return 'progress_activity'
     default: return 'radio_button_unchecked'
   }
@@ -52,6 +54,7 @@ function RunFeatureList({ run, selectedTcId, onTcClick }) {
         const cases = features[featName]?.cases || []
         const passCount = cases.filter(c => c.status === 'PASS').length
         const failCount = cases.filter(c => c.status === 'FAIL').length
+        const errorCount = cases.filter(c => c.status === 'ERROR').length
         const isExpanded = expandedFeatures.has(featName)
 
         return (
@@ -63,6 +66,11 @@ function RunFeatureList({ run, selectedTcId, onTcClick }) {
               <span className={styles.featChevron}>{isExpanded ? '▾' : '▸'}</span>
               <span className={styles.featName}>{featName}</span>
               <span className={styles.featCount}>{cases.length}</span>
+              {errorCount > 0 && (
+                <span className={`status-badge status-ERROR ${styles.featBadge}`} title="Infrastructure error (no verdict)">
+                  {errorCount}<Icon name="error" />
+                </span>
+              )}
               {failCount > 0 && (
                 <span className={`status-badge status-FAIL ${styles.featBadge}`}>
                   {failCount}<Icon name="cancel" />
