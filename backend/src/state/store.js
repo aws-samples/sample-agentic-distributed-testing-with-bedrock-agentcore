@@ -121,7 +121,7 @@ export const config = {
   // caseTimeoutMs and recorded as ERROR: timeout; an ERROR is retried up to
   // caseMaxRetries times, each attempt kept on the case record.
   caseTimeoutMs:  envInt('CASE_TIMEOUT_MS', 600_000, 1_000),
-  caseMaxRetries: envInt('CASE_MAX_RETRIES', 1, 0),
+  caseMaxRetries: envInt('CASE_MAX_RETRIES', 0, 0),
 };
 
 function envInt(name, fallback, min) {

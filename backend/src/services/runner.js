@@ -102,7 +102,7 @@ export async function invokeRuntime(tc, runId, sessionId, signal) {
   const tcLog = runLogs[runId][tc.id];
 
   const logEntry = (msg, kind = 'info') => {
-    tcLog.push({ ts: new Date().toLocaleTimeString(), msg, kind });
+    tcLog.push({ ts: new Date().toISOString(), msg, kind });
   };
 
   try {
@@ -192,7 +192,7 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
         isStopped: () => !!stopFlags[runId],
         onAttempt: (n) => {
           if (n === 1) return;
-          runLogs[runId]?.[tc.id]?.push({ ts: new Date().toLocaleTimeString(), msg: `Retry: attempt ${n} of ${config.caseMaxRetries + 1}`, kind: 'info' });
+          runLogs[runId]?.[tc.id]?.push({ ts: new Date().toISOString(), msg: `Retry: attempt ${n} of ${config.caseMaxRetries + 1}`, kind: 'info' });
           broadcast({ type: 'action', sessionId, text: `[${tc.id}] Retrying (attempt ${n})...`, testId: tc.id });
         },
       });

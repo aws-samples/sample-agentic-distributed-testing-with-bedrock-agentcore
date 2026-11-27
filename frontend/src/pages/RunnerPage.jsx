@@ -168,7 +168,7 @@ export default function RunnerPage() {
 
   // Stats
   const allTcs = Object.values(state.testCases).flat()
-  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0, statError = 0
+  let statPending = 0, statRunning = 0, statPass = 0, statFail = 0, statError = 0, statSkipped = 0
   for (const tc of allTcs) {
     const r = state.testResults[tc.id]
     const s = r ? r.status : 'PENDING'
@@ -177,6 +177,7 @@ export default function RunnerPage() {
     else if (s === 'PASS') statPass++
     else if (s === 'FAIL') statFail++
     else if (s === 'ERROR') statError++
+    else if (s === 'SKIPPED') statSkipped++
   }
 
   // Filtered TCs for left panel
@@ -369,6 +370,10 @@ export default function RunnerPage() {
         <span className={`${styles.statValue} ${styles.statError}`}>{statError}</span>
         <span> error</span>
       </div>
+      <div className={styles.statItem} title="Not run: the run was stopped before this case">
+        <span className={`${styles.statValue} ${styles.statSkipped}`}>{statSkipped}</span>
+        <span> skipped</span>
+      </div>
     </div>
   )
 
@@ -413,6 +418,10 @@ export default function RunnerPage() {
           className={`${styles.filterBtn}${filterStatus === 'ERROR' ? ' ' + styles.filterBtnActive : ''}`}
           onClick={() => setFilterStatus('ERROR')}
         >Error</button>
+        <button
+          className={`${styles.filterBtn}${filterStatus === 'SKIPPED' ? ' ' + styles.filterBtnActive : ''}`}
+          onClick={() => setFilterStatus('SKIPPED')}
+        >Skipped</button>
       </div>
     </>
   )

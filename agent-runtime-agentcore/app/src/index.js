@@ -405,7 +405,7 @@ function buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm) {
 
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl, cdpWsHeaders, llm, signal) {
   const configPath = join(workDir, 'opencode.json');
   writeFileSync(configPath, JSON.stringify(buildOpencodeConfig(assertResultFile, cdpWsUrl, cdpWsHeaders, llm), null, 2));
   const awsCreds = await getAwsCredentials();
@@ -445,6 +445,9 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, cdpWsUrl,
       activeChildren.delete(child);
       resolve(verdict);
     }
+
+    if (signal?.aborted) tryResolve(null);
+    else signal?.addEventListener('abort', () => tryResolve(null), { once: true });
 
     child.stdout.on('data', (chunk) => {
       buf += chunk.toString();
@@ -578,6 +581,11 @@ async function handleInvocation(req, res) {
     emit({ contentBlockDelta: { delta: { text } } });
   }
 
+  // The backend closes the request on a per-case timeout or Stop: stop the child
+  // agent too, or it keeps running and a retry opens a second agent in the same tab.
+  const clientGone = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) clientGone.abort(); });
+
   if (action === 'health') {
     emitText(JSON.stringify({ status: 'ok', region: BEDROCK_REGION }));
     res.end();
@@ -649,7 +657,7 @@ async function handleInvocation(req, res) {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body));
+    }, cdpWsUrl, cdpWsHeaders, resolveModelAndRegion(req.body), clientGone.signal);
 
     // Emit final screenshot
     if (!lastScreenshot) {

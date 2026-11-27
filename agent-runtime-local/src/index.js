@@ -512,7 +512,7 @@ function buildOpencodeConfig(assertResultFile, browserWs, llm) {
 // Track all running opencode child processes so /kill can terminate them
 const activeChildren = new Set();
 
-async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm) {
+async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs, llm, signal) {
   const configPath = join(workDir, 'opencode.json');
   const config = buildOpencodeConfig(assertResultFile, browserWs, llm);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -554,6 +554,9 @@ async function runOpencode(prompt, workDir, assertResultFile, onEvent, browserWs
       activeChildren.delete(child);
       resolve(verdict);
     }
+
+    if (signal?.aborted) tryResolve(null);
+    else signal?.addEventListener('abort', () => tryResolve(null), { once: true });
 
     child.stdout.on('data', (chunk) => {
       buf += chunk.toString();
@@ -688,6 +691,11 @@ app.post('/', async (req, res) => {
     emit({ contentBlockDelta: { delta: { text } } });
   }
 
+  // The backend closes the request on a per-case timeout or Stop: stop the child
+  // agent too, or it keeps running and a retry opens a second agent in the same tab.
+  const clientGone = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) clientGone.abort(); });
+
   if (action === 'health') {
     emitText(JSON.stringify({ status: 'ok', region: BEDROCK_REGION }));
     res.end();
@@ -787,7 +795,7 @@ app.post('/', async (req, res) => {
         lastScreenshot = ss;
         emit({ screenshot: { data: ss } });
       }
-    }, browserWs, resolveModelAndRegion(req.body));
+    }, browserWs, resolveModelAndRegion(req.body), clientGone.signal);
 
     // Resync tab tracking in case agent opened new_page (shouldn't happen but be safe)
     await resyncSessionTab(tabName);

@@ -39,6 +39,7 @@
 .statPass { color: var(--green); }
 .statFail { color: var(--red); }
 .statError { color: var(--orange); }
+.statSkipped { color: var(--text-muted); }
 
 /* Filter buttons */
 .filterBtn {
@@ -157,6 +158,8 @@
 .logEntry_pass { color: var(--green); }
 .logEntry_fail { color: var(--red); }
 .logEntry_warn { color: var(--yellow); }
+.logEntry_error { color: var(--orange); font-weight: 700; }
+.logEntry_skip { color: var(--text-muted); }
 
 .resumePill {
   position: absolute;

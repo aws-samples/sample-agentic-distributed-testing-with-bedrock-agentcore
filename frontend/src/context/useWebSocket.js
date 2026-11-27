@@ -2,6 +2,9 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useApp } from './AppContext'
 import { buildAuthedWsUrl } from './authFetch'
 
+const RESULT_KIND = { PASS: 'pass', FAIL: 'fail', ERROR: 'error', SKIPPED: 'skip' }
+const RESULT_NOTE = { ERROR: ' (run problem, not an app failure)', SKIPPED: ' (not run)' }
+
 export function useWebSocket(onLog) {
   const { dispatch } = useApp()
   const wsRef = useRef(null)
@@ -102,20 +105,18 @@ export function useWebSocket(onLog) {
             tcId: msg.testId,
             result: { status: msg.status, stepResults: msg.stepResults, reason: msg.reason },
           })
-          onLog?.(`${msg.testId}: ${msg.status}${msg.reason ? ' — ' + msg.reason : ''}`,
-            msg.status === 'PASS' ? 'pass' : 'fail')
-          if (msg.sessionId) {
-            const kind = msg.status === 'PASS' ? 'pass' : 'fail'
-            addSessionLog(
-              msg.sessionId,
-              `${msg.testId}: ${msg.status}${msg.reason ? ' — ' + msg.reason : ''}`,
-              kind, kind
-            )
+          // FAIL = the app failed. ERROR = the run broke (no verdict). Say which.
+          {
+            const kind = RESULT_KIND[msg.status] || 'fail'
+            const line = `${msg.testId}: ${msg.status}${RESULT_NOTE[msg.status] || ''}${msg.reason ? ' — ' + msg.reason : ''}`
+            onLog?.(line, kind)
+            if (msg.sessionId) addSessionLog(msg.sessionId, line, kind, kind)
           }
           break
 
         case 'test_skipped':
           dispatch({ type: 'SET_TEST_RESULT', tcId: msg.testId, result: { status: 'SKIPPED' } })
+          onLog?.(`${msg.testId}: SKIPPED${RESULT_NOTE.SKIPPED}`, 'skip')
           break
 
         case 'action':

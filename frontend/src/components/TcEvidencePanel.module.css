@@ -223,6 +223,8 @@
 .logEntry_pass   { color: #4ec94e; font-weight: 700; }
 .logEntry_fail   { color: #f44747; font-weight: 700; }
 .logEntry_warn   { color: #cca700; }
+.logEntry_error  { color: #e8833a; font-weight: 700; }
+.logEntry_skip   { color: #8b949e; }
 
 /* ── Evidence snapshot gallery ───────────────────────────────────────────── */
 .snapCount {
