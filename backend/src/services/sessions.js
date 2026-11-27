@@ -1,7 +1,8 @@
 import { WebSocket as WS } from 'ws';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
 import { Browser } from 'bedrock-agentcore/browser';
-import { config, sessions, activeAborts } from '../state/store.js';
+import { config, sessions, activeAborts, currentSecrets } from '../state/store.js';
+import { redactSecrets } from './redact.js';
 import { broadcast } from './websocket.js';
 
 const LOCAL_URL = process.env.LOCAL_RUNTIME_URL || 'http://localhost:4020';
@@ -216,6 +217,8 @@ export async function ensureSession(sessionId) {
     if (config.agentMode === 'local') startScreenPoller(sessionId);
     else startAgentcoreScreenPoller(sessionId);
   } catch (e) {
+    // The message can quote runtime text; it goes to the Runner and run history, so mask it.
+    e.message = redactSecrets(e.message, currentSecrets());
     console.error(`[session] init failed for ${sessionId}:`, e.message);
     sessions[sessionId] = { ...sessions[sessionId], connected: false, action: '' };
     broadcast({ type: 'session_status', sessionId, connected: false, feature: sessionId });

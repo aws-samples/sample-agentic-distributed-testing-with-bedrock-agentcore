@@ -5,8 +5,9 @@
  */
 
 // Stateful: feedLine() takes one line as it arrives (so the live log can follow the
-// agent), finish() returns the verdict once the stream has ended.
-export function createSseParser(sink) {
+// agent), finish() returns the verdict once the stream has ended. `redact` masks secrets in the
+// verdict reason; it runs on the whole text before any cut, so a cut cannot land inside a secret.
+export function createSseParser(sink, { redact = (t) => t } = {}) {
   const textParts = [];
   let assertResult = null;
 
@@ -40,10 +41,11 @@ export function createSseParser(sink) {
   function finish() {
     if (assertResult) {
       try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
+      assertResult.reason = redact(assertResult.reason);
       return assertResult;
     }
 
-    const text = textParts.join('');
+    const text = redact(textParts.join(''));   // mask first, then cut
     if (!text) return { passed: false, reason: 'No result from runtime' };
     try {
       const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
@@ -59,8 +61,8 @@ export function createSseParser(sink) {
 
 // Bytes in, verdict out. A network chunk can end mid-line or inside a multi-byte UTF-8
 // character, so decode in streaming mode and only feed complete lines.
-export function createSseStream(sink) {
-  const parser = createSseParser(sink);
+export function createSseStream(sink, opts) {
+  const parser = createSseParser(sink, opts);
   const decoder = new TextDecoder();
   let buf = '';
   return {
