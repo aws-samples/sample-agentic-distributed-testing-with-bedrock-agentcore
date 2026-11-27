@@ -108,3 +108,18 @@ test('verdict reason: masked before it is cut to the last 200 characters', () =>
   p.feedLine(`data: ${JSON.stringify({ event: { contentBlockDelta: { delta: { toolUse: { input: JSON.stringify({ reason: `typed ${SECRET}` }) } } } } })}`);
   assert.equal(p.finish().reason, `typed ${REDACTED}`);
 });
+
+// Every way to cut one stream into two and into three pieces (a model streams a few characters at a time).
+test('buffer: a secret is masked whichever positions the stream is cut at', () => {
+  const secrets = [SECRET, 'tok-ABCDEF', 'tok-ABCDEF-123'];
+  const text = `go ${SECRET}, then tok-ABCDEF-123! and ${SECRET}. next tok-ABCDEF end`;
+  const expected = text.replaceAll('tok-ABCDEF-123', REDACTED).replaceAll(SECRET, REDACTED).replaceAll('tok-ABCDEF', REDACTED);
+  for (let i = 1; i < text.length; i++) {
+    for (let j = i; j < text.length; j++) {
+      const pieces = i === j ? [text.slice(0, i), text.slice(i)] : [text.slice(0, i), text.slice(i, j), text.slice(j)];
+      const out = stream(pieces, secrets);
+      assert.equal(out.join(''), expected, `cut at ${i},${j}`);
+      assertNoPart(out, secrets);
+    }
+  }
+});
