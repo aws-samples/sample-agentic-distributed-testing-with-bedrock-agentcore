@@ -134,6 +134,12 @@ export async function invokeRuntime(tc, runId, sessionId, signal) {
       // its own container with its own abandoned browser session.
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
       const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
+      // Timeout or Stop: besides aborting this call, tell the same container to kill
+      // this session's agent (AgentCore may not pass the closed request on to it).
+      signal?.addEventListener('abort', () => {
+        const kill = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify({ action: 'kill', sessionName: payload.sessionName })) });
+        getAgentCoreClient().send(kill).catch(e => console.warn(`[runner] kill ${payload.sessionName} failed: ${e.message}`));
+      }, { once: true });
       const response = await getAgentCoreClient().send(cmd, { abortSignal: signal });
       if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
     }
