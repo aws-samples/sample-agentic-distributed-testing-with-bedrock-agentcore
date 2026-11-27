@@ -88,6 +88,9 @@ function RunFeatureList({ run, selectedTcId, onTcClick }) {
                   </span>
                   <span className={styles.tcId}>{tc.id}</span>
                   <span className={styles.tcTitle}>{tc.title}</span>
+                  {(tc.hint || tc.retries?.length > 0) && (
+                    <span title={tc.hint ? 'Redone with a human hint' : 'Later redone with a human hint'}><Icon name="lightbulb" size={14} /></span>
+                  )}
                 </div>
               )
             })}

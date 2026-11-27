@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import styles from './TcEvidencePanel.module.css'
 import Icon from './Icon'
 import { useStickToBottom } from '../hooks/useStickToBottom'
+import { formatLogTs } from '../utils/time'
 
 // Lazy-load presigned URL for an S3 snapshot key. The bucket is private,
 // so each thumbnail asks the backend for a short-lived signed URL when
@@ -31,7 +32,9 @@ function useSnapshotUrls(snapshots) {
 // effect, whose setUrls({}) re-renders again (issue #66).
 const NO_SNAPSHOTS = []
 
-export default function TcEvidencePanel({ tc }) {
+// compact: inline use (the Runner's case row), where the live frame is shown above and a case that
+// has no snapshots yet should not spend room on an empty snapshots section.
+export default function TcEvidencePanel({ tc, compact = false }) {
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const snapshots = tc?.snapshots || NO_SNAPSHOTS
   const snapshotUrls = useSnapshotUrls(snapshots)
@@ -98,7 +101,27 @@ export default function TcEvidencePanel({ tc }) {
           )}
         </section>
 
+        {/* Human input: this case was redone with a hint, and/or was later redone */}
+        {(tc.hint || tc.retries?.length > 0) && (
+          <section className={styles.section}>
+            <div className={styles.sectionLabel}>HUMAN INPUT</div>
+            {tc.hint && (
+              <div className={styles.hintBox}>
+                <div>Redone with a human hint{tc.retryOf ? <> (replaces the result in <code>{tc.retryOf}</code>)</> : null}:</div>
+                <div className={styles.hintText}>{tc.hint}</div>
+              </div>
+            )}
+            {(tc.retries || []).map(r => (
+              <div key={r.runId} className={styles.hintBox}>
+                <div>Later redone with a human hint in <code>{r.runId}</code>:</div>
+                <div className={styles.hintText}>{r.hint}</div>
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Evidence snapshots from S3 */}
+        {!(compact && snapshots.length === 0) && (
         <section className={styles.section}>
           <div className={styles.sectionLabel}>
             EVIDENCE SNAPSHOTS
@@ -106,7 +129,7 @@ export default function TcEvidencePanel({ tc }) {
           </div>
           {snapshots.length === 0 && (
             <div className={styles.noScreenshot}>
-              No snapshots captured for this test case.
+              {status === 'RUNNING' ? 'Snapshots are saved when the test case finishes.' : 'No snapshots captured for this test case.'}
             </div>
           )}
           {snapshots.length > 0 && (
@@ -137,6 +160,7 @@ export default function TcEvidencePanel({ tc }) {
             </div>
           )}
         </section>
+        )}
 
         {/* Agent Log */}
         <section className={styles.section}>
@@ -150,7 +174,7 @@ export default function TcEvidencePanel({ tc }) {
                 const kind = entry.kind || entry.type || 'info'
                 return (
                   <div key={i} className={`${styles.logEntry} ${styles['logEntry_' + kind] || styles.logEntry_info}`}>
-                    {entry.ts && <span className={styles.logTs}>{entry.ts}</span>}
+                    {entry.ts && <span className={styles.logTs}>{formatLogTs(entry.ts)}</span>}
                     {entry.msg}
                   </div>
                 )

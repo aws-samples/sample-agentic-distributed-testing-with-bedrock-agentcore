@@ -278,3 +278,14 @@
   align-items: center;
   flex-shrink: 0;
 }
+
+.tcLead { display: inline-flex; align-items: center; flex-shrink: 0; }
+.detLive {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.tcTail { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }

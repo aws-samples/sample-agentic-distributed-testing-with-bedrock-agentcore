@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
-import { config, featureList, sessions, testResultsCache, testRuns, stopFlags, activeFeatures } from '../state/store.js';
+import { config, featureList, sessions, testResultsCache, testRuns, stopFlags, activeFeatures, runLogs } from '../state/store.js';
 import { authEnabled, verifyWsToken } from '../middleware/auth.js';
+import { listPaused, listQueuedRedos } from './runControl.js';
 
 let wss;
 const wsClients = new Set();
@@ -81,7 +82,19 @@ export function initWebSocket(server) {
         activeFeatures: activeFeats,
         currentRunId: activeRunId,
         stopping: activeRunStopping,
+        paused: listPaused(),
+        queuedRedos: listQueuedRedos(),
       }));
+    }
+
+    // 4. Replay the log of each test case that is running right now, so a live view
+    // opened after a refresh or reconnect starts with the whole case, not just new lines.
+    for (const [rid, run] of Object.entries(testRuns)) {
+      for (const [tcId, r] of Object.entries(run.results || {})) {
+        if (r?.status === 'RUNNING') {
+          ws.send(JSON.stringify({ type: 'tc_log_replay', runId: rid, testId: tcId, logs: (runLogs[rid]?.[tcId] || []).slice(-500) }));
+        }
+      }
     }
   });
 }

@@ -20,6 +20,9 @@ const initialState = {
   filterStatus: 'ALL',
   gridMode: '4',
   focusedFeature: null,
+  tcLogs: {},           // tcId -> [{ts,msg,kind}] live log of the current attempt
+  pausedFeatures: {},   // feature -> { state: 'pausing' | 'paused', after, caseStartedAt, heldSince }
+  queuedRedos: {},      // tcId -> { feature, runId, hint } redo waiting for its turn in the feature's queue
 }
 
 function reducer(state, action) {
@@ -90,6 +93,31 @@ function reducer(state, action) {
       return { ...state, gridMode: action.mode }
     case 'SET_FOCUSED_FEATURE':
       return { ...state, focusedFeature: action.feature }
+    case 'SET_TC_LOGS':
+      return { ...state, tcLogs: { ...state.tcLogs, [action.tcId]: action.logs.slice(-500) } }
+    case 'APPEND_TC_LOG': {
+      const prev = state.tcLogs[action.tcId] || []
+      return { ...state, tcLogs: { ...state.tcLogs, [action.tcId]: [...prev, action.entry].slice(-500) } }
+    }
+    case 'SET_PAUSE': {
+      const next = { ...state.pausedFeatures }
+      if (action.state) next[action.feature] = action.state
+      else delete next[action.feature]
+      return { ...state, pausedFeatures: next }
+    }
+    case 'SET_PAUSED_ALL':
+      return { ...state, pausedFeatures: action.paused }
+    case 'QUEUE_REDO':
+      return { ...state, queuedRedos: { ...state.queuedRedos, [action.tcId]: action.redo } }
+    case 'UNQUEUE_REDO': {
+      const cur = state.queuedRedos[action.tcId]
+      if (!cur || (action.runId && cur.runId !== action.runId)) return state
+      const next = { ...state.queuedRedos }
+      delete next[action.tcId]
+      return { ...state, queuedRedos: next }
+    }
+    case 'SET_QUEUED_ALL':
+      return { ...state, queuedRedos: action.queued }
     case 'RESET_ALL': {
       const clearedSessions = {}
       for (const k of Object.keys(state.sessionStatus)) {
@@ -110,6 +138,9 @@ function reducer(state, action) {
         sessionStatus: clearedSessions,
         sessionLogs: clearedLogs,
         focusedFeature: null,
+        tcLogs: {},
+        pausedFeatures: {},
+        queuedRedos: {},
       }
     }
     default:

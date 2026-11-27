@@ -130,6 +130,14 @@ export async function initEc2Region() {
 }
 
 let _configSaveTimer = null;
+// Passwords of the configured accounts and the values of secret context variables (masked by redact.js).
+export function currentSecrets() {
+  return [
+    ...(config.auth?.accounts || []).map(a => a.password),
+    ...(config.envVars || []).filter(v => v.secret).map(v => v.value),
+  ];
+}
+
 export function saveConfig() {
   clearTimeout(_configSaveTimer);
   _configSaveTimer = setTimeout(() => {

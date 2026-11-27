@@ -324,6 +324,36 @@ export default function RunnerPage() {
     }
   }
 
+  // Pause holds one feature before its next test case; the others keep running. Returns the server's
+  // reason when it refuses (for example on the last case), so the modal can show it.
+  const handleTogglePause = async (feat) => {
+    const wasPaused = !!state.pausedFeatures[feat]
+    try {
+      if (wasPaused) await api.resumeFeature(feat)
+      else await api.pauseFeature(feat)
+      addLog(wasPaused ? `Resumed ${feat}` : `Pause requested for ${feat}: it holds after its current test case`, 'warn')
+      return ''
+    } catch (e) {
+      addLog(`${wasPaused ? 'Resume' : 'Pause'} failed: ${e.message}`, 'fail')
+      return e.message
+    }
+  }
+
+  const handleCancelRedo = async (feat, tcId, runId) => {
+    try {
+      await api.cancelRedo({ feature: feat, runId, testCaseId: tcId })
+    } catch (e) {
+      addLog(`Cancel redo failed: ${e.message}`, 'fail')
+    }
+  }
+
+  // Redo failed cases of one feature with a human hint (a new run; the old result stays in history).
+  const handleRedo = async (feat, testCaseIds, hint) => {
+    const { runId } = await api.redoCases({ feature: feat, testCaseIds, hint })
+    dispatch({ type: 'SET_CURRENT_RUN_ID', runId })
+    addLog(`Redo with hint queued for ${feat}: ${testCaseIds.join(', ')} (${runId})`, 'info')
+  }
+
   const handleRequestAnalysis = async (tcId) => {
     let tc = null
     for (const tcs of Object.values(state.testCases)) {
@@ -454,7 +484,9 @@ export default function RunnerPage() {
                 featureName={feat}
                 sessionStatus={state.sessionStatus[feat]}
                 activeFeatures={state.activeFeatures}
+                pauseState={state.pausedFeatures[feat]}
                 onFocus={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: feat })}
+                onTogglePause={() => handleTogglePause(feat)}
               />
             ))}
           </div>
@@ -489,6 +521,13 @@ export default function RunnerPage() {
           testResults={state.testResults}
           sessionStatus={state.sessionStatus[state.focusedFeature]}
           sessionLogs={state.sessionLogs[state.focusedFeature]}
+          tcLogs={state.tcLogs}
+          running={state.activeFeatures.has(state.focusedFeature)}
+          pauseState={state.pausedFeatures[state.focusedFeature]}
+          onTogglePause={() => handleTogglePause(state.focusedFeature)}
+          queuedRedos={state.queuedRedos}
+          onRedo={(ids, hint) => handleRedo(state.focusedFeature, ids, hint)}
+          onCancelRedo={(tcId, runId) => handleCancelRedo(state.focusedFeature, tcId, runId)}
           onClose={() => dispatch({ type: 'SET_FOCUSED_FEATURE', feature: null })}
           onClearLog={() => dispatch({ type: 'CLEAR_SESSION_LOG', feature: state.focusedFeature })}
         />

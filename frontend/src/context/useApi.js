@@ -4,7 +4,10 @@ async function apiCall(method, path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `${res.status} ${res.statusText}`)
+  }
   return res.json()
 }
 
@@ -23,6 +26,11 @@ export function useApi() {
     resetSessions: () => apiCall('POST', '/api/sessions/reset', {}),
     runTests: (testCases) => apiCall('POST', '/api/tests/run', { testCases }),
     stopRun: () => apiCall('POST', '/api/tests/stop'),
+    pauseFeature: (feature) => apiCall('POST', '/api/tests/pause', { feature }),
+    resumeFeature: (feature) => apiCall('POST', '/api/tests/resume', { feature }),
+    cancelRedo: ({ feature, runId, testCaseId }) => apiCall('POST', '/api/tests/redo/cancel', { feature, runId, testCaseId }),
+    getLastFrame: (tcId) => apiCall('GET', `/api/tests/frame/${encodeURIComponent(tcId)}`),
+    redoCases: ({ feature, testCaseIds, hint }) => apiCall('POST', '/api/tests/redo', { feature, testCaseIds, hint }),
     updateModel: (model) => apiCall('PATCH', '/api/config/model', { model }),
     updateMode: (mode) => apiCall('PATCH', '/api/config/mode', { mode }),
     updateTargetUrl: (url) => apiCall('PATCH', '/api/config/target-url', { url }),

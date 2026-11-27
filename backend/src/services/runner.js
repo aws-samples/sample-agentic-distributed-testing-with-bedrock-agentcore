@@ -1,8 +1,11 @@
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from '@aws-sdk/client-bedrock-agentcore';
-import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeFeatures, featureDescriptions } from '../state/store.js';
+import { config, sessions, testRuns, stopFlags, runLogs, saveTestResult, activeFeatures, featureDescriptions, currentSecrets } from '../state/store.js';
 import { broadcast } from './websocket.js';
 import { ensureSession, invokeLocalRuntime, makeRuntimeSessionId } from './sessions.js';
 import { recordFrame, flushTcSnapshots } from './snapshots.js';
+import { holdWhilePaused, clearPause, pausedFeatures, redoQueues, caseProgress, lastFrames, pauseState, takeQueuedRedo, isUnsafeKey } from './runControl.js';
+import { createSseStream } from './sseParser.js';
+import { redactSecrets, createRedactingBuffer } from './redact.js';
 
 // Per-region client cache so live region changes from Settings are picked up
 // without restarting the container.
@@ -24,63 +27,32 @@ function getRuntimeArn() {
   return config.agentcoreRuntimeArn;
 }
 
-function parseSSE(rawText, sessionId, runId, tcId, logEntry) {
-  const textParts = [];
-  let assertResult = null;
-
-  for (const line of rawText.split('\n')) {
-    if (!line.startsWith('data: ')) continue;
-    try {
-      const ev = JSON.parse(line.slice(6))?.event;
-      if (!ev) continue;
-
-      if (ev.screenshot?.data) {
-        const sess = sessions[sessionId];
-        if (sess) { sess.screenshot = ev.screenshot.data; broadcast({ type: 'screenshot', sessionId, data: ev.screenshot.data, action: sess.action || '' }); }
-        if (runId && tcId) recordFrame(runId, tcId, ev.screenshot.data, sess?.action);
-        continue;
-      }
-
-      const imgSource = ev.contentBlockStart?.start?.image?.source;
-      if (imgSource?.type === 'base64' && imgSource.data) {
-        const sess = sessions[sessionId];
-        if (sess) { sess.screenshot = imgSource.data; broadcast({ type: 'screenshot', sessionId, data: imgSource.data, action: sess.action || '' }); }
-        if (runId && tcId) recordFrame(runId, tcId, imgSource.data, sess?.action);
-      }
-
-      const textDelta = ev.contentBlockDelta?.delta?.text;
-      if (textDelta) { textParts.push(textDelta); broadcast({ type: 'step_detail', sessionId, action: textDelta, kind: 'text' }); logEntry?.(textDelta, 'text'); }
-
-      const toolStart = ev.contentBlockStart?.start?.toolUse;
-      if (toolStart?.name && toolStart.name !== 'assert_pass' && toolStart.name !== 'assert_fail') {
-        broadcast({ type: 'step_detail', sessionId, action: `→ ${toolStart.name}`, kind: 'tool' });
-        logEntry?.(`→ ${toolStart.name}`, 'tool');
-      }
-      if (toolStart?.name === 'assert_pass') assertResult = { passed: true, reason: '' };
-      else if (toolStart?.name === 'assert_fail') assertResult = { passed: false, reason: '' };
-
-      const inputDelta = ev.contentBlockDelta?.delta?.toolUse?.input;
-      if (inputDelta && assertResult) assertResult.reason += inputDelta;
-    } catch { /* skip */ }
-  }
-
-  if (assertResult) {
-    try { const p = JSON.parse(assertResult.reason); assertResult.reason = p.reason || assertResult.reason; } catch { /* keep raw */ }
-    return assertResult;
-  }
-
-  const text = textParts.join('');
-  if (!text) return { passed: false, reason: 'No result from runtime' };
-  try {
-    const m = text.match(/\{"passed"\s*:\s*(true|false)[^}]*\}/);
-    if (m) { const p = JSON.parse(m[0]); return { passed: p.passed, reason: p.reason || text.slice(-200) }; }
-  } catch { /* ignore */ }
-  const tail = text.slice(-500).toLowerCase();
-  if (tail.includes('pass') || tail.includes('success') || tail.includes('verified')) return { passed: true, reason: text.slice(-200) };
-  return { passed: false, reason: text.slice(-200) };
+// Where parsed SSE events go: the feature's browser cell (screenshots) and `step` (the live step
+// feed and the per-test-case log, see invokeRuntime). No `step`: the steps were already shown.
+function makeSseSink(sessionId, runId, tcId, step) {
+  return {
+    screenshot(data) {
+      const sess = sessions[sessionId];
+      if (sess) { sess.screenshot = data; broadcast({ type: 'screenshot', sessionId, data, action: sess.action || '' }); }
+      if (runId && tcId) { recordFrame(runId, tcId, data, sess?.action); lastFrames.set(tcId, data); }
+    },
+    step(action, kind) { step?.(action, kind); },
+  };
 }
 
-export async function invokeRuntime(tc, runId, sessionId) {
+// Masks secrets in the verdict reason before it is cut (sseParser.js).
+const redactOpts = { redact: (t) => redactSecrets(t, currentSecrets()) };
+
+// Rebuilds a verdict from a whole captured stream (local mode, where the live log is
+// fed by invokeLocalRuntime's onLine callback instead).
+function parseSSE(rawText, sessionId, runId, tcId) {
+  const stream = createSseStream(makeSseSink(sessionId, runId, tcId, null), redactOpts);
+  stream.write(new TextEncoder().encode(rawText));
+  return stream.end();
+}
+
+
+export async function invokeRuntime(tc, runId, sessionId, hint = '') {
   const payload = {
     action: 'run_test',
     // The Feature's Background (its description) is shared setup that applies
@@ -93,6 +65,8 @@ export async function invokeRuntime(tc, runId, sessionId) {
     region: config.agentRegion,
     // Context variables (name, value, when-to-use description) for the agent's prompt.
     env: config.envVars.map(({ name, value, description }) => ({ name, value, description })),
+    // Human hint for a redo (see routes/tests.js POST /tests/redo); the runtime renders it as data.
+    ...(hint ? { hint } : {}),
     sessionName: sessionId.replace(/\s+/g, '_'),
     // Pass auth context to the agent — system prompt will tell it
     // which credentials to use if the test asks it to log in
@@ -105,12 +79,32 @@ export async function invokeRuntime(tc, runId, sessionId) {
   };
 
   // Init per-run log store
-  if (!runLogs[runId]) runLogs[runId] = {};
+  if (!runLogs[runId]) runLogs[runId] = Object.create(null);   // keyed by test case id
   if (!runLogs[runId][tc.id]) runLogs[runId][tc.id] = [];
   const tcLog = runLogs[runId][tc.id];
 
   const logEntry = (msg, kind = 'info') => {
-    tcLog.push({ ts: new Date().toLocaleTimeString(), msg, kind });
+    // Redacted before it is stored, broadcast to every WebSocket client, replayed or archived.
+    // ts is ISO; the browser formats it in the viewer's locale and timezone.
+    const entry = { ts: new Date().toISOString(), msg: redactSecrets(msg, currentSecrets()), kind };
+    tcLog.push(entry);
+    // Live per-test-case log for the Runner's detail view; replayed on reconnect (websocket.js).
+    broadcast({ type: 'tc_log', runId, testId: tc.id, sessionId, entry });
+  };
+  if (hint) logEntry(`Redo with human hint: ${hint}`, 'info');
+
+  // The agent's text arrives in small pieces, and a secret can be split across them: join them per
+  // line or sentence and mask the joined text (redact.js). logEntry masks once more when it stores.
+  const textOut = createRedactingBuffer(currentSecrets, (clean) => {
+    broadcast({ type: 'step_detail', sessionId, action: clean, kind: 'text' });
+    logEntry(clean, 'text');
+  });
+  const step = (action, kind) => {
+    if (kind === 'text') return textOut.push(action);
+    textOut.flush();   // text before a tool step is shown before it
+    const clean = redactSecrets(action, currentSecrets());
+    broadcast({ type: 'step_detail', sessionId, action: clean, kind });
+    logEntry(clean, kind);
   };
 
   try {
@@ -129,9 +123,9 @@ export async function invokeRuntime(tc, runId, sessionId) {
             return;
           }
           const t = ev.contentBlockDelta?.delta?.text;
-          if (t) { broadcast({ type: 'step_detail', sessionId, action: t, kind: 'text' }); logEntry(t, 'text'); }
+          if (t) step(t, 'text');
           const tool = ev.contentBlockStart?.start?.toolUse?.name;
-          if (tool) { broadcast({ type: 'step_detail', sessionId, action: `→ ${tool}`, kind: 'tool' }); logEntry(`→ ${tool}`, 'tool'); }
+          if (tool) step(`→ ${tool}`, 'tool');
         } catch { /* skip */ }
       });
     } else {
@@ -143,40 +137,117 @@ export async function invokeRuntime(tc, runId, sessionId) {
       const runtimeSessionId = sessions[sessionId]?.runtimeSessionId || makeRuntimeSessionId(sessionId);
       const cmd = new InvokeAgentRuntimeCommand({ agentRuntimeArn: getRuntimeArn(), qualifier: 'DEFAULT', runtimeSessionId, contentType: 'application/json', payload: new TextEncoder().encode(JSON.stringify(payload)) });
       const response = await getAgentCoreClient().send(cmd);
-      if (response.response) for await (const chunk of response.response) rawText += new TextDecoder().decode(new Uint8Array(Object.values(chunk)));
+      // Parse as the chunks arrive so the live log follows the agent.
+      const stream = createSseStream(makeSseSink(sessionId, runId, tc.id, step), redactOpts);
+      if (response.response) {
+        for await (const chunk of response.response) stream.write(new Uint8Array(Object.values(chunk)));
+      }
+      return stream.end();
     }
-    // Local mode already logged text/tool events live via the onLine callback above;
-    // only pass logEntry here for agentcore mode, where parseSSE is the sole log source.
-    return parseSSE(rawText, sessionId, runId, tc.id, config.agentMode === 'local' ? null : logEntry);
+    // Local mode already showed text/tool events live via the onLine callback above;
+    // parseSSE gets no step here so they are not shown twice.
+    return parseSSE(rawText, sessionId, runId, tc.id);
   } catch (e) {
-    return { passed: false, reason: `Runtime error: ${e.message}` };
+    return { passed: false, reason: redactSecrets(`Runtime error: ${e.message}`, currentSecrets()) };
+  } finally {
+    textOut.flush();   // end of stream: the last piece of text
   }
 }
 
-export async function runFeatureTests(feature, testCases, runId, onProgress) {
+// Puts a redo run's cases on the feature's redo queue, which the loop serves before the run's own cases (the feature is running, see
+// planRedo). They run in the same session right after the case in progress, or at once if the feature
+// is held by a pause. Resolves when every case has run, been skipped or been cancelled.
+export function enqueueRedo(feature, testCases, runId, onProgress, hints) {
+  const queue = redoQueues.get(feature);
+  return new Promise((resolve, reject) => {
+    if (!queue) return reject(new Error(`${feature} is not running`));
+    let left = testCases.length;
+    const jobs = testCases.map(tc => ({ tc, runId, onProgress, hints, settle: () => { if (--left === 0) resolve(); } }));
+    queue.push(...jobs);   // the redo queue is served before the run's own cases; first asked, first run
+    for (const tc of testCases) broadcast({ type: 'redo_queued', feature, runId, testId: tc.id, hint: hints?.[tc.id]?.hint || '' });
+  });
+}
+
+// Cancels a queued redo that has not started. Returns the job, or null if it already started (or never existed).
+export function cancelRedo(feature, runId, tcId) {
+  // runId and tcId come from the request: refuse keys that reach Object.prototype before any lookup.
+  if (isUnsafeKey(runId) || isUnsafeKey(tcId)) return null;
+  const job = takeQueuedRedo(feature, runId, tcId);
+  if (!job) return null;
+  if (Object.prototype.hasOwnProperty.call(testRuns, runId)) {
+    const run = testRuns[runId];
+    run.results[tcId] = { status: 'PENDING' };
+    if (!run.cancelled) run.cancelled = Object.create(null);
+    run.cancelled[tcId] = true;   // read by buildRunRecord and planRedo
+  }
+  broadcast({ type: 'redo_cancelled', feature, runId, testId: tcId });
+  job.onProgress?.();
+  job.settle();
+  return job;
+}
+
+// hints: { [tcId]: { hint } } for a redo run; empty for a normal run.
+export async function runFeatureTests(feature, testCases, runId, onProgress, hints = {}) {
   const sessionId = feature;
   activeFeatures.add(feature);
+  // Redos queued onto this feature's loop (they go first); open from the start so one asked for while
+  // the session is still connecting is not lost.
+  const redos = [];
+  redoQueues.set(feature, redos);
   try {
     await ensureSession(sessionId);
   } catch (e) {
-    for (const tc of testCases) {
-      const failReason = `Session failed: ${e.message}`;
-      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: failReason, runId });
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message };
+    const failed = [...testCases.map(tc => ({ tc, runId, onProgress })), ...redos.splice(0)];
+    for (const { tc, runId: rid, onProgress: onProg, settle } of failed) {
+      // Error text can come from the runtime or the AWS SDK and may quote what it was sent: mask it.
+      const msg = redactSecrets(e.message, currentSecrets());
+      const failReason = `Session failed: ${msg}`;
+      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: failReason, runId: rid });
+      if (testRuns[rid]) testRuns[rid].results[tc.id] = { status: 'FAIL', reason: msg };
       saveTestResult(tc.id, 'FAIL', failReason);
+      onProg?.();
+      settle?.();
     }
-    onProgress?.();
     activeFeatures.delete(feature);
+    redoQueues.delete(feature);
+    clearPause(feature);
     return;
   }
 
-  for (const tc of testCases) {
+  const mainRunId = runId;
+  const todo = testCases.map(tc => ({ tc, runId, onProgress, hints }));
+  let announced = false;   // "paused" was broadcast and "resumed" has not been yet
+  let prev;
+  for (;;) {
+    prev?.settle?.(); prev = undefined;
+    let job = redos.shift();
+    if (!job) {
+      // A human can pause one feature; it holds here, between test cases (a case already
+      // running inside the agent can't be interrupted). Stop releases it, and so does a redo
+      // (the feature stays paused: only "resumed" is not announced then).
+      if (todo.length) {
+        await holdWhilePaused(feature, () => stopFlags[mainRunId] || redos.length > 0, {
+          onHold: () => { if (!announced) { announced = true; broadcast({ type: 'feature_paused', ...pauseState(feature), runId: mainRunId }); } },
+          onRelease: () => {
+            if (pausedFeatures.has(feature) && !stopFlags[mainRunId]) return;
+            announced = false;
+            broadcast({ type: 'feature_resumed', feature, runId: mainRunId });
+          },
+        });
+      }
+      job = redos.shift() || todo.shift();
+      if (!job) break;
+    }
+    prev = job;
+    const { tc, runId, hints, onProgress } = job;
     if (stopFlags[runId]) {
       if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'PENDING' };
       broadcast({ type: 'test_skipped', testId: tc.id, sessionId, runId });
       continue;
     }
 
+    // What a pending pause waits for, and how many of this run's cases would still follow it.
+    caseProgress.set(feature, { tcId: tc.id, startedAt: new Date().toISOString(), remaining: todo.length });
     broadcast({ type: 'test_start', testId: tc.id, sessionId, runId });
     if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'RUNNING' };
 
@@ -191,8 +262,9 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
     // concurrent connection to the same AgentCore Browser session 429s.
     if (sess) sess.testRunning = true;
     try {
-      const result = await invokeRuntime(tc, runId, sessionId);
+      const result = await invokeRuntime(tc, runId, sessionId, hints[tc.id]?.hint);
       const status = result.passed ? 'PASS' : 'FAIL';
+      result.reason = redactSecrets(result.reason, currentSecrets());
       // Upload buffered evidence frames to S3; tucked into testRuns so the
       // archive builder can pick them up when the run completes.
       const snapshots = await flushTcSnapshots(runId, tc.id);
@@ -201,15 +273,20 @@ export async function runFeatureTests(feature, testCases, runId, onProgress) {
       saveTestResult(tc.id, status, result.reason || '');
       console.log(`[${feature}] ${tc.id}: ${status} — ${(result.reason || '').slice(0, 80)} (${snapshots.length} snapshots)`);
     } catch (e) {
+      const msg = redactSecrets(e.message, currentSecrets());   // error text may quote what was sent
       const snapshots = await flushTcSnapshots(runId, tc.id);
-      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: e.message, snapshots };
-      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: e.message, runId });
-      saveTestResult(tc.id, 'FAIL', e.message);
+      if (testRuns[runId]) testRuns[runId].results[tc.id] = { status: 'FAIL', reason: msg, snapshots };
+      broadcast({ type: 'test_result', testId: tc.id, sessionId, status: 'FAIL', reason: msg, runId });
+      saveTestResult(tc.id, 'FAIL', msg);
     }
     if (sess) { sess.testRunning = false; sess.action = ''; }
+    caseProgress.delete(feature);
     onProgress?.();
   }
 
+  caseProgress.delete(feature);
   activeFeatures.delete(feature);
+  redoQueues.delete(feature);
+  clearPause(feature);
   broadcast({ type: 'feature_complete', feature: sessionId, runId });
 }

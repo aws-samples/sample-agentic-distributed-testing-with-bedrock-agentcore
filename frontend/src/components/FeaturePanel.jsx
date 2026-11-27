@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import styles from './FeaturePanel.module.css'
 import Icon from './Icon'
 
@@ -15,6 +15,12 @@ function toArr(v) {
  * showTcDetail           runner/focus: TC rows are expanders; clicking expands
  *                         a read-only detail pane inline. Includes Expand All /
  *                         Collapse All controls in the filter bar.
+ * renderTcLive(tc, status)  runner/focus: node shown at the top of an expanded case, in place of
+ *                         the plain Result block (live verdict, reason and the case's own log)
+ * renderTcLead(tc, status)  runner/focus: node at the start of a case row (e.g. a redo checkbox);
+ *                         clicks on it do not expand the row
+ * renderTcTail(tc, status)  runner/focus: node after the status badge (e.g. "Queued: redo with hint" and its cancel)
+ * autoExpandTcIds         runner/focus: ids that expand by themselves when they appear (the running case)
  * onFeatureEdit           editor: pencil on the feature header (rename / edit Background / delete)
  * onTcAdd                editor: + on the feature header adds a test case to that feature
  *
@@ -51,6 +57,10 @@ export default function FeaturePanel({
   toolbar,
   statsBar,
   footer,
+  renderTcLive,
+  renderTcLead,
+  renderTcTail,
+  autoExpandTcIds,
 }) {
   // Self-managed expansion state (runner / focus modal)
   // When a single feature is pre-selected (e.g. FocusModal), start it expanded
@@ -58,6 +68,13 @@ export default function FeaturePanel({
     () => showTcDetail && expandedFeature ? new Set([expandedFeature]) : new Set()
   )
   const [expandedTcs, setExpandedTcs] = useState(new Set())
+
+  // Expand a case when it newly shows up in autoExpandTcIds (the running one); the user can still collapse it.
+  const autoKey = (autoExpandTcIds || []).join(',')
+  useEffect(() => {
+    if (!autoKey) return
+    setExpandedTcs(prev => new Set([...prev, ...autoKey.split(',')]))
+  }, [autoKey])
 
   const getStatus = (tcId) => testResults[tcId]?.status || 'PENDING'
   // Map test status to a Material Symbols icon name
@@ -225,6 +242,9 @@ export default function FeaturePanel({
                           {showTcDetail && (
                             <span className={styles.tcChevron}>{tcExpanded ? '▾' : '▸'}</span>
                           )}
+                          {renderTcLead && (
+                            <span className={styles.tcLead} onClick={(e) => e.stopPropagation()}>{renderTcLead(tc, status)}</span>
+                          )}
                           <span className={styles.tcId}>{tc.id}</span>
                           <span className={styles.tcTitle}>{tc.title}</span>
                           {showStatusBadges && (
@@ -233,11 +253,15 @@ export default function FeaturePanel({
                               {status}
                             </span>
                           )}
+                          {renderTcTail && (
+                            <span className={styles.tcTail} onClick={(e) => e.stopPropagation()}>{renderTcTail(tc, status)}</span>
+                          )}
                         </div>
 
                         {tcExpanded && (
                           <div className={styles.tcDetail}>
-                            {selectedResult?.status && (
+                            {renderTcLive && <div className={styles.detLive}>{renderTcLive(tc, status)}</div>}
+                            {!renderTcLive && selectedResult?.status && (
                               <div className={styles.detSection}>
                                 <div className={styles.detLabel}>Result</div>
                                 <div className={`${styles.detVerdict} ${styles['detVerdict_' + selectedResult.status.toLowerCase()]}`}>

@@ -1,3 +1,4 @@
+import { isShortSecret, SHORT_SECRET_WARNING } from '../utils/secrets'
 import { useState, useEffect } from 'react'
 import Modal from './Modal'
 import Btn from './Btn'
@@ -122,6 +123,7 @@ export default function AuthModal({ open, onClose, readOnly, onSaved }) {
                       <Icon name={row.show ? 'visibility_off' : 'visibility'} size={16} />
                     </button>
                   </div>
+                  {isShortSecret(row.password) && <span className={styles.warn} role="status">{SHORT_SECRET_WARNING}</span>}
                 </label>
               </div>
             </fieldset>
