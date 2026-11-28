@@ -176,6 +176,12 @@ export function deleteCase(id) {
   db.prepare('DELETE FROM test_cases WHERE id = ?').run(id);
 }
 
+// "Add to suite" import: new features, then new cases, all or nothing.
+export const appendFeaturesAndCases = db.transaction((features, cases) => {
+  for (const f of features) insertFeature(f.name, f.description || '');
+  for (const tc of cases) upsertCase(tc);
+});
+
 // Full replace — used by /api/import (which already replaces in-memory state
 // wholesale) and by the first-ever seed load. Simpler and less error-prone
 // than diffing the incoming doc against existing rows.

@@ -13,3 +13,44 @@
 .names { font-size: 11px; color: var(--text-muted); }
 .replace { font-size: 12px; color: var(--yellow); margin-top: 2px; }
 .replace :global(.material-symbols-rounded) { color: var(--yellow); }
+
+/* Import mode: Add to suite (default) or Replace suite */
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mode { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--text); font: inherit; cursor: pointer; }
+.mode:hover { border-color: var(--accent); }
+.mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.modeOn { border-color: var(--accent); background: rgba(88, 166, 255, 0.08); }
+.modeWarn.modeOn { border-color: var(--yellow); background: rgba(210, 153, 34, 0.08); }
+.radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1px solid var(--text-muted); }
+.modeOn .radio { border: 4px solid var(--accent); }
+.modeWarn.modeOn .radio { border-color: var(--yellow); }
+.modeText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.modeTitle { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.modeSub { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+/* "Add to suite" preview (layout B) */
+.preview { display: flex; flex-direction: column; gap: 8px; }
+.file { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+.file b { color: var(--text); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 4px; }
+.chip { padding: 3px 10px; border: 1px solid var(--border); background: var(--surface2); border-radius: 11px; font-size: 12px; font-weight: 600; }
+.chipMuted { color: var(--text-muted); }
+.chipGreen { color: var(--green); }
+.chipYellow { color: var(--yellow); }
+.grp { margin-bottom: 4px; display: flex; flex-direction: column; }
+.gh { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 7px 12px; display: flex; align-items: center; gap: 8px; font-weight: 700; min-height: 34px; }
+.ghName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { flex-shrink: 0; font-size: 10px; font-weight: 600; border: 1px solid; border-radius: 8px; padding: 1px 7px; }
+.tagNew { color: var(--accent); }
+.tagMerged { color: var(--yellow); }
+.cnt { margin-left: auto; flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.bgNote { font-size: 11px; color: var(--yellow); padding: 4px 8px 2px 20px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 0 8px 0 20px; min-height: 24px; font-size: 12px; }
+.sign { width: 12px; flex-shrink: 0; font-weight: 700; font-size: 14px; }
+.rowAdd .sign { color: var(--green); }
+.rowSkip .sign { color: var(--yellow); }
+.rowTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.why { flex-shrink: 0; font-size: 11px; color: var(--yellow); }
+.more { color: var(--text-muted); background: none; border: none; font: inherit; font-size: 12px; text-align: left; }
+button.more { cursor: pointer; }
+button.more:hover { color: var(--accent); }

@@ -173,8 +173,10 @@ export default function EditorPage() {
       const d = await res.json()
       setDirty(false)
       setStatusMsg(`Saved — ${d.summary.casesImported} TCs`, 'ok')
+      return true
     } catch (e) {
       setStatusMsg('Save failed: ' + e.message, 'err')
+      return false
     }
   }
 
@@ -195,6 +197,19 @@ export default function EditorPage() {
     setExpandedFeatNames(new Set())
     setImportModalOpen(false)
     setStatusMsg('Imported ' + fileName, 'ok')
+  }
+
+  // "Add to suite": the backend checks the file against the SAVED suite; the modal asks before saving unsaved edits.
+  const handleSaveBeforeImport = async () => { clearTimeout(saveTimerRef.current); return saveToBackend() }
+  const handlePreviewAdd = async (text) => {
+    if (dirty) throw new Error('Save your changes first, then choose the file again.')
+    return api.importYaml(text, { mode: 'add', dryRun: true })
+  }
+  const handleConfirmAdd = async (text, fileName) => {
+    const { summary: s } = await api.importYaml(text, { mode: 'add' })
+    setImportModalOpen(false)
+    await loadFromBackend()
+    setStatusMsg(`Added ${s.casesAdded} test case${s.casesAdded === 1 ? '' : 's'} from ${fileName}${s.casesSkipped ? `, ${s.casesSkipped} skipped` : ''}`, 'ok')
   }
 
   useEffect(() => {
@@ -600,8 +615,12 @@ export default function EditorPage() {
       <ImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        onImport={handleImport}
+        onReplace={handleImport}
+        onPreviewAdd={handlePreviewAdd}
+        onConfirmAdd={handleConfirmAdd}
         existingCount={doc.features.length}
+        dirty={dirty}
+        onSaveChanges={handleSaveBeforeImport}
       />
       <AuthModal
         open={authModalOpen}
