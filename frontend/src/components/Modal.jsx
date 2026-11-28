@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef } from 'react'
 import styles from './Modal.module.css'
 import Icon from './Icon'
+import { trapTarget, FOCUSABLE } from '../utils/focusTrap'
 
-// closeOnEscape is opt-in so dialogs holding typed input (AI drafts, settings) keep
+// closeOnEscape and trapFocus are opt-in so dialogs holding typed input (AI drafts, settings) keep
 // their current behaviour; a click outside still closes every dialog as before.
-export default function Modal({ open, onClose, title, children, footer, width, closeOnEscape = false }) {
+export default function Modal({ open, onClose, title, children, footer, width, closeOnEscape = false, trapFocus = false }) {
   const titleId = useId()
   const boxRef = useRef(null)
   // Move focus into the dialog on open and give it back to the opener on close.
@@ -15,7 +16,14 @@ export default function Modal({ open, onClose, title, children, footer, width, c
     return () => { if (opener instanceof HTMLElement) opener.focus() }
   }, [open])
   if (!open) return null
-  const onKeyDown = (e) => { if (closeOnEscape && e.key === 'Escape') { e.stopPropagation(); onClose() } }
+  const onKeyDown = (e) => {
+    if (closeOnEscape && e.key === 'Escape') { e.stopPropagation(); onClose() }
+    if (trapFocus && e.key === 'Tab') {
+      const items = [...boxRef.current.querySelectorAll(FOCUSABLE)]
+      const to = trapTarget(items, document.activeElement, e.shiftKey)
+      if (to) { e.preventDefault(); to.focus() }
+    }
+  }
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div

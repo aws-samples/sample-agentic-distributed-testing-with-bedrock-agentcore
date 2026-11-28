@@ -82,7 +82,7 @@ export default function ImportModal({ open, onClose, onReplace, onPreviewAdd, on
   )
 
   return (
-    <Modal open={open} onClose={onClose} closeOnEscape title="Import test suite" width="min(560px, 94vw)" footer={footer}>
+    <Modal open={open} onClose={onClose} closeOnEscape trapFocus title="Import test suite" width="min(560px, 94vw)" footer={footer}>
       <div className={styles.body}>
         <div className={styles.modes} role="radiogroup" aria-label="How to import">
           <ModeChoice
